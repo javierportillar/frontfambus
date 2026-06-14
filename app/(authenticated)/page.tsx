@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/lib/auth/store";
+import { getTenantDisplay } from "@/lib/tenant/config";
 import { useSalesSummaryV2, useInventorySummary, useAlerts, useDormidos, useSalesTrendByYear } from "@/lib/api/hooks";
 import { formatMoney } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -23,6 +24,9 @@ function GerenteHome(): JSX.Element {
   const inventory = useInventorySummary();
   const alerts = useAlerts();
   const dormidos = useDormidos();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
+  const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : null;
   const currentYear = new Date().getFullYear();
   const trend = useSalesTrendByYear(currentYear, 24);
   const trendPrev = useSalesTrendByYear(currentYear - 1, 24);
@@ -39,7 +43,7 @@ function GerenteHome(): JSX.Element {
         <div className="flex items-center gap-3">
           <Logo size="md" />
           <div>
-            <h1 className="text-xl font-bold text-text-primary">MotoShop</h1>
+            <h1 className="text-xl font-bold text-text-primary">{tenantDisplay?.name ?? "MotoShop"}</h1>
             <p className="text-sm text-text-muted">Panel de gerencia</p>
           </div>
         </div>
@@ -76,7 +80,7 @@ function GerenteHome(): JSX.Element {
       <div className="flex items-center gap-3">
         <Logo size="md" />
         <div>
-          <h1 className="text-xl font-bold text-text-primary">MotoShop</h1>
+          <h1 className="text-xl font-bold text-text-primary">{tenantDisplay?.name ?? "MotoShop"}</h1>
           <p className="text-sm text-text-muted">
             {sales.data?.max_sales_date
               ? `Panel de gerencia — Acumulado hasta ${sales.data.max_sales_date}`
@@ -206,59 +210,67 @@ function GerenteHome(): JSX.Element {
             </Card>
           </Link>
 
-          <Link href="/alerts" className="block">
-            <Card hover className="cursor-pointer">
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Alertas</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-2xl font-bold text-text-primary">
-                    {alerts.data?.total ?? "—"}
-                  </p>
-                  {alerts.data && alerts.data.total > 0 && (
-                    <Badge variant="error" size="sm">activas</Badge>
-                  )}
+          {enabledFeatures.includes("alerts") && (
+            <Link href="/alerts" className="block">
+              <Card hover className="cursor-pointer">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Alertas</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-text-primary">
+                      {alerts.data?.total ?? "—"}
+                    </p>
+                    {alerts.data && alerts.data.total > 0 && (
+                      <Badge variant="error" size="sm">activas</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-text-muted">Gestionar →</p>
                 </div>
-                <p className="text-xs text-text-muted">Gestionar →</p>
-              </div>
-            </Card>
-          </Link>
+              </Card>
+            </Link>
+          )}
 
-          <Link href="/dashboards/abc" className="block">
-            <Card hover className="cursor-pointer">
-              <Stat
-                label="ABC"
-                value={hasData ? `${inventory.data!.num_productos}` : "—"}
-                subtitle={`${inventory.data?.num_productos ?? "—"} SKUs →`}
-              />
-            </Card>
-          </Link>
+          {enabledFeatures.includes("abc") && (
+            <Link href="/dashboards/abc" className="block">
+              <Card hover className="cursor-pointer">
+                <Stat
+                  label="ABC"
+                  value={hasData ? `${inventory.data!.num_productos}` : "—"}
+                  subtitle={`${inventory.data?.num_productos ?? "—"} SKUs →`}
+                />
+              </Card>
+            </Link>
+          )}
 
-          <Link href="/forecast" className="block">
-            <Card hover className="cursor-pointer">
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Forecast</p>
-                <p className="text-2xl font-bold text-text-primary">Pred.</p>
-                <p className="text-xs text-text-muted">Consultar →</p>
-              </div>
-            </Card>
-          </Link>
-
-          <Link href="/dashboards/dormidos" className="block">
-            <Card hover className="cursor-pointer">
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Dormidos</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-2xl font-bold text-text-primary">
-                    {dormidos.data?.total ?? "—"}
-                  </p>
-                  {dormidos.data && dormidos.data.total > 0 && (
-                    <Badge variant="warning" size="sm">inmovilizado</Badge>
-                  )}
+          {enabledFeatures.includes("forecast") && (
+            <Link href="/forecast" className="block">
+              <Card hover className="cursor-pointer">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Forecast</p>
+                  <p className="text-2xl font-bold text-text-primary">Pred.</p>
+                  <p className="text-xs text-text-muted">Consultar →</p>
                 </div>
-                <p className="text-xs text-text-muted">Revisar →</p>
-              </div>
-            </Card>
-          </Link>
+              </Card>
+            </Link>
+          )}
+
+          {enabledFeatures.includes("dormidos") && (
+            <Link href="/dashboards/dormidos" className="block">
+              <Card hover className="cursor-pointer">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Dormidos</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-text-primary">
+                      {dormidos.data?.total ?? "—"}
+                    </p>
+                    {dormidos.data && dormidos.data.total > 0 && (
+                      <Badge variant="warning" size="sm">inmovilizado</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-text-muted">Revisar →</p>
+                </div>
+              </Card>
+            </Link>
+          )}
         </div>
       </div>
     </div>
@@ -272,6 +284,9 @@ function VendedorHome(): JSX.Element {
   const [query, setQuery] = useState("");
   const alerts = useAlerts();
   const dormidos = useDormidos();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
+  const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : null;
 
   const loading = alerts.isLoading || dormidos.isLoading;
 
@@ -288,7 +303,7 @@ function VendedorHome(): JSX.Element {
         <div className="flex items-center gap-3">
           <Logo size="sm" />
           <div>
-            <h1 className="text-lg font-bold text-text-primary">MotoShop</h1>
+            <h1 className="text-lg font-bold text-text-primary">{tenantDisplay?.name ?? "MotoShop"}</h1>
             <p className="text-xs text-text-muted">Búsqueda rápida</p>
           </div>
         </div>
@@ -308,7 +323,7 @@ function VendedorHome(): JSX.Element {
       <div className="flex items-center gap-3">
         <Logo size="sm" />
         <div>
-          <h1 className="text-lg font-bold text-text-primary">MotoShop</h1>
+          <h1 className="text-lg font-bold text-text-primary">{tenantDisplay?.name ?? "MotoShop"}</h1>
           <p className="text-xs text-text-muted">Búsqueda rápida</p>
         </div>
       </div>
@@ -332,68 +347,75 @@ function VendedorHome(): JSX.Element {
         </button>
       </div>
 
-      {/* Cards de acción rápida */}
+      {/* Cards de acción rápida — filtradas por tenant features (M2) */}
       <div className="grid grid-cols-2 gap-3">
-        <Link href="/alerts" className="block">
-          <Card variant="dark" hover className="cursor-pointer">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-text-inverse/60">
-                🚨 Alertas activas
-              </p>
-              <p className="text-3xl font-bold text-text-inverse">
-                {alerts.data?.total ?? "—"}
-              </p>
-              <p className="text-xs text-text-inverse/50">
-                {alerts.data && alerts.data.total > 0
-                  ? "Gestionar ahora →"
-                  : "Sin alertas"}
-              </p>
-            </div>
-          </Card>
-        </Link>
+        {enabledFeatures.includes("alerts") && (
+          <Link href="/alerts" className="block">
+            <Card variant="dark" hover className="cursor-pointer">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-inverse/60">
+                  🚨 Alertas activas
+                </p>
+                <p className="text-3xl font-bold text-text-inverse">
+                  {alerts.data?.total ?? "—"}
+                </p>
+                <p className="text-xs text-text-inverse/50">
+                  {alerts.data && alerts.data.total > 0
+                    ? "Gestionar ahora →"
+                    : "Sin alertas"}
+                </p>
+              </div>
+            </Card>
+          </Link>
+        )}
 
-        <Link href="/dashboards/dormidos" className="block">
-          <Card variant="dark" hover className="cursor-pointer">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-text-inverse/60">
-                💤 Liquidar
-              </p>
-              <p className="text-3xl font-bold text-text-inverse">
-                {dormidos.data?.total ?? "—"}
-              </p>
-              <p className="text-xs text-text-inverse/50">
-                {dormidos.data && dormidos.data.total > 0
-                  ? "Ver dormidos →"
-                  : "Sin productos"}
-              </p>
-            </div>
-          </Card>
-        </Link>
+        {enabledFeatures.includes("dormidos") && (
+          <Link href="/dashboards/dormidos" className="block">
+            <Card variant="dark" hover className="cursor-pointer">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-inverse/60">
+                  💤 Liquidar
+                </p>
+                <p className="text-3xl font-bold text-text-inverse">
+                  {dormidos.data?.total ?? "—"}
+                </p>
+                <p className="text-xs text-text-inverse/50">
+                  {dormidos.data && dormidos.data.total > 0
+                    ? "Ver dormidos →"
+                    : "Sin productos"}
+                </p>
+              </div>
+            </Card>
+          </Link>
+        )}
 
-        <Link href="/acciones" className="block">
-          <Card hover className="cursor-pointer">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
-                📋 Mis acciones
-              </p>
-              <p className="text-2xl font-bold text-text-primary">Hoy</p>
-              <p className="text-xs text-text-muted">Ver registro →</p>
-            </div>
-          </Card>
-        </Link>
+        {enabledFeatures.includes("acciones") && (
+          <Link href="/acciones" className="block">
+            <Card hover className="cursor-pointer">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  📋 Mis acciones
+                </p>
+                <p className="text-2xl font-bold text-text-primary">Hoy</p>
+                <p className="text-xs text-text-muted">Ver registro →</p>
+              </div>
+            </Card>
+          </Link>
+        )}
 
-        {/* Top 3 rotación A — placeholder hasta tener endpoint */}
-        <Link href="/dashboards/abc" className="block">
-          <Card hover className="cursor-pointer">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
-                ⭐ Rotación A
-              </p>
-              <p className="text-2xl font-bold text-text-primary">Top</p>
-              <p className="text-xs text-text-muted">Ver ABC →</p>
-            </div>
-          </Card>
-        </Link>
+        {enabledFeatures.includes("abc") && (
+          <Link href="/dashboards/abc" className="block">
+            <Card hover className="cursor-pointer">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  ⭐ Rotación A
+                </p>
+                <p className="text-2xl font-bold text-text-primary">Top</p>
+                <p className="text-xs text-text-muted">Ver ABC →</p>
+              </div>
+            </Card>
+          </Link>
+        )}
       </div>
     </div>
   );

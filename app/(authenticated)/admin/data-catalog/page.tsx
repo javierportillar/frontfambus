@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { useAuthStore } from "@/lib/auth/store";
 import { useCatalog, useCatalogTable, useLineage, type CatalogTable, type LineageEdge } from "@/lib/api/hooks";
 import { Card } from "@/components/ui/Card";
@@ -140,7 +141,7 @@ function TableDetailModal({ name, onClose }: { name: string; onClose: () => void
 
 // ── Main Page ─────────────────────────────────────────────────────────
 
-export default function DataCatalogPage(): JSX.Element {
+function DataCatalogContent(): JSX.Element {
   const router = useRouter();
   const role = useAuthStore(s => s.role);
   const [search, setSearch] = useState("");
@@ -248,5 +249,13 @@ export default function DataCatalogPage(): JSX.Element {
 
       {selectedTable && <TableDetailModal name={selectedTable} onClose={()=>setSelectedTable(null)} />}
     </div>
+  );
+}
+
+export default function DataCatalogPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="data-catalog" featureName="Catálogo de Datos">
+      <DataCatalogContent />
+    </FeatureGuard>
   );
 }

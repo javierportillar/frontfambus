@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useForecast, useForecastCategoria, useForecastNarrative, useProducts } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -42,7 +43,7 @@ function CustomBarTooltip({ active, payload, label }: any) {
 }
 
 
-export default function ForecastPage(): JSX.Element {
+function ForecastContent(): JSX.Element {
   const [sku, setSku] = useState("");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [horizon, setHorizon] = useState<number>(7);
@@ -446,5 +447,13 @@ export default function ForecastPage(): JSX.Element {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function ForecastPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="forecast" featureName="Forecast">
+      <ForecastContent />
+    </FeatureGuard>
   );
 }

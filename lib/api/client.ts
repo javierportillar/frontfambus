@@ -9,11 +9,34 @@ async function doRefresh(): Promise<boolean> {
   }
 }
 
+/**
+ * Añade el header X-Tenant si hay un tenant activo en el store.
+ * Se importa lazy para evitar circular deps y porque el store solo
+ * existe en el cliente.
+ */
+async function getTenantHeader(): Promise<Record<string, string>> {
+  try {
+    const { useAuthStore } = await import("@/lib/auth/store");
+    const tenant = useAuthStore.getState().currentTenant;
+    return tenant ? { "X-Tenant": tenant } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function apiFetch(
   input: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const resp = await fetch(input, { ...init, credentials: "include" });
+  const tenantHeaders = await getTenantHeader();
+  const resp = await fetch(input, {
+    ...init,
+    credentials: "include",
+    headers: {
+      ...init?.headers,
+      ...tenantHeaders,
+    },
+  });
 
   if (resp.status === 401) {
     if (!refreshPromise) {
@@ -37,7 +60,16 @@ export async function apiFetch(
       return resp;
     }
 
-    return fetch(input, { ...init, credentials: "include" });
+    // Retry original request with tenant header on the retry too
+    const retryHeaders = await getTenantHeader();
+    return fetch(input, {
+      ...init,
+      credentials: "include",
+      headers: {
+        ...init?.headers,
+        ...retryHeaders,
+      },
+    });
   }
 
   return resp;

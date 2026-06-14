@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCohortes, useCohortesDetail } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -9,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatMoney } from "@/lib/format/currency";
 
-export default function CohortesPage(): JSX.Element {
+function CohortesContent(): JSX.Element {
   const { data, error, isLoading } = useCohortes();
   const detail = useCohortesDetail();
 
@@ -202,5 +203,13 @@ export default function CohortesPage(): JSX.Element {
         </div>
       </Card>
     </div>
+  );
+}
+
+export default function CohortesPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="cohortes" featureName="Cohortes">
+      <CohortesContent />
+    </FeatureGuard>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuthStore } from "@/lib/auth/store";
+import { fetchMe } from "@/lib/api/hooks";
 import { Button } from "@/lib/ui/Button";
 import { Input } from "@/lib/ui/Input";
 import { useToast } from "@/lib/ui/Toast";
@@ -12,6 +13,8 @@ export default function LoginPage(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const setUser = useAuthStore((s) => s.setUser);
+  const setAvailableTenants = useAuthStore((s) => s.setAvailableTenants);
+  const setTenant = useAuthStore((s) => s.setTenant);
   const { addToast } = useToast();
 
   // NOTA: NO hacer auto-redirect a "/" si isAuthenticated viene en true desde
@@ -55,12 +58,21 @@ export default function LoginPage(): JSX.Element {
       }
 
       setUser(data.sub ?? usernameVal, data.role ?? "vendedor");
-      addToast("Bienvenido", "success");
-      // Hard navigation: el cliente del App Router cachea /login y a veces
-      // no invalida cuando la cookie httponly acaba de setearse en el mismo
-      // ciclo. window.location fuerza un fresh request donde el middleware
-      // ve la cookie y enruta a la home autenticada sin necesidad de refresh.
-      window.location.assign("/");
+
+      // Multi-tenant (M2): obtener contexto completo con tenants y features
+      const me = await fetchMe();
+      setAvailableTenants(me.tenants_allowed);
+
+      if (me.tenants_allowed.length === 1) {
+        // Un solo tenant — setearlo directamente y redirigir al home
+        setTenant(me.tenants_allowed[0], me.enabled_features);
+        addToast("Bienvenido", "success");
+        window.location.assign("/");
+      } else {
+        // Múltiples tenants — ir al picker
+        addToast("Seleccioná un negocio", "success");
+        window.location.assign("/select-tenant");
+      }
     } catch {
       addToast("Error de conexión", "error");
     } finally {
@@ -94,7 +106,7 @@ export default function LoginPage(): JSX.Element {
             icon={
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
+                <circle cx="12" cy="12" r="4" />
               </svg>
             }
           />

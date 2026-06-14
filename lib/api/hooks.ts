@@ -816,3 +816,25 @@ export function useInventoryDetail(
 export function useInventoryDiscrepancies() {
   return useMetrics<InventoryDiscrepanciesResponse>("/api/metrics/inventory-discrepancies");
 }
+
+// ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
+
+export interface MeResponse {
+  username: string;
+  email: string;
+  role: string;
+  tenants_allowed: string[];
+  current_tenant: string;
+  enabled_features: string[];
+}
+
+/**
+ * Hook que obtiene /api/auth/me con el X-Tenant activo y popula el store.
+ * Se invoca después del login o al cambiar de tenant.
+ *
+ * El fetcher manual (no SWR) porque se llama una vez por flujo de
+ * login / change-tenant, no periódicamente.
+ */
+export async function fetchMe(): Promise<MeResponse> {
+  return apiFetchJson<MeResponse>("/api/auth/me");
+}

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useDriftSummary } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -15,7 +16,7 @@ const METRIC_DESCRIPTIONS: Record<string, string> = {
   "Tasa recurrencia": "% de clientes que recompran — mide la fidelidad y retención de clientes",
 };
 
-export default function DriftPage(): JSX.Element {
+function DriftContent(): JSX.Element {
   const { data, error, isLoading } = useDriftSummary();
 
   // ── Loading ──────────────────────────────────────────────────
@@ -208,5 +209,13 @@ export default function DriftPage(): JSX.Element {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function DriftPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="drift" featureName="Drift">
+      <DriftContent />
+    </FeatureGuard>
   );
 }

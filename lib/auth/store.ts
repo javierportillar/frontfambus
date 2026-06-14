@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { setTenantCookie, clearTenantCookie } from "@/lib/tenant/store";
 
 interface AuthState {
   user: string | null;
@@ -11,6 +12,14 @@ interface AuthState {
   setUser: (user: string, role: string) => void;
   logout: () => void;
   setHasHydrated: (v: boolean) => void;
+
+  // ---- Multi-tenant (M2) ----
+  currentTenant: string | null;
+  availableTenants: string[];
+  enabledFeatures: string[];
+  setTenant: (tenant: string, features: string[]) => void;
+  setAvailableTenants: (tenants: string[]) => void;
+  clearTenant: () => void;
 }
 
 // F7-FIX1 bug 5.1: persistir auth en localStorage para que el refresh no rompa el home
@@ -24,8 +33,31 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       hasHydrated: false,
       setUser: (u, r) => set({ user: u, role: r, isAuthenticated: true }),
-      logout: () => set({ user: null, role: null, isAuthenticated: false }),
+      logout: () => {
+        clearTenantCookie();
+        set({
+          user: null,
+          role: null,
+          isAuthenticated: false,
+          currentTenant: null,
+          enabledFeatures: [],
+        });
+      },
       setHasHydrated: (v) => set({ hasHydrated: v }),
+
+      // ---- Multi-tenant (M2) ----
+      currentTenant: null,
+      availableTenants: [],
+      enabledFeatures: [],
+      setTenant: (tenant, features) => {
+        setTenantCookie(tenant);
+        set({ currentTenant: tenant, enabledFeatures: features });
+      },
+      setAvailableTenants: (tenants) => set({ availableTenants: tenants }),
+      clearTenant: () => {
+        clearTenantCookie();
+        set({ currentTenant: null, enabledFeatures: [] });
+      },
     }),
     {
       name: "motoshop_auth",
@@ -34,6 +66,9 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         role: state.role,
         isAuthenticated: state.isAuthenticated,
+        currentTenant: state.currentTenant,
+        availableTenants: state.availableTenants,
+        enabledFeatures: state.enabledFeatures,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

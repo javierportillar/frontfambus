@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAbcSegmentation, useAbcDetalle } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { AbcChart } from "@/components/AbcChart";
@@ -110,7 +111,7 @@ function BucketProducts({ config, items, isLoading }: { config: BucketConfig; it
   );
 }
 
-export default function AbcPage(): JSX.Element {
+function AbcContent(): JSX.Element {
   const { data, error, isLoading } = useAbcSegmentation();
   const detailA = useAbcDetalle("A", 50);
   const detailB = useAbcDetalle("B", 50);
@@ -202,5 +203,13 @@ export default function AbcPage(): JSX.Element {
         ))}
       </section>
     </div>
+  );
+}
+
+export default function AbcPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="abc" featureName="ABC">
+      <AbcContent />
+    </FeatureGuard>
   );
 }

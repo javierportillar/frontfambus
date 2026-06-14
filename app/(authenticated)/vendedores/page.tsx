@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useVendedoresSummary, useVendedorDetail } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -123,7 +124,7 @@ function VendorDetailModal({
 
 // ── Página principal ──────────────────────────────────────────────────────
 
-export default function VendedoresPage(): JSX.Element {
+function VendedoresContent(): JSX.Element {
   const [tab, setTab] = useState<TabView>("month");
   const [detailNit, setDetailNit] = useState<string | null>(null);
 
@@ -287,5 +288,13 @@ export default function VendedoresPage(): JSX.Element {
       {/* Modal detalle vendedor */}
       {detailNit && <VendorDetailModal nit={detailNit} period={tab} onClose={() => setDetailNit(null)} />}
     </div>
+  );
+}
+
+export default function VendedoresPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="vendedores" featureName="Vendedores">
+      <VendedoresContent />
+    </FeatureGuard>
   );
 }
