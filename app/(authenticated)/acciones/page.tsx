@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { fetchMyActions, type MyActionItem } from "@/lib/api/alertActions";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { useAlerts } from "@/lib/api/hooks";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -39,7 +40,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export default function MyActionsPage(): JSX.Element {
+function MyActionsContent(): JSX.Element {
   const [period, setPeriod] = useState<Period>("today");
   const [actions, setActions] = useState<MyActionItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -278,5 +279,13 @@ export default function MyActionsPage(): JSX.Element {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function MyActionsPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="acciones" featureName="Acciones">
+      <MyActionsContent />
+    </FeatureGuard>
   );
 }

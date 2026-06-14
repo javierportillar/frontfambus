@@ -1,21 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { LogoMark } from "@/components/Logo";
+import { useAuthStore } from "@/lib/auth/store";
+import { getTenantDisplay } from "@/lib/tenant/config";
 
 // ─── Tipos ──────────────────────────────────────────────────────
 
-interface NavItem {
+export interface NavItem {
   label: string;
   href: string;
   icon: ReactNode;
+  /** Feature slug que habilita esta ruta (M2). undefined = siempre visible */
+  feature?: string;
 }
 
 interface NavigationProps {
-  /** Items de navegación */
+  /** Items de navegación (ya filtrados por enabledFeatures fuera de este componente) */
   items: NavItem[];
   /** Rol del usuario (vendedor | admin | gerente) */
   role?: "vendedor" | "admin" | "gerente";
@@ -90,6 +94,14 @@ const Icons = {
       <path d="M21 12H9" />
     </svg>
   ),
+  tenantSwitch: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M8 7h12M8 12h12M8 17h12" />
+      <circle cx="4" cy="7" r="1" fill="currentColor" />
+      <circle cx="4" cy="12" r="1" fill="currentColor" />
+      <circle cx="4" cy="17" r="1" fill="currentColor" />
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, ReactNode> = {
@@ -117,20 +129,36 @@ function Sidebar({
   onLogout?: () => void;
   isActive: (href: string) => boolean;
 }): JSX.Element {
+  const router = useRouter();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const availableTenants = useAuthStore((s) => s.availableTenants);
+  const clearTenant = useAuthStore((s) => s.clearTenant);
+  const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : null;
+
+  function handleCambiarNegocio(): void {
+    clearTenant();
+    router.push("/select-tenant");
+  }
+
   return (
     <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-60 lg:flex-col">
       {/* Fondo oscuro texturizado — acero de taller */}
       <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-surface-dark px-4 py-6">
-        {/* Marca */}
+        {/* Marca — con info del tenant activo (M2) */}
         <div className="mb-2 flex items-center gap-3 px-2">
           <LogoMark size={28} />
-          <div>
-            <p className="text-sm font-bold text-text-inverse tracking-tight">
-              MOTOSHOP
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-text-inverse tracking-tight">
+              {tenantDisplay?.name ?? "MotoShop"}
             </p>
             <p className="text-[0.625rem] text-text-muted uppercase tracking-widest">
               {role === "vendedor" ? "Vendedor" : "Gerencia"}
             </p>
+            {currentTenant && (
+              <p className="mt-0.5 truncate text-[0.6rem] text-text-muted/60">
+                {tenantDisplay?.description ?? currentTenant}
+              </p>
+            )}
           </div>
         </div>
 
@@ -174,10 +202,22 @@ function Sidebar({
           })}
         </nav>
 
-        {/* Footer — logout */}
-        {onLogout && (
-          <>
-            <div className="h-px bg-surface-dark-alt" />
+        {/* Footer — tenant switch + logout */}
+        <div className="space-y-1">
+          <div className="h-px bg-surface-dark-alt" />
+
+          {/* Cambiar negocio (M2) — solo si hay más de 1 tenant disponible */}
+          {currentTenant && availableTenants.length > 1 && (
+            <button
+              onClick={handleCambiarNegocio}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-dark-alt hover:text-text-inverse"
+            >
+              {Icons.tenantSwitch}
+              <span>Cambiar negocio</span>
+            </button>
+          )}
+
+          {onLogout && (
             <button
               onClick={onLogout}
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-error/10 hover:text-error"
@@ -185,8 +225,8 @@ function Sidebar({
               {Icons.logout}
               <span>Salir</span>
             </button>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </aside>
   );
@@ -218,7 +258,7 @@ function BottomNav({
             <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-4">
               <div>
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-white/40">
-                  Menú MotoShop
+                  Menú
                 </p>
                 <h2 className="mt-1 text-lg font-black">Todas las secciones</h2>
               </div>
@@ -363,29 +403,33 @@ export function Navigation({
 
 // ─── Helpers para construir items ────────────────────────────────
 
+/**
+ * Define qué feature habilita cada ruta del menú de gerencia.
+ * Si feature es undefined, la ruta es siempre visible.
+ */
 export function gerenteNavItems(): NavItem[] {
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
-    { label: "Ventas", href: "/dashboards/ventas", icon: Icons.ventas },
-    { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario },
-    { label: "ABC", href: "/dashboards/abc", icon: Icons.abc },
-    { label: "Dormidos", href: "/dashboards/dormidos", icon: Icons.dormidos },
-    { label: "Forecast", href: "/forecast", icon: Icons.forecast },
-    { label: "Alertas", href: "/alerts", icon: Icons.alerts },
-    { label: "Acciones", href: "/acciones", icon: Icons.acciones },
-    { label: "Cohortes", href: "/cohortes", icon: Icons.home },
-    { label: "Vendedores", href: "/vendedores", icon: Icons.home },
-    { label: "Drift", href: "/drift", icon: Icons.alerts },
-    { label: "Plan Compras", href: "/plan-compras", icon: Icons.planCompras },
-    { label: "Pipeline", href: "/admin/pipeline", icon: Icons.home },
-    { label: "Catálogo", href: "/admin/data-catalog", icon: Icons.home },
+    { label: "Ventas", href: "/dashboards/ventas", icon: Icons.ventas, feature: "ventas-summary" },
+    { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
+    { label: "ABC", href: "/dashboards/abc", icon: Icons.abc, feature: "abc" },
+    { label: "Dormidos", href: "/dashboards/dormidos", icon: Icons.dormidos, feature: "dormidos" },
+    { label: "Forecast", href: "/forecast", icon: Icons.forecast, feature: "forecast" },
+    { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
+    { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
+    { label: "Cohortes", href: "/cohortes", icon: Icons.home, feature: "cohortes" },
+    { label: "Vendedores", href: "/vendedores", icon: Icons.home, feature: "vendedores" },
+    { label: "Drift", href: "/drift", icon: Icons.alerts, feature: "drift" },
+    { label: "Plan Compras", href: "/plan-compras", icon: Icons.planCompras, feature: "plan-compras" },
+    { label: "Pipeline", href: "/admin/pipeline", icon: Icons.home, feature: "pipeline-observability" },
+    { label: "Catálogo", href: "/admin/data-catalog", icon: Icons.home, feature: "data-catalog" },
   ];
 }
 
 export function vendedorNavItems(): NavItem[] {
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
-    { label: "Alertas", href: "/alerts", icon: Icons.alerts },
-    { label: "Acciones", href: "/acciones", icon: Icons.acciones },
+    { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
+    { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
   ];
 }

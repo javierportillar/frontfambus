@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useDormidos } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
@@ -26,7 +27,7 @@ function sortIcon(dir: SortDir): string {
 
 const PAGE_SIZE = 10;
 
-export default function DormidosPage(): JSX.Element {
+function DormidosContent(): JSX.Element {
   const [page, setPage] = useState(1);
   const [sortField, setSortField] = useState<SortField>("dias_sin_venta");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -204,5 +205,13 @@ export default function DormidosPage(): JSX.Element {
         />
       </Card>
     </div>
+  );
+}
+
+export default function DormidosPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="dormidos" featureName="Dormidos">
+      <DormidosContent />
+    </FeatureGuard>
   );
 }

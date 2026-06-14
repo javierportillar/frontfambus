@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePlanCompras } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -16,7 +17,7 @@ const ABC_VARIANT: Record<string, "success" | "warning" | "error"> = {
   C: "error",
 };
 
-export default function PlanComprasPage(): JSX.Element {
+function PlanComprasContent(): JSX.Element {
   const { data, error, isLoading } = usePlanCompras();
   const [filterAbc, setFilterAbc] = useState<string | null>(null);
   const [filterUrgencia, setFilterUrgencia] = useState<string | null>(null);
@@ -270,5 +271,13 @@ export default function PlanComprasPage(): JSX.Element {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function PlanComprasPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="plan-compras" featureName="Plan de Compras">
+      <PlanComprasContent />
+    </FeatureGuard>
   );
 }

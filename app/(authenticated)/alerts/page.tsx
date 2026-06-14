@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useAlerts } from "@/lib/api/hooks";
+import FeatureGuard from "@/components/ui/FeatureGuard";
 import { useAuthStore } from "@/lib/auth/store";
 import { Card } from "@/components/ui/Card";
 import { Badge, AlertBadge } from "@/components/ui/Badge";
@@ -23,7 +24,7 @@ const URGENCY_LABEL: Record<string, string> = {
   baja: "Baja",
 };
 
-export default function AlertsPage(): JSX.Element {
+function AlertsContent(): JSX.Element {
   const [filter, setFilter] = useState<string | undefined>(undefined);
   const [pushStatus, setPushStatus] = useState<"idle" | "loading" | "active" | "error">("idle");
   const [manageSku, setManageSku] = useState<string | null>(null);
@@ -237,5 +238,13 @@ export default function AlertsPage(): JSX.Element {
         />
       )}
     </div>
+  );
+}
+
+export default function AlertsPage(): JSX.Element {
+  return (
+    <FeatureGuard feature="alerts" featureName="Alertas de Stock">
+      <AlertsContent />
+    </FeatureGuard>
   );
 }
