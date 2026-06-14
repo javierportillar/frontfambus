@@ -29,6 +29,11 @@ export default function AuthenticatedLayout({
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
 
+  const items = useMemo(() => {
+    const all = role === "vendedor" ? vendedorNavItems() : gerenteNavItems();
+    return filterNavItems(all, enabledFeatures);
+  }, [role, enabledFeatures]);
+
   // M2: si el store ya hidrató pero no hay tenant → redirect al picker
   // (caso borde: el middleware no atajó porque la cookie se perdió)
   if (hasHydrated && currentTenant === null) {
@@ -40,11 +45,6 @@ export default function AuthenticatedLayout({
     logout();
     router.push("/login");
   }
-
-  const items = useMemo(() => {
-    const all = role === "vendedor" ? vendedorNavItems() : gerenteNavItems();
-    return filterNavItems(all, enabledFeatures);
-  }, [role, enabledFeatures]);
 
   return (
     <>
