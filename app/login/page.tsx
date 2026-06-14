@@ -63,9 +63,10 @@ export default function LoginPage(): JSX.Element {
       const me = await fetchMe();
       setAvailableTenants(me.tenants_allowed);
 
-      if (me.tenants_allowed.length === 1) {
+      const [onlyTenant] = me.tenants_allowed;
+      if (me.tenants_allowed.length === 1 && onlyTenant) {
         // Un solo tenant — setearlo directamente y redirigir al home
-        setTenant(me.tenants_allowed[0], me.enabled_features);
+        setTenant(onlyTenant, me.enabled_features);
         addToast("Bienvenido", "success");
         window.location.assign("/");
       } else {
