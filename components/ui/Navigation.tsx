@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { LogoMark } from "@/components/Logo";
 import { useAuthStore } from "@/lib/auth/store";
+import { useUIStore } from "@/lib/ui/store";
 import { getTenantDisplay } from "@/lib/tenant/config";
 
 // ─── Tipos ──────────────────────────────────────────────────────
@@ -123,11 +124,15 @@ function Sidebar({
   role,
   onLogout,
   isActive,
+  collapsed,
+  onToggle,
 }: {
   items: NavItem[];
   role?: string;
   onLogout?: () => void;
   isActive: (href: string) => boolean;
+  collapsed: boolean;
+  onToggle: () => void;
 }): JSX.Element {
   const router = useRouter();
   const currentTenant = useAuthStore((s) => s.currentTenant);
@@ -141,28 +146,41 @@ function Sidebar({
   }
 
   return (
-    <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-60 lg:flex-col">
-      {/* Fondo oscuro texturizado — acero de taller */}
-      <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-surface-dark px-4 py-6">
-        {/* Marca — con info del tenant activo (M2) */}
-        <div className="mb-2 flex items-center gap-3 px-2">
+    <aside
+      className={`hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 flex-col transition-all duration-300 ${
+        collapsed ? "lg:w-16" : "lg:w-60"
+      }`}
+    >
+      <div
+        className={`flex grow flex-col gap-y-5 overflow-y-auto bg-surface-dark transition-all duration-300 ${
+          collapsed ? "px-2 py-6" : "px-4 py-6"
+        }`}
+      >
+        {/* Marca — solo LogoMark cuando colapsado */}
+        <div
+          className={`flex items-center gap-3 ${
+            collapsed ? "justify-center px-0" : "px-2"
+          }`}
+        >
           <LogoMark size={28} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-text-inverse tracking-tight">
-              {tenantDisplay?.name ?? "MotoShop"}
-            </p>
-            <p className="text-[0.625rem] text-text-muted uppercase tracking-widest">
-              {role === "vendedor" ? "Vendedor" : "Gerencia"}
-            </p>
-            {currentTenant && (
-              <p className="mt-0.5 truncate text-[0.6rem] text-text-muted/60">
-                {tenantDisplay?.description ?? currentTenant}
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-text-inverse tracking-tight">
+                {tenantDisplay?.name ?? "MotoShop"}
               </p>
-            )}
-          </div>
+              <p className="text-[0.625rem] text-text-muted uppercase tracking-widest">
+                {role === "vendedor" ? "Vendedor" : "Gerencia"}
+              </p>
+              {currentTenant && (
+                <p className="mt-0.5 truncate text-[0.6rem] text-text-muted/60">
+                  {tenantDisplay?.description ?? currentTenant}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Separador — línea de soldadura */}
+        {/* Separador */}
         <div className="h-px bg-gradient-to-r from-surface-dark-alt via-border-strong/30 to-surface-dark-alt" />
 
         {/* Navegación */}
@@ -173,59 +191,88 @@ function Sidebar({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                title={collapsed ? item.label : undefined}
+                className={`group flex items-center gap-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5"
+                } ${
                   active
                     ? "bg-primary text-primary-fg shadow-sm"
                     : "text-text-muted hover:bg-surface-dark-alt hover:text-text-inverse"
                 }`}
               >
-                {/* Ícono */}
                 <span
                   className={`transition-transform duration-200 ${
-                    active
-                      ? ""
-                      : "group-hover:translate-x-0.5"
+                    active ? "" : "group-hover:translate-x-0.5"
                   }`}
                 >
                   {item.icon}
                 </span>
 
-                {/* Label */}
-                <span className="flex-1">{item.label}</span>
-
-                {/* Indicador activo — barra lateral */}
-                {active && (
-                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white/60" />
+                {!collapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {active && (
+                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white/60" />
+                    )}
+                  </>
                 )}
               </Link>
             );
           })}
         </nav>
 
-        {/* Footer — tenant switch + logout */}
+        {/* Footer — tenant switch + logout + toggle */}
         <div className="space-y-1">
           <div className="h-px bg-surface-dark-alt" />
 
-          {/* Cambiar negocio (M2) — solo si hay más de 1 tenant disponible */}
           {currentTenant && availableTenants.length > 1 && (
             <button
               onClick={handleCambiarNegocio}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-dark-alt hover:text-text-inverse"
+              title={collapsed ? "Cambiar negocio" : undefined}
+              className={`flex w-full items-center gap-3 rounded-lg text-sm font-medium transition-colors ${
+                collapsed
+                  ? "justify-center px-2 py-2.5"
+                  : "px-3 py-2.5"
+              } text-text-muted hover:bg-surface-dark-alt hover:text-text-inverse`}
             >
               {Icons.tenantSwitch}
-              <span>Cambiar negocio</span>
+              {!collapsed && <span>Cambiar negocio</span>}
             </button>
           )}
 
           {onLogout && (
             <button
               onClick={onLogout}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-error/10 hover:text-error"
+              title={collapsed ? "Salir" : undefined}
+              className={`flex w-full items-center gap-3 rounded-lg text-sm font-medium transition-colors ${
+                collapsed
+                  ? "justify-center px-2 py-2.5"
+                  : "px-3 py-2.5"
+              } text-text-muted hover:bg-error/10 hover:text-error`}
             >
               {Icons.logout}
-              <span>Salir</span>
+              {!collapsed && <span>Salir</span>}
             </button>
           )}
+
+          {/* Toggle colapsar/expandir */}
+          <button
+            onClick={onToggle}
+            title={collapsed ? "Expandir menú" : "Colapsar menú"}
+            className="flex w-full items-center justify-center rounded-lg py-2 text-text-muted transition-colors hover:bg-surface-dark-alt hover:text-text-inverse"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+              className={`h-4 w-4 transition-transform duration-300 ${
+                collapsed ? "" : "rotate-180"
+              }`}
+            >
+              <path d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
         </div>
       </div>
     </aside>
@@ -449,6 +496,8 @@ export function Navigation({
   className = "",
 }: NavigationProps): JSX.Element {
   const pathname = usePathname();
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
   const isActive = (href: string): boolean => {
     if (href === "/") return pathname === "/";
@@ -463,12 +512,14 @@ export function Navigation({
 
   return (
     <div className={className}>
-      {/* Sidebar desktop */}
+      {/* Sidebar desktop — colapsable */}
       <Sidebar
         items={enrichedItems}
         role={role}
         onLogout={onLogout}
         isActive={isActive}
+        collapsed={sidebarCollapsed}
+        onToggle={toggleSidebar}
       />
 
       {/* Bottom nav mobile */}

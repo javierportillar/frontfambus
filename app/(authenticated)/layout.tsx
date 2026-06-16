@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Navigation, gerenteNavItems, vendedorNavItems, type NavItem } from "@/components/ui/Navigation";
 import { useAuthStore } from "@/lib/auth/store";
+import { useUIStore } from "@/lib/ui/store";
 import { OfflineQueueBadge } from "@/components/OfflineQueueBadge";
 import { QueueScheduler } from "@/components/QueueScheduler";
 import { TenantTheme } from "@/components/TenantTheme";
@@ -29,6 +30,7 @@ export default function AuthenticatedLayout({
   const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
 
   const items = useMemo(() => {
     const all = role === "vendedor" ? vendedorNavItems() : gerenteNavItems();
@@ -51,7 +53,9 @@ export default function AuthenticatedLayout({
     <>
       <TenantTheme />
       <Navigation items={items} role={(role as "vendedor" | "admin" | "gerente") ?? "gerente"} onLogout={handleLogout} />
-      <main className="mx-auto w-full max-w-7xl px-4 pb-20 pt-4 lg:ml-60 lg:pb-8">
+      <main className={`mx-auto w-full max-w-7xl px-4 pb-20 pt-4 transition-all duration-300 lg:pb-8 ${
+        sidebarCollapsed ? "lg:ml-16" : "lg:ml-60"
+      }`}>
         {children}
       </main>
       <OfflineQueueBadge />
