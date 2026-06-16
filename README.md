@@ -85,8 +85,41 @@ Componentes clave:
 
 ## 6 · Branches activas
 
-- `main` — producción
-- `feat/m2-tenant-picker` — Sprint M2 (tenant picker + FeatureGuard + tests Playwright). **Pendiente PR.**
+- `main` — producción. Todo lo que está en `app.fragloesja.uk` viene de acá.
+
+> Branch del M2 (`feat/m2-tenant-picker`) fue mergeada a `main` el 2026-06-14.
+
+---
+
+## 6.5 · Estado funcional (qué hay vivo en prod)
+
+### Multi-tenant
+
+- Selector de tenant al login (`/select-tenant`). Si tenés un solo tenant en `tenants_allowed`, auto-seleccionás. Admin con ambos ve el picker.
+- Cookie `motoshop_tenant` (HttpOnly) persiste el tenant elegido.
+- `<TenantTheme>` aplica CSS variables del tenant activo al `:root` — sidebar, KPIs, charts. Cambio de tenant en vivo, sin reload.
+- `<Logo>` y `<LogoMark>` leen el logo del tenant del store (`lib/tenant/config.ts`).
+- Cada request al backend lleva header `X-Tenant`. El proxy `app/api/[...path]/route.ts` lo reenvía al FastAPI.
+- SWR cachea por `[tenant, url]` → al cambiar de negocio refetch inmediato, sin lag.
+- `<FeatureGuard>` bloquea dashboards opcionales si la feature no está en `enabled_features` del tenant.
+- **Mobile**: switcher de negocio + salir disponibles en el modal "Más" del bottom nav.
+
+### Sección Ventas (v1.9.x)
+
+- **Mensual**: KPIs, top 10 productos del mes con barras, margen bruto, mejor/peor día, vendedores top, forma de pago, aceleradores/frenadores vs mes anterior.
+- **Diaria**: calendario interactivo del mes. Cada celda muestra `$ventas + facturas + ticket + mini-bar`. **Click en un día → página dedicada** `/dashboards/ventas/dia/[date]`.
+- **Página del día**: KPIs, insight hora pico, distribución horaria, todos los productos vendidos (colapsable + buscador), todas las facturas con sus items (colapsables, filtros por forma de pago), vendedores, donut forma de pago, comparativas vs semana/mes/año pasado.
+- **Caja**: cierre del día tipo Z-report (desglose por forma de pago + lista de facturas + top tickets), tendencia histórica stacked bar 12 meses, variación del mix vs hace 6 meses.
+- **Histórica + Forecast**: gráficos heredados del repo original (siguen funcionando).
+
+### Formato monetario
+
+- `formatMoneyFull` (default en KPIs, celdas, tablas): `$1.300.000` exacto.
+- `formatMoney` (solo ejes Y de charts): `$1.3M` / `$24.7K` abreviado por espacio.
+
+### Otros dashboards heredados (siguen vivos)
+
+- Productos, Stock por bodega, Alertas de quiebre, Forecast, Chat IA (LLM), ABC segmentación, Dormidos, Vendedores, Plan de compras, Cohortes, Drift, Acciones recomendadas.
 
 ---
 
