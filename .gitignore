@@ -1,1 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Vercel CLI state
 .vercel
+
+# PWA service worker (auto-generated)
+public/sw.js
+public/workbox-*.js
+public/fallback-*.js
+
+# Test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Env files (nunca commitear)
+.env
+.env.local
+.env.production.local
+.env.development.local
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

@@ -7,6 +7,7 @@ import { Navigation, gerenteNavItems, vendedorNavItems, type NavItem } from "@/c
 import { useAuthStore } from "@/lib/auth/store";
 import { OfflineQueueBadge } from "@/components/OfflineQueueBadge";
 import { QueueScheduler } from "@/components/QueueScheduler";
+import { TenantTheme } from "@/components/TenantTheme";
 
 function filterNavItems(items: NavItem[], enabledFeatures: string[]): NavItem[] {
   return items.filter((item) => {
@@ -48,6 +49,7 @@ export default function AuthenticatedLayout({
 
   return (
     <>
+      <TenantTheme />
       <Navigation items={items} role={(role as "vendedor" | "admin" | "gerente") ?? "gerente"} onLogout={handleLogout} />
       <main className="mx-auto w-full max-w-7xl px-4 pb-20 pt-4 lg:ml-60 lg:pb-8">
         {children}

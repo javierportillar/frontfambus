@@ -10,7 +10,9 @@ export interface TenantDisplay {
   description: string;
   shortDescription: string;
   logo: string; // path relativo a /public/tenants/{slug}/
-  color: string; // color primario del tenant
+  color: string; // color primario (sidebar activo, énfasis, botones primarios)
+  accent: string; // color acento (chips, links, detalles)
+  surfaceTint: string; // tinte muy claro para fondos secundarios
 }
 
 const TENANT_DISPLAY: Record<string, TenantDisplay> = {
@@ -21,6 +23,8 @@ const TENANT_DISPLAY: Record<string, TenantDisplay> = {
     shortDescription: "Repuestos y accesorios para motocicletas",
     logo: "/tenants/motoshop/logo.png",
     color: "#7B1818",
+    accent: "#C83828",
+    surfaceTint: "#FBE9E7",
   },
   masvital: {
     slug: "masvital",
@@ -28,7 +32,13 @@ const TENANT_DISPLAY: Record<string, TenantDisplay> = {
     description: "Distribuidora de víveres y abarrotes",
     shortDescription: "Víveres, abarrotes y productos esenciales",
     logo: "/tenants/masvital/logo.png",
-    color: "#166534",
+    // Colores extraídos del logo "Más Vital Market":
+    //   color: verde forestal del texto "Vital" (#204020 levemente ajustado para vibrancia)
+    //   accent: verde lima de la hoja decorativa (#709030 ajustado)
+    //   surfaceTint: lavado pálido del verde para fondos secundarios
+    color: "#1F4E2A",
+    accent: "#84A33B",
+    surfaceTint: "#E8F1DE",
   },
 };
 
