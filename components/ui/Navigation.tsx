@@ -255,6 +255,7 @@ function BottomNav({
   const hasMenuItems = menuItems.length > 0;
   const menuActive = menuItems.some((item) => isActive(item.href));
   const canSwitchTenant = currentTenant && availableTenants.length > 1;
+  const showMasButton = hasMenuItems || canSwitchTenant || !!onLogout;
 
   function handleCambiarNegocio(): void {
     setOpen(false);
@@ -269,7 +270,7 @@ function BottomNav({
 
   return (
     <>
-      {open && hasMenuItems && (
+      {open && showMasButton && (
         <div className="fixed inset-0 z-50 bg-black/45 lg:hidden" onClick={() => setOpen(false)}>
           <div
             className="absolute inset-x-3 bottom-[4.6rem] max-h-[72vh] overflow-hidden rounded-[1.75rem] border border-white/10 bg-surface-dark text-text-inverse shadow-2xl"
@@ -278,9 +279,11 @@ function BottomNav({
             <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-4">
               <div>
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-white/40">
-                  Menú
+                  {hasMenuItems ? "Menú" : "Cuenta"}
                 </p>
-                <h2 className="mt-1 text-lg font-black">Todas las secciones</h2>
+                <h2 className="mt-1 text-lg font-black">
+                  {hasMenuItems ? "Todas las secciones" : "Tu negocio"}
+                </h2>
               </div>
               <button
                 type="button"
@@ -316,7 +319,13 @@ function BottomNav({
               {/* BUG-FIX 2026-06-16: en mobile no se podia cambiar de
                   negocio porque el sidebar es lg-only. Agregamos un
                   bloque "Cuenta" al pie del menu modal con el negocio
-                  actual + botones Cambiar negocio y Salir. */}
+                  actual + botones Cambiar negocio y Salir.
+
+                  BUG-FIX 2026-06-15: MasVital solo tiene 4 items de
+                  navegacion, por lo que el boton "Mas" no se mostraba
+                  (dependia de items.slice(4).length > 0). Se cambio
+                  la condicion a showMasButton que tambien considera
+                  canSwitchTenant y onLogout. */}
               <div className="mt-4 border-t border-white/10 pt-4">
                 <p className="px-1 text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-white/40">
                   Cuenta
@@ -392,7 +401,7 @@ function BottomNav({
                 </Link>
               );
             })}
-            {hasMenuItems && (
+            {showMasButton && (
               <button
                 type="button"
                 onClick={() => setOpen((value) => !value)}
@@ -402,7 +411,7 @@ function BottomNav({
                     : "text-text-muted hover:bg-surface-dark-alt hover:text-text-inverse"
                 }`}
                 aria-expanded={open}
-                aria-label="Abrir menú de secciones"
+                aria-label={hasMenuItems ? "Abrir menú de secciones" : "Abrir opciones de cuenta"}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
                   <path d="M4 7h16M4 12h16M4 17h16" />
