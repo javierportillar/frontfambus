@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -23,6 +23,7 @@ import { Table } from "@/components/ui/Table";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Calendar } from "@/components/ui/Calendar";
 import { CajaTab } from "@/components/sales/CajaTab";
+import { DayDetailContent } from "@/components/sales/DayDetailContent";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -77,6 +78,13 @@ function dayFromDate(date: string | undefined): number {
   return Number(date.slice(8, 10)) || 0;
 }
 
+/** Suma/resta días a una fecha ISO YYYY-MM-DD */
+function shiftDay(date: string, delta: number): string {
+  const d = new Date(`${date}T12:00:00`);
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
 // formatCurrencyFull movida a lib/format/currency.ts como `formatMoneyFull`.
 // Mantenemos este alias local SOLO porque varios call sites de abajo lo usan.
 // Si el tooltip de un grafico tiene contenido grande, esto formatea exacto
@@ -111,12 +119,20 @@ export default function VentasPage(): JSX.Element {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("mensual");
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  const [selectedDate, setSelectedDate] = useState<string>("");
 
   const selectedYear = Number(selectedMonth.slice(0, 4));
   const prevYearMonth = previousYearMonth(selectedMonth);
   const prevMonth = previousMonth(selectedMonth);
 
   const sales = useSalesSummaryV2();
+
+  useEffect(() => {
+    const maxDate = sales.data?.max_sales_date;
+    if (maxDate) {
+      setSelectedDate((prev) => prev || maxDate);
+    }
+  }, [sales.data?.max_sales_date]);
   const daily = useSalesDailyMonth(selectedMonth);
   const dailyPrevYear = useSalesDailyMonth(prevYearMonth);
   const dailyPrevMonth = useSalesDailyMonth(prevMonth);
@@ -200,6 +216,28 @@ export default function VentasPage(): JSX.Element {
             <Card><Stat label={`vs ${monthLabel(prevMonth)}`} value={pctDelta(monthlyTotal, prevMonthTotal)} subtitle={`${formatCurrencyFull(prevMonthTotal)} base`} /></Card>
             <Card><Stat label={`vs ${monthLabel(prevYearMonth)}`} value={pctDelta(monthlyTotal, prevYearTotal)} subtitle={`${formatCurrencyFull(prevYearTotal)} base`} /></Card>
           </div>
+
+          {/* Calendario del mes — click en un día te lleva al detalle diario */}
+          <Card
+            header={<h2 className="font-semibold text-text-primary">Calendario — {monthLabel(selectedMonth)}</h2>}
+          >
+            <Calendar
+              month={selectedMonth}
+              days={selectedDays
+                .filter((d) => d.sales > 0 || d.invoices > 0)
+                .map((d) => ({
+                  date: d.date,
+                  day: d.day,
+                  sales: d.sales,
+                  invoices: d.invoices,
+                  avgTicket: d.avg_ticket,
+                }))}
+              onDayClick={(date) => {
+                setSelectedDate(date);
+                setTab("diaria");
+              }}
+            />
+          </Card>
 
           <Card header={<h2 className="font-semibold text-text-primary">Evolución diaria — {monthLabel(selectedMonth)}</h2>}>
             <ResponsiveContainer width="100%" height={230}>
@@ -405,40 +443,55 @@ export default function VentasPage(): JSX.Element {
 
       {tab === "diaria" && (
         <>
+          {/* Navegación de fechas */}
           <Card
             header={
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-text-primary">Calendario — {monthLabel(selectedMonth)}</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-semibold text-text-primary">Detalle diario</h2>
                 <span className="text-xs text-text-muted">
-                  Click en un día para abrir el detalle completo
+                  Última fecha con datos: {d?.max_sales_date ?? "—"}
                 </span>
               </div>
             }
           >
-            <Calendar
-              month={selectedMonth}
-              days={selectedDays
-                .filter((d) => d.sales > 0 || d.invoices > 0)
-                .map((d) => ({
-                  date: d.date,
-                  day: d.day,
-                  sales: d.sales,
-                  invoices: d.invoices,
-                  avgTicket: d.avg_ticket,
-                }))}
-              onDayClick={(date) => router.push(`/dashboards/ventas/dia/${date}`)}
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedDate(shiftDay(selectedDate, -1))}
+                disabled={!selectedDate}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-sm transition hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Día anterior"
+              >
+                ◀
+              </button>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                max={d?.max_sales_date ?? undefined}
+                className="block rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedDate(shiftDay(selectedDate, 1))}
+                disabled={!selectedDate || selectedDate >= (d?.max_sales_date ?? "")}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-sm transition hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Día siguiente"
+              >
+                ▶
+              </button>
+              <span className="text-sm text-text-muted">
+                {selectedDate ? (() => {
+                  const dt = new Date(`${selectedDate}T00:00:00`);
+                  const days = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+                  const months = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+                  return `${days[dt.getDay()]}, ${dt.getDate()} de ${months[dt.getMonth()]} de ${dt.getFullYear()}`;
+                })() : "Seleccioná una fecha"}
+              </span>
+            </div>
           </Card>
 
-          <Card header={<h2 className="font-semibold text-text-primary">Tabla detallada</h2>}>
-            <Table columns={[
-              {header:"Día",cell:(r:DailyPoint)=>String(r.day).padStart(2,"0")},
-              {header:"Ventas",cell:(r:DailyPoint)=>formatCurrencyFull(r.sales),align:"right"},
-              {header:"Facturas",cell:(r:DailyPoint)=>String(r.invoices),align:"right"},
-              {header:"Acumulado",cell:(r:DailyPoint)=>formatCurrencyFull(r.accumulated),align:"right"},
-              {header:"Ticket",cell:(r:DailyPoint)=>formatCurrencyFull(r.avg_ticket),align:"right"},
-            ]} data={selectedDays} keyFn={(r:DailyPoint)=>r.date} striped />
-          </Card>
+          <DayDetailContent date={selectedDate} />
         </>
       )}
 
