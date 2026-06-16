@@ -494,6 +494,76 @@ export function useSalesMonthlyFor(month: string) {
   );
 }
 
+// ── V1.9.1 — Cash Closure & Payments History (tab Caja) ──────────────────
+
+export interface CashClosureFormaPago {
+  cod_formapago: string;
+  nombre: string;
+  total_ventas: number;
+  num_facturas: number;
+  ticket_promedio: number;
+  porcentaje: number;
+}
+
+export interface CashClosureFactura {
+  num_documento: string;
+  prefijo: string | null;
+  hora: string;
+  cliente: string;
+  vendedor: string;
+  cod_formapago: string;
+  nombre_formapago: string;
+  total: number;
+}
+
+export interface CashClosureResponse {
+  date: string;
+  total_dia: number;
+  total_facturas: number;
+  formas_pago: CashClosureFormaPago[];
+  facturas: CashClosureFactura[];
+  top_facturas_grandes: CashClosureFactura[];
+}
+
+export function useCashClosure(date: string | null) {
+  return useMetrics<CashClosureResponse>(
+    date ? `/api/metrics/cash-closure?date=${date}` : null,
+  );
+}
+
+export interface PaymentsHistoryFormaSimple {
+  cod_formapago: string;
+  nombre: string;
+  total_ventas: number;
+}
+
+export interface PaymentsHistoryMonth {
+  month: string; // YYYY-MM
+  total: number;
+  formas_pago: PaymentsHistoryFormaSimple[];
+}
+
+export interface PaymentsVariacionItem {
+  cod_formapago: string;
+  nombre: string;
+  pct_actual: number;
+  pct_seis_meses_atras: number;
+  delta_puntos: number;
+}
+
+export interface PaymentsHistoryResponse {
+  months: number;
+  formas_pago: { cod_formapago: string; nombre: string }[];
+  series: PaymentsHistoryMonth[];
+  variacion_seis_meses: PaymentsVariacionItem[];
+}
+
+export function usePaymentsHistory(months: number = 12) {
+  return useMetrics<PaymentsHistoryResponse>(
+    `/api/metrics/payments-history?months=${months}`,
+  );
+}
+
 interface SalesHistoricalResponse {
   total_ventas: number;
   total_facturas: number;

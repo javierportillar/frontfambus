@@ -22,13 +22,14 @@ import { Table } from "@/components/ui/Table";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Calendar } from "@/components/ui/Calendar";
 import { DayDetailModal } from "@/components/sales/DayDetailModal";
+import { CajaTab } from "@/components/sales/CajaTab";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-type Tab = "mensual" | "diaria" | "historica" | "forecast";
+type Tab = "mensual" | "diaria" | "historica" | "forecast" | "caja";
 
 type DailyPoint = {
   date: string;
@@ -156,8 +157,8 @@ export default function VentasPage(): JSX.Element {
 
   if (!d) return <div className="p-4"><Skeleton className="h-60 rounded-xl" /></div>;
 
-  const tabs: Tab[] = ["mensual","diaria","historica","forecast"];
-  const labels: Record<Tab,string> = {mensual:"Mensual",diaria:"Diaria",historica:"Histórica",forecast:"Forecast"};
+  const tabs: Tab[] = ["mensual","diaria","caja","historica","forecast"];
+  const labels: Record<Tab,string> = {mensual:"Mensual",diaria:"Diaria",caja:"Caja",historica:"Histórica",forecast:"Forecast"};
 
   const comparisonData = Array.from({ length: visibleDays }, (_, index) => {
     const day = index + 1;
@@ -514,6 +515,8 @@ export default function VentasPage(): JSX.Element {
           <p className="text-xs text-text-muted mt-1">Modelo: {df.model_version}</p>
         </Card>
       )}
+
+      {tab === "caja" && <CajaTab />}
 
       {/* V1.9: Modal popup detalle del dia (sirve a la tab Diaria) */}
       <DayDetailModal
