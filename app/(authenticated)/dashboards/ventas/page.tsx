@@ -16,7 +16,7 @@ import {
   type VendedorDayItem,
   type TopSkuItem,
 } from "@/lib/api/hooks";
-import { formatMoney } from "@/lib/format/currency";
+import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -77,9 +77,11 @@ function dayFromDate(date: string | undefined): number {
   return Number(date.slice(8, 10)) || 0;
 }
 
-function formatCurrencyFull(value: number): string {
-  return `$${Math.round(value || 0).toLocaleString("es-CO")}`;
-}
+// formatCurrencyFull movida a lib/format/currency.ts como `formatMoneyFull`.
+// Mantenemos este alias local SOLO porque varios call sites de abajo lo usan.
+// Si el tooltip de un grafico tiene contenido grande, esto formatea exacto
+// ($1.300.000) como prefiere el usuario en lugar de $1.3M.
+const formatCurrencyFull = formatMoneyFull;
 
 function pctDelta(current: number, previous: number): string {
   if (!previous) return "—";
@@ -192,9 +194,9 @@ export default function VentasPage(): JSX.Element {
       {tab === "mensual" && (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <Card><Stat label="Ventas del mes" value={formatMoney(monthlyTotal)} subtitle={`${dm?.total_days_with_sales ?? 0} días con venta · ${monthLabel(selectedMonth)}`} /></Card>
+            <Card><Stat label="Ventas del mes" value={formatMoneyFull(monthlyTotal)} subtitle={`${dm?.total_days_with_sales ?? 0} días con venta · ${monthLabel(selectedMonth)}`} /></Card>
             <Card><Stat label="Facturas" value={monthlyInvoices.toLocaleString("es-CO")} subtitle="mes seleccionado" /></Card>
-            <Card><Stat label="Ticket promedio" value={formatMoney(monthlyTicket)} subtitle="por factura" /></Card>
+            <Card><Stat label="Ticket promedio" value={formatMoneyFull(monthlyTicket)} subtitle="por factura" /></Card>
             <Card><Stat label={`vs ${monthLabel(prevMonth)}`} value={pctDelta(monthlyTotal, prevMonthTotal)} subtitle={`${formatCurrencyFull(prevMonthTotal)} base`} /></Card>
             <Card><Stat label={`vs ${monthLabel(prevYearMonth)}`} value={pctDelta(monthlyTotal, prevYearTotal)} subtitle={`${formatCurrencyFull(prevYearTotal)} base`} /></Card>
           </div>
@@ -271,7 +273,7 @@ export default function VentasPage(): JSX.Element {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold text-text-primary">{formatMoney(sku.valor_total)}</div>
+                        <div className="text-sm font-semibold text-text-primary">{formatMoneyFull(sku.valor_total)}</div>
                         <div className="text-[10px] text-text-muted">
                           {sku.cantidad_total.toLocaleString("es-CO")} u
                           {sku.porcentaje_ingreso !== null && sku.porcentaje_ingreso !== undefined ? ` · ${sku.porcentaje_ingreso.toFixed(1)}%` : ""}
@@ -291,21 +293,21 @@ export default function VentasPage(): JSX.Element {
                 <Card>
                   <Stat
                     label="Margen bruto"
-                    value={formatMoney(monthDetail.data.margen_bruto)}
+                    value={formatMoneyFull(monthDetail.data.margen_bruto)}
                     subtitle={monthDetail.data.margen_porcentaje !== null ? `${monthDetail.data.margen_porcentaje.toFixed(1)}% del revenue` : "—"}
                   />
                 </Card>
                 <Card>
                   <Stat
                     label="Mejor día"
-                    value={monthDetail.data.mejor_dia ? formatMoney(monthDetail.data.mejor_dia.total_ventas) : "—"}
+                    value={monthDetail.data.mejor_dia ? formatMoneyFull(monthDetail.data.mejor_dia.total_ventas) : "—"}
                     subtitle={monthDetail.data.mejor_dia ? `${monthDetail.data.mejor_dia.date} · ${monthDetail.data.mejor_dia.num_facturas} fact` : ""}
                   />
                 </Card>
                 <Card>
                   <Stat
                     label="Peor día"
-                    value={monthDetail.data.peor_dia ? formatMoney(monthDetail.data.peor_dia.total_ventas) : "—"}
+                    value={monthDetail.data.peor_dia ? formatMoneyFull(monthDetail.data.peor_dia.total_ventas) : "—"}
                     subtitle={monthDetail.data.peor_dia ? `${monthDetail.data.peor_dia.date} · ${monthDetail.data.peor_dia.num_facturas} fact` : ""}
                   />
                 </Card>
@@ -313,7 +315,7 @@ export default function VentasPage(): JSX.Element {
                   <Stat
                     label="Top vendedor"
                     value={monthDetail.data.vendedores_top[0]?.nombre_vendedor ?? "—"}
-                    subtitle={monthDetail.data.vendedores_top[0] ? formatMoney(monthDetail.data.vendedores_top[0].total_ventas) : ""}
+                    subtitle={monthDetail.data.vendedores_top[0] ? formatMoneyFull(monthDetail.data.vendedores_top[0].total_ventas) : ""}
                   />
                 </Card>
               </div>
@@ -330,7 +332,7 @@ export default function VentasPage(): JSX.Element {
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-text-secondary">{f.nombre}</span>
                             <span className="font-semibold text-text-primary">
-                              {formatMoney(f.total_ventas)} <span className="text-text-muted text-xs font-normal">({f.porcentaje.toFixed(0)}%)</span>
+                              {formatMoneyFull(f.total_ventas)} <span className="text-text-muted text-xs font-normal">({f.porcentaje.toFixed(0)}%)</span>
                             </span>
                           </div>
                           <div className="h-1.5 mt-1 rounded-full bg-surface-alt overflow-hidden">
@@ -350,7 +352,7 @@ export default function VentasPage(): JSX.Element {
                       columns={[
                         { header: "#", cell: (_: VendedorDayItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
                         { header: "Vendedor", cell: (r: VendedorDayItem) => r.nombre_vendedor },
-                        { header: "Ventas", cell: (r: VendedorDayItem) => formatMoney(r.total_ventas), align: "right" },
+                        { header: "Ventas", cell: (r: VendedorDayItem) => formatMoneyFull(r.total_ventas), align: "right" },
                         { header: "Fact.", cell: (r: VendedorDayItem) => String(r.num_facturas), align: "right" },
                         { header: "%", cell: (r: VendedorDayItem) => (r.porcentaje !== null ? `${r.porcentaje.toFixed(1)}%` : "—"), align: "right" },
                       ]}
@@ -373,7 +375,7 @@ export default function VentasPage(): JSX.Element {
                         {monthDetail.data.aceleradores.map((p: TopSkuItem) => (
                           <li key={p.cod_producto} className="flex items-start justify-between gap-2">
                             <span className="text-sm text-text-primary">{p.nom_producto}</span>
-                            <span className="text-sm font-semibold text-green-700 shrink-0">{formatMoney(p.valor_total)}</span>
+                            <span className="text-sm font-semibold text-green-700 shrink-0">{formatMoneyFull(p.valor_total)}</span>
                           </li>
                         ))}
                       </ul>
@@ -388,7 +390,7 @@ export default function VentasPage(): JSX.Element {
                         {monthDetail.data.frenadores.map((p: TopSkuItem) => (
                           <li key={p.cod_producto} className="flex items-start justify-between gap-2">
                             <span className="text-sm text-text-primary">{p.nom_producto}</span>
-                            <span className="text-sm font-semibold text-red-700 shrink-0">{formatMoney(p.valor_total)}</span>
+                            <span className="text-sm font-semibold text-red-700 shrink-0">{formatMoneyFull(p.valor_total)}</span>
                           </li>
                         ))}
                       </ul>
@@ -494,8 +496,8 @@ export default function VentasPage(): JSX.Element {
       {tab === "forecast" && df && (
         <Card header={<h2 className="font-semibold text-text-primary">Proyección</h2>}>
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <Card><Stat label={df.current_month.month} value={formatMoney(df.current_month.projected_amount)} subtitle={`${df.current_month.days_observed}/${df.current_month.days_total}d · ${formatMoney(df.current_month.observed_amount??0)} real`} /></Card>
-            <Card><Stat label={df.next_month.month} value={formatMoney(df.next_month.projected_amount)} subtitle={`${df.next_month.days_total} días (${df.next_month.confidence})`} /></Card>
+            <Card><Stat label={df.current_month.month} value={formatMoneyFull(df.current_month.projected_amount)} subtitle={`${df.current_month.days_observed}/${df.current_month.days_total}d · ${formatMoneyFull(df.current_month.observed_amount??0)} real`} /></Card>
+            <Card><Stat label={df.next_month.month} value={formatMoneyFull(df.next_month.projected_amount)} subtitle={`${df.next_month.days_total} días (${df.next_month.confidence})`} /></Card>
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={[

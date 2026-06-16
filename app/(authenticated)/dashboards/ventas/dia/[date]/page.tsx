@@ -12,7 +12,7 @@ import {
   type FormaPagoItem,
   type VendedorDayItem,
 } from "@/lib/api/hooks";
-import { formatMoney } from "@/lib/format/currency";
+import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -135,12 +135,12 @@ function DayContent({
     <>
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Card><Stat label="Ventas del día" value={formatMoney(detail.total_ventas)} subtitle={`${detail.total_facturas} facturas`} /></Card>
-        <Card><Stat label="Ticket promedio" value={formatMoney(detail.ticket_promedio)} subtitle={`Max ${formatMoney(detail.ticket_mas_alto)}`} /></Card>
+        <Card><Stat label="Ventas del día" value={formatMoneyFull(detail.total_ventas)} subtitle={`${detail.total_facturas} facturas`} /></Card>
+        <Card><Stat label="Ticket promedio" value={formatMoneyFull(detail.ticket_promedio)} subtitle={`Max ${formatMoneyFull(detail.ticket_mas_alto)}`} /></Card>
         <Card>
           <Stat
             label="Margen bruto"
-            value={formatMoney(detail.margen_bruto)}
+            value={formatMoneyFull(detail.margen_bruto)}
             subtitle={detail.margen_porcentaje !== null ? `${detail.margen_porcentaje.toFixed(1)}% del revenue` : "—"}
           />
         </Card>
@@ -166,7 +166,7 @@ function DayContent({
               <XAxis dataKey="hour" tickFormatter={(h: number) => hourLabel(h)} tick={{ fontSize: 10 }} stroke="#a3a3a3" />
               <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
               <Tooltip
-                formatter={(value) => formatMoney(Number(value))}
+                formatter={(value) => formatMoneyFull(Number(value))}
                 labelFormatter={(h) => hourLabel(Number(h))}
                 contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
               />
@@ -203,7 +203,7 @@ function DayContent({
                 { header: "SKU", cell: (r: SalesDailyItem) => <span className="text-xs text-text-muted">{r.sku}</span> },
                 { header: "Producto", cell: (r: SalesDailyItem) => <span className="text-xs">{r.nombre}</span> },
                 { header: "Cant.", cell: (r: SalesDailyItem) => r.cantidad.toString(), align: "right" },
-                { header: "Valor", cell: (r: SalesDailyItem) => <span className="font-medium">{formatMoney(r.valor)}</span>, align: "right" },
+                { header: "Valor", cell: (r: SalesDailyItem) => <span className="font-medium">{formatMoneyFull(r.valor)}</span>, align: "right" },
               ]}
               data={productosFiltrados}
               keyFn={(r: SalesDailyItem, idx?: number) => `${r.sku}-${idx ?? 0}`}
@@ -284,7 +284,7 @@ function DayContent({
               columns={[
                 { header: "#", cell: (_: VendedorDayItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
                 { header: "Vendedor", cell: (r: VendedorDayItem) => <span className="text-xs">{r.nombre_vendedor}</span> },
-                { header: "Ventas", cell: (r: VendedorDayItem) => formatMoney(r.total_ventas), align: "right" },
+                { header: "Ventas", cell: (r: VendedorDayItem) => formatMoneyFull(r.total_ventas), align: "right" },
                 { header: "Fact.", cell: (r: VendedorDayItem) => r.num_facturas.toString(), align: "right" },
                 { header: "%", cell: (r: VendedorDayItem) => (r.porcentaje !== null ? `${r.porcentaje.toFixed(1)}%` : "—"), align: "right" },
               ]}
@@ -340,7 +340,7 @@ function DayContent({
                 <div key={c.label} className="rounded-lg border border-border bg-surface-alt/40 px-3 py-2">
                   <div className="text-xs text-text-muted capitalize">{c.label}</div>
                   <div className="text-[10px] text-text-muted">{c.fecha_comparada}</div>
-                  <div className="mt-1 text-base font-semibold text-text-primary">{formatMoney(c.total_ventas)}</div>
+                  <div className="mt-1 text-base font-semibold text-text-primary">{formatMoneyFull(c.total_ventas)}</div>
                   <div className={`text-xs font-medium ${positive ? "text-green-600" : negative ? "text-red-600" : "text-text-muted"}`}>
                     {c.delta_porcentaje === null ? "—" : `${positive ? "+" : ""}${c.delta_porcentaje.toFixed(1)}%`}
                   </div>
@@ -372,7 +372,7 @@ function InvoiceCard({ invoice }: { invoice: DayInvoice }): JSX.Element {
             {invoice.nombre_formapago}
           </span>
           <span className="ml-auto text-sm font-bold text-text-primary">
-            {formatMoney(invoice.total)}
+            {formatMoneyFull(invoice.total)}
           </span>
         </div>
       }
@@ -380,18 +380,18 @@ function InvoiceCard({ invoice }: { invoice: DayInvoice }): JSX.Element {
     >
       <div className="mb-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
         <div><span className="text-text-muted">Vendedor:</span> <strong>{invoice.vendedor}</strong></div>
-        <div><span className="text-text-muted">Subtotal:</span> <strong>{formatMoney(invoice.subtotal)}</strong></div>
-        <div><span className="text-text-muted">Descuento:</span> <strong>{formatMoney(invoice.total_descuentos)}</strong></div>
-        <div><span className="text-text-muted">IVA:</span> <strong>{formatMoney(invoice.total_iva)}</strong></div>
+        <div><span className="text-text-muted">Subtotal:</span> <strong>{formatMoneyFull(invoice.subtotal)}</strong></div>
+        <div><span className="text-text-muted">Descuento:</span> <strong>{formatMoneyFull(invoice.total_descuentos)}</strong></div>
+        <div><span className="text-text-muted">IVA:</span> <strong>{formatMoneyFull(invoice.total_iva)}</strong></div>
       </div>
       <Table
         columns={[
           { header: "SKU", cell: (r: InvoiceItem) => <span className="text-xs text-text-muted">{r.cod_producto}</span> },
           { header: "Producto", cell: (r: InvoiceItem) => <span className="text-xs">{r.nombre}</span> },
           { header: "Cant.", cell: (r: InvoiceItem) => r.cantidad.toString(), align: "right" },
-          { header: "P. Unit.", cell: (r: InvoiceItem) => formatMoney(r.valor_unitario), align: "right" },
-          { header: "Dcto", cell: (r: InvoiceItem) => (r.descuento_valor > 0 ? formatMoney(r.descuento_valor) : "—"), align: "right" },
-          { header: "Total", cell: (r: InvoiceItem) => <span className="font-semibold">{formatMoney(r.total_detalle)}</span>, align: "right" },
+          { header: "P. Unit.", cell: (r: InvoiceItem) => formatMoneyFull(r.valor_unitario), align: "right" },
+          { header: "Dcto", cell: (r: InvoiceItem) => (r.descuento_valor > 0 ? formatMoneyFull(r.descuento_valor) : "—"), align: "right" },
+          { header: "Total", cell: (r: InvoiceItem) => <span className="font-semibold">{formatMoneyFull(r.total_detalle)}</span>, align: "right" },
         ]}
         data={invoice.items}
         keyFn={(r: InvoiceItem) => `${r.num_item}-${r.cod_producto}`}

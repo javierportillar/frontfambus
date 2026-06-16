@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatMoney } from "@/lib/format/currency";
+import { formatMoneyFull } from "@/lib/format/currency";
 
 export interface CalendarDayData {
   /** YYYY-MM-DD */
@@ -110,7 +110,7 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
                   : "cursor-default opacity-50",
                 isWeekend && !hasData && "bg-surface-alt",
               ].filter(Boolean).join(" ")}
-              aria-label={`${cell.day} de ${monthStr}: ${formatMoney(data?.sales ?? 0)} en ventas`}
+              aria-label={`${cell.day} de ${monthStr}: ${formatMoneyFull(data?.sales ?? 0)} en ventas`}
             >
               {/* Día número */}
               <div className="flex items-center justify-between">
@@ -130,13 +130,16 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
               {/* Métricas */}
               {hasData ? (
                 <div className="mt-auto">
-                  <div className="text-sm font-bold text-text-primary leading-tight">
-                    {formatMoney(data.sales)}
+                  <div
+                    className="text-xs font-bold text-text-primary leading-tight tabular-nums"
+                    title={`${formatMoneyFull(data.sales)} · ${data.invoices} facturas · ticket ${formatMoneyFull(data.avgTicket)}`}
+                  >
+                    {formatMoneyFull(data.sales)}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
                     <span>{data.invoices} fac</span>
                     <span>·</span>
-                    <span>{formatMoney(data.avgTicket)}</span>
+                    <span className="tabular-nums">{formatMoneyFull(data.avgTicket)}</span>
                   </div>
                   {/* Mini-bar de intensidad */}
                   <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-alt">

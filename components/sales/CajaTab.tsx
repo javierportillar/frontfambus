@@ -8,7 +8,7 @@ import {
   type CashClosureFormaPago,
   type PaymentsVariacionItem,
 } from "@/lib/api/hooks";
-import { formatMoney } from "@/lib/format/currency";
+import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -121,25 +121,25 @@ export function CajaTab(): JSX.Element {
         <>
           {/* KPIs cierre */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Card><Stat label="Total del día" value={formatMoney(closure.data.total_dia)} subtitle={`${closure.data.total_facturas} facturas`} /></Card>
+            <Card><Stat label="Total del día" value={formatMoneyFull(closure.data.total_dia)} subtitle={`${closure.data.total_facturas} facturas`} /></Card>
             <Card>
               <Stat
                 label="Forma principal"
                 value={closure.data.formas_pago[0]?.nombre ?? "—"}
-                subtitle={closure.data.formas_pago[0] ? `${closure.data.formas_pago[0].porcentaje.toFixed(0)}% — ${formatMoney(closure.data.formas_pago[0].total_ventas)}` : ""}
+                subtitle={closure.data.formas_pago[0] ? `${closure.data.formas_pago[0].porcentaje.toFixed(0)}% — ${formatMoneyFull(closure.data.formas_pago[0].total_ventas)}` : ""}
               />
             </Card>
             <Card>
               <Stat
                 label="Ticket promedio"
-                value={formatMoney(closure.data.total_facturas ? closure.data.total_dia / closure.data.total_facturas : 0)}
+                value={formatMoneyFull(closure.data.total_facturas ? closure.data.total_dia / closure.data.total_facturas : 0)}
                 subtitle="del día"
               />
             </Card>
             <Card>
               <Stat
                 label="Top factura"
-                value={closure.data.top_facturas_grandes[0] ? formatMoney(closure.data.top_facturas_grandes[0].total) : "—"}
+                value={closure.data.top_facturas_grandes[0] ? formatMoneyFull(closure.data.top_facturas_grandes[0].total) : "—"}
                 subtitle={closure.data.top_facturas_grandes[0]?.nombre_formapago ?? ""}
               />
             </Card>
@@ -171,8 +171,8 @@ export function CajaTab(): JSX.Element {
                   ),
                 },
                 { header: "Facturas", cell: (r: CashClosureFormaPago) => r.num_facturas.toString(), align: "right" },
-                { header: "Ticket prom", cell: (r: CashClosureFormaPago) => formatMoney(r.ticket_promedio), align: "right" },
-                { header: "Total", cell: (r: CashClosureFormaPago) => <span className="font-semibold">{formatMoney(r.total_ventas)}</span>, align: "right" },
+                { header: "Ticket prom", cell: (r: CashClosureFormaPago) => formatMoneyFull(r.ticket_promedio), align: "right" },
+                { header: "Total", cell: (r: CashClosureFormaPago) => <span className="font-semibold">{formatMoneyFull(r.total_ventas)}</span>, align: "right" },
                 {
                   header: "%",
                   cell: (r: CashClosureFormaPago) => (
@@ -192,7 +192,7 @@ export function CajaTab(): JSX.Element {
             />
             <div className="mt-3 flex items-center justify-end gap-3 border-t border-border pt-2 text-sm">
               <span className="text-text-muted">TOTAL DÍA</span>
-              <span className="text-base font-bold text-text-primary">{formatMoney(closure.data.total_dia)}</span>
+              <span className="text-base font-bold text-text-primary">{formatMoneyFull(closure.data.total_dia)}</span>
             </div>
             {filterForma && (
               <p className="mt-1 text-[11px] text-text-muted text-right">
@@ -219,7 +219,7 @@ export function CajaTab(): JSX.Element {
                       </span>
                     ),
                   },
-                  { header: "Total", cell: (r: CashClosureFactura) => <span className="font-semibold">{formatMoney(r.total)}</span>, align: "right" },
+                  { header: "Total", cell: (r: CashClosureFactura) => <span className="font-semibold">{formatMoneyFull(r.total)}</span>, align: "right" },
                 ]}
                 data={closure.data.top_facturas_grandes}
                 keyFn={(r: CashClosureFactura) => `${r.prefijo ?? ""}-${r.num_documento}`}
@@ -253,7 +253,7 @@ export function CajaTab(): JSX.Element {
                       </span>
                     ),
                   },
-                  { header: "Total", cell: (r: CashClosureFactura) => <span className="text-xs font-semibold">{formatMoney(r.total)}</span>, align: "right" },
+                  { header: "Total", cell: (r: CashClosureFactura) => <span className="text-xs font-semibold">{formatMoneyFull(r.total)}</span>, align: "right" },
                 ]}
                 data={facturasFiltradas}
                 keyFn={(r: CashClosureFactura) => `${r.prefijo ?? ""}-${r.num_documento}`}
@@ -279,7 +279,7 @@ export function CajaTab(): JSX.Element {
               <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="#a3a3a3" />
               <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
               <Tooltip
-                formatter={(value, name) => [formatMoney(Number(value)), history.data?.formas_pago.find((f) => f.cod_formapago === name)?.nombre ?? name]}
+                formatter={(value, name) => [formatMoneyFull(Number(value)), history.data?.formas_pago.find((f) => f.cod_formapago === name)?.nombre ?? name]}
                 contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
               />
               <Legend

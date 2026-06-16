@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuthStore } from "@/lib/auth/store";
 import { getTenantDisplay } from "@/lib/tenant/config";
 import { useSalesSummaryV2, useInventorySummary, useAlerts, useDormidos, useSalesTrendByYear } from "@/lib/api/hooks";
-import { formatMoney } from "@/lib/format/currency";
+import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
@@ -97,7 +97,7 @@ function GerenteHome(): JSX.Element {
           <Card hover className="cursor-pointer">
             <Stat
               label="Ventas del mes"
-              value={sales.data ? formatMoney(sales.data.current_month_accumulated) : "—"}
+              value={sales.data ? formatMoneyFull(sales.data.current_month_accumulated) : "—"}
               subtitle={sales.data ? `Acumulado ${sales.data.current_month_days_with_sales} días` : ""}
               icon={
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -128,7 +128,7 @@ function GerenteHome(): JSX.Element {
           <Card hover className="cursor-pointer">
             <Stat
               label="Ticket promedio"
-              value={sales.data ? formatMoney(sales.data.ticket_promedio) : "—"}
+              value={sales.data ? formatMoneyFull(sales.data.ticket_promedio) : "—"}
               subtitle="por factura"
               icon={
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -144,7 +144,7 @@ function GerenteHome(): JSX.Element {
           <Card hover className="cursor-pointer">
             <Stat
               label="Valor inventario"
-              value={inventory.data ? formatMoney(inventory.data.valor_total) : "—"}
+              value={inventory.data ? formatMoneyFull(inventory.data.valor_total) : "—"}
               subtitle={`${inventory.data?.num_productos ?? "—"} productos`}
               icon={
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -204,7 +204,7 @@ function GerenteHome(): JSX.Element {
             <Card hover className="cursor-pointer">
               <Stat
                 label="Ventas"
-                value={sales.data ? formatMoney(sales.data.current_month_accumulated) : "—"}
+                value={sales.data ? formatMoneyFull(sales.data.current_month_accumulated) : "—"}
                 subtitle="Ver detalle →"
               />
             </Card>
