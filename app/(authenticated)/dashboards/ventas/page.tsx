@@ -9,12 +9,19 @@ import {
   useSalesHistorical,
   useSalesTrend,
   useSalesTrendByYear,
+  useSalesMonthDetail,
+  useSalesMonthlyFor,
+  type FormaPagoItem,
+  type VendedorDayItem,
+  type TopSkuItem,
 } from "@/lib/api/hooks";
 import { formatMoney } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Calendar } from "@/components/ui/Calendar";
+import { DayDetailModal } from "@/components/sales/DayDetailModal";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -100,6 +107,8 @@ function fillDailySeries(days: DailyPoint[] | undefined, month: string, visibleD
 export default function VentasPage(): JSX.Element {
   const [tab, setTab] = useState<Tab>("mensual");
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  // V1.9: estado del modal del día (popup del calendario)
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const selectedYear = Number(selectedMonth.slice(0, 4));
   const prevYearMonth = previousYearMonth(selectedMonth);
@@ -113,6 +122,10 @@ export default function VentasPage(): JSX.Element {
   const fc = useSalesForecastMonthly();
   const trend = useSalesTrend(24);
   const trendPrev = useSalesTrendByYear(selectedYear - 1);
+  // V1.9: detalle enriquecido del mes (margen, vendedores, forma de pago, aceleradores)
+  const monthDetail = useSalesMonthDetail(selectedMonth);
+  // V1.9: top productos del mes seleccionado (para card "más vendidos")
+  const monthly = useSalesMonthlyFor(selectedMonth);
 
   const d = sales.data;
   const dm = daily.data;
@@ -240,19 +253,192 @@ export default function VentasPage(): JSX.Element {
               </LineChart>
             </ResponsiveContainer>
           </Card>
+
+          {/* V1.9: top productos del mes seleccionado */}
+          {monthly.data && monthly.data.productos_top.length > 0 && (
+            <Card header={<h2 className="font-semibold text-text-primary">Productos más vendidos del mes — top 10</h2>}>
+              <div className="space-y-1.5">
+                {monthly.data.productos_top.slice(0, 10).map((sku: TopSkuItem, idx: number) => {
+                  const maxValor = monthly.data!.productos_top[0]?.valor_total ?? 1;
+                  const intensity = maxValor ? sku.valor_total / maxValor : 0;
+                  return (
+                    <div key={sku.cod_producto} className="flex items-center gap-3">
+                      <span className="w-6 text-right text-xs font-bold text-text-muted">{idx + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-text-primary truncate">{sku.nom_producto}</div>
+                        <div className="h-1.5 mt-1 rounded-full bg-surface-alt overflow-hidden">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(5, intensity * 100)}%` }} />
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-semibold text-text-primary">{formatMoney(sku.valor_total)}</div>
+                        <div className="text-[10px] text-text-muted">
+                          {sku.cantidad_total.toLocaleString("es-CO")} u
+                          {sku.porcentaje_ingreso !== null && sku.porcentaje_ingreso !== undefined ? ` · ${sku.porcentaje_ingreso.toFixed(1)}%` : ""}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {monthDetail.data && (
+            <>
+              {/* Margen, mejor/peor día */}
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Card>
+                  <Stat
+                    label="Margen bruto"
+                    value={formatMoney(monthDetail.data.margen_bruto)}
+                    subtitle={monthDetail.data.margen_porcentaje !== null ? `${monthDetail.data.margen_porcentaje.toFixed(1)}% del revenue` : "—"}
+                  />
+                </Card>
+                <Card>
+                  <Stat
+                    label="Mejor día"
+                    value={monthDetail.data.mejor_dia ? formatMoney(monthDetail.data.mejor_dia.total_ventas) : "—"}
+                    subtitle={monthDetail.data.mejor_dia ? `${monthDetail.data.mejor_dia.date} · ${monthDetail.data.mejor_dia.num_facturas} fact` : ""}
+                  />
+                </Card>
+                <Card>
+                  <Stat
+                    label="Peor día"
+                    value={monthDetail.data.peor_dia ? formatMoney(monthDetail.data.peor_dia.total_ventas) : "—"}
+                    subtitle={monthDetail.data.peor_dia ? `${monthDetail.data.peor_dia.date} · ${monthDetail.data.peor_dia.num_facturas} fact` : ""}
+                  />
+                </Card>
+                <Card>
+                  <Stat
+                    label="Top vendedor"
+                    value={monthDetail.data.vendedores_top[0]?.nombre_vendedor ?? "—"}
+                    subtitle={monthDetail.data.vendedores_top[0] ? formatMoney(monthDetail.data.vendedores_top[0].total_ventas) : ""}
+                  />
+                </Card>
+              </div>
+
+              {/* Forma de pago + Vendedores top */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Card header={<h2 className="font-semibold text-text-primary">Forma de pago del mes</h2>}>
+                  {monthDetail.data.formas_pago.length === 0 ? (
+                    <p className="py-4 text-sm text-text-muted text-center">Sin datos.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {monthDetail.data.formas_pago.map((f: FormaPagoItem) => (
+                        <div key={f.cod_formapago}>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-text-secondary">{f.nombre}</span>
+                            <span className="font-semibold text-text-primary">
+                              {formatMoney(f.total_ventas)} <span className="text-text-muted text-xs font-normal">({f.porcentaje.toFixed(0)}%)</span>
+                            </span>
+                          </div>
+                          <div className="h-1.5 mt-1 rounded-full bg-surface-alt overflow-hidden">
+                            <div className="h-full rounded-full bg-accent" style={{ width: `${f.porcentaje}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+
+                <Card header={<h2 className="font-semibold text-text-primary">Vendedores top del mes</h2>}>
+                  {monthDetail.data.vendedores_top.length === 0 ? (
+                    <p className="py-4 text-sm text-text-muted text-center">Sin datos de vendedor.</p>
+                  ) : (
+                    <Table
+                      columns={[
+                        { header: "#", cell: (_: VendedorDayItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
+                        { header: "Vendedor", cell: (r: VendedorDayItem) => r.nombre_vendedor },
+                        { header: "Ventas", cell: (r: VendedorDayItem) => formatMoney(r.total_ventas), align: "right" },
+                        { header: "Fact.", cell: (r: VendedorDayItem) => String(r.num_facturas), align: "right" },
+                        { header: "%", cell: (r: VendedorDayItem) => (r.porcentaje !== null ? `${r.porcentaje.toFixed(1)}%` : "—"), align: "right" },
+                      ]}
+                      data={monthDetail.data.vendedores_top.slice(0, 7)}
+                      keyFn={(r: VendedorDayItem, idx?: number) => `${r.nit_vendedor ?? ""}-${idx ?? 0}`}
+                      striped
+                    />
+                  )}
+                </Card>
+              </div>
+
+              {/* Aceleradores / Frenadores */}
+              {(monthDetail.data.aceleradores.length > 0 || monthDetail.data.frenadores.length > 0) && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Card header={<h2 className="font-semibold text-green-700">📈 Aceleradores — más crecieron vs mes anterior</h2>}>
+                    {monthDetail.data.aceleradores.length === 0 ? (
+                      <p className="py-4 text-sm text-text-muted text-center">Sin datos.</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {monthDetail.data.aceleradores.map((p: TopSkuItem) => (
+                          <li key={p.cod_producto} className="flex items-start justify-between gap-2">
+                            <span className="text-sm text-text-primary">{p.nom_producto}</span>
+                            <span className="text-sm font-semibold text-green-700 shrink-0">{formatMoney(p.valor_total)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Card>
+
+                  <Card header={<h2 className="font-semibold text-red-700">📉 Frenadores — más cayeron vs mes anterior</h2>}>
+                    {monthDetail.data.frenadores.length === 0 ? (
+                      <p className="py-4 text-sm text-text-muted text-center">No hay productos en caída relevante.</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {monthDetail.data.frenadores.map((p: TopSkuItem) => (
+                          <li key={p.cod_producto} className="flex items-start justify-between gap-2">
+                            <span className="text-sm text-text-primary">{p.nom_producto}</span>
+                            <span className="text-sm font-semibold text-red-700 shrink-0">{formatMoney(p.valor_total)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Card>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 
       {tab === "diaria" && (
-        <Card header={<h2 className="font-semibold text-text-primary">Detalle diario — {monthLabel(selectedMonth)}</h2>}>
-          <Table columns={[
-            {header:"Día",cell:(r:DailyPoint)=>String(r.day).padStart(2,"0")},
-            {header:"Ventas",cell:(r:DailyPoint)=>formatCurrencyFull(r.sales),align:"right"},
-            {header:"Facturas",cell:(r:DailyPoint)=>String(r.invoices),align:"right"},
-            {header:"Acumulado",cell:(r:DailyPoint)=>formatCurrencyFull(r.accumulated),align:"right"},
-            {header:"Ticket",cell:(r:DailyPoint)=>formatCurrencyFull(r.avg_ticket),align:"right"},
-          ]} data={selectedDays} keyFn={(r:DailyPoint)=>r.date} striped />
-        </Card>
+        <>
+          <Card
+            header={
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-text-primary">Calendario — {monthLabel(selectedMonth)}</h2>
+                <span className="text-xs text-text-muted">
+                  Click en un día para ver el detalle con horas, productos y vendedores
+                </span>
+              </div>
+            }
+          >
+            <Calendar
+              month={selectedMonth}
+              days={selectedDays
+                .filter((d) => d.sales > 0 || d.invoices > 0)
+                .map((d) => ({
+                  date: d.date,
+                  day: d.day,
+                  sales: d.sales,
+                  invoices: d.invoices,
+                  avgTicket: d.avg_ticket,
+                }))}
+              onDayClick={(date) => setSelectedDate(date)}
+              selectedDate={selectedDate ?? undefined}
+            />
+          </Card>
+
+          <Card header={<h2 className="font-semibold text-text-primary">Tabla detallada</h2>}>
+            <Table columns={[
+              {header:"Día",cell:(r:DailyPoint)=>String(r.day).padStart(2,"0")},
+              {header:"Ventas",cell:(r:DailyPoint)=>formatCurrencyFull(r.sales),align:"right"},
+              {header:"Facturas",cell:(r:DailyPoint)=>String(r.invoices),align:"right"},
+              {header:"Acumulado",cell:(r:DailyPoint)=>formatCurrencyFull(r.accumulated),align:"right"},
+              {header:"Ticket",cell:(r:DailyPoint)=>formatCurrencyFull(r.avg_ticket),align:"right"},
+            ]} data={selectedDays} keyFn={(r:DailyPoint)=>r.date} striped />
+          </Card>
+        </>
       )}
 
       {tab === "historica" && dh && (
@@ -328,6 +514,13 @@ export default function VentasPage(): JSX.Element {
           <p className="text-xs text-text-muted mt-1">Modelo: {df.model_version}</p>
         </Card>
       )}
+
+      {/* V1.9: Modal popup detalle del dia (sirve a la tab Diaria) */}
+      <DayDetailModal
+        isOpen={selectedDate !== null}
+        onClose={() => setSelectedDate(null)}
+        date={selectedDate}
+      />
     </div>
   );
 }

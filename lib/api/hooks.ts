@@ -378,7 +378,7 @@ export function useVendedorDetail(vendedorId: string | null, period = "month") {
 
 // ── Sales Daily / Historical ────────────────────────────────────────────
 
-interface SalesDailyItem {
+export interface SalesDailyItem {
   sku: string;
   nombre: string;
   cantidad: number;
@@ -395,6 +395,103 @@ interface SalesDailyResponse {
 export function useSalesDaily(date?: string) {
   const qs = date ? `?date=${date}` : "";
   return useMetrics<SalesDailyResponse>(`/api/metrics/sales-daily${qs}`);
+}
+
+// ── V1.9 — Sales day & month detail (popup calendario, mensual enriquecido) ──
+
+export interface SalesHourBucket {
+  hour: number;
+  total_ventas: number;
+  num_facturas: number;
+  ticket_promedio: number;
+}
+
+export interface VendedorDayItem {
+  nombre_vendedor: string;
+  nit_vendedor: string | null;
+  total_ventas: number;
+  num_facturas: number;
+  porcentaje: number | null;
+}
+
+export interface FormaPagoItem {
+  cod_formapago: string;
+  nombre: string;
+  total_ventas: number;
+  num_facturas: number;
+  porcentaje: number;
+}
+
+export interface DayComparativa {
+  label: string;
+  fecha_comparada: string;
+  total_ventas: number;
+  delta_porcentaje: number | null;
+}
+
+export interface SalesDayDetailResponse {
+  date: string;
+  total_ventas: number;
+  total_facturas: number;
+  ticket_promedio: number;
+  margen_bruto: number;
+  margen_porcentaje: number | null;
+  items_por_factura: number;
+  ticket_mas_alto: number;
+  distribucion_horaria: SalesHourBucket[];
+  hora_pico: number | null;
+  productos_top: SalesDailyItem[];
+  vendedores_top: VendedorDayItem[];
+  formas_pago: FormaPagoItem[];
+  comparativas: DayComparativa[];
+}
+
+export function useSalesDayDetail(date: string | null) {
+  return useMetrics<SalesDayDetailResponse>(
+    date ? `/api/metrics/sales-day-detail?date=${date}` : null,
+  );
+}
+
+// TopSkuItem ya definido arriba (linea ~79). Lo re-exportamos para que
+// los componentes consumers (page.tsx) puedan tipar usando el mismo shape.
+export type { TopSkuItem };
+
+export interface SalesMonthDetailResponse {
+  month: string;
+  margen_bruto: number;
+  margen_porcentaje: number | null;
+  vendedores_top: VendedorDayItem[];
+  formas_pago: FormaPagoItem[];
+  mejor_dia: { date: string; total_ventas: number; num_facturas: number } | null;
+  peor_dia: { date: string; total_ventas: number; num_facturas: number } | null;
+  aceleradores: TopSkuItem[];
+  frenadores: TopSkuItem[];
+}
+
+export function useSalesMonthDetail(month: string) {
+  return useMetrics<SalesMonthDetailResponse>(
+    `/api/metrics/sales-month-detail?month=${month}`,
+  );
+}
+
+export interface SalesMonthlyForResponse {
+  month: string;
+  total_ventas: number;
+  total_facturas: number;
+  delta_porcentaje: number | null;
+  productos_top: TopSkuItem[];
+}
+
+/**
+ * Igual que sales-summary pero parametrizado por mes (el summary clasico
+ * siempre devuelve el mes actual, este puede ser cualquiera). Lo usamos
+ * para alimentar el card "Productos mas vendidos del mes" cuando el
+ * usuario cambia el selector de mes.
+ */
+export function useSalesMonthlyFor(month: string) {
+  return useMetrics<SalesMonthlyForResponse>(
+    `/api/metrics/sales-monthly?month=${month}`,
+  );
 }
 
 interface SalesHistoricalResponse {
