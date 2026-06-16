@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useSalesSummaryV2,
   useSalesDailyMonth,
@@ -21,7 +22,6 @@ import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Calendar } from "@/components/ui/Calendar";
-import { DayDetailModal } from "@/components/sales/DayDetailModal";
 import { CajaTab } from "@/components/sales/CajaTab";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
@@ -106,10 +106,9 @@ function fillDailySeries(days: DailyPoint[] | undefined, month: string, visibleD
 }
 
 export default function VentasPage(): JSX.Element {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("mensual");
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
-  // V1.9: estado del modal del día (popup del calendario)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const selectedYear = Number(selectedMonth.slice(0, 4));
   const prevYearMonth = previousYearMonth(selectedMonth);
@@ -409,7 +408,7 @@ export default function VentasPage(): JSX.Element {
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold text-text-primary">Calendario — {monthLabel(selectedMonth)}</h2>
                 <span className="text-xs text-text-muted">
-                  Click en un día para ver el detalle con horas, productos y vendedores
+                  Click en un día para abrir el detalle completo
                 </span>
               </div>
             }
@@ -425,8 +424,7 @@ export default function VentasPage(): JSX.Element {
                   invoices: d.invoices,
                   avgTicket: d.avg_ticket,
                 }))}
-              onDayClick={(date) => setSelectedDate(date)}
-              selectedDate={selectedDate ?? undefined}
+              onDayClick={(date) => router.push(`/dashboards/ventas/dia/${date}`)}
             />
           </Card>
 
@@ -517,13 +515,6 @@ export default function VentasPage(): JSX.Element {
       )}
 
       {tab === "caja" && <CajaTab />}
-
-      {/* V1.9: Modal popup detalle del dia (sirve a la tab Diaria) */}
-      <DayDetailModal
-        isOpen={selectedDate !== null}
-        onClose={() => setSelectedDate(null)}
-        date={selectedDate}
-      />
     </div>
   );
 }

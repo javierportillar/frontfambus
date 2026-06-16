@@ -564,6 +564,50 @@ export function usePaymentsHistory(months: number = 12) {
   );
 }
 
+// ── V1.9.2 — Sales Day Invoices (página dedicada del día) ────────────────
+
+export interface InvoiceItem {
+  num_item: number;
+  cod_producto: string;
+  nombre: string;
+  cantidad: number;
+  valor_unitario: number;
+  descuento_valor: number;
+  iva_valor: number;
+  total_detalle: number;
+  cod_bodega: string | null;
+}
+
+export interface DayInvoice {
+  num_documento: string;
+  cod_clase: string;
+  prefijo: string | null;
+  hora: string;
+  cliente: string;
+  vendedor: string;
+  cod_formapago: string;
+  nombre_formapago: string;
+  subtotal: number;
+  total_descuentos: number;
+  total_iva: number;
+  total: number;
+  items: InvoiceItem[];
+}
+
+export interface SalesDayInvoicesResponse {
+  date: string;
+  total_facturas: number;
+  total_dia: number;
+  total_items: number;
+  invoices: DayInvoice[];
+}
+
+export function useSalesDayInvoices(date: string | null) {
+  return useMetrics<SalesDayInvoicesResponse>(
+    date ? `/api/metrics/sales-day-invoices?date=${date}` : null,
+  );
+}
+
 interface SalesHistoricalResponse {
   total_ventas: number;
   total_facturas: number;
