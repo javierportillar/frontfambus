@@ -1,6 +1,7 @@
 import useSWR, { type KeyedMutator } from "swr";
 import { apiFetch, apiFetchJson } from "./client";
 import { getCached, setCache } from "@/lib/offline/cache";
+import { useAuthStore } from "@/lib/auth/store";
 
 interface Product {
   codprod: string;
@@ -49,27 +50,33 @@ async function fetchWithOfflineFallback<T>(
 
 export function useProducts(query: string, page = 1, limit = 20) {
   const offset = (page - 1) * limit;
-  const key = `/api/products?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
+  const url = `/api/products?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
+  const tenant = useAuthStore((s) => s.currentTenant) ?? "_no_tenant";
+  const swrKey: readonly [string, string] = [tenant, url];
 
   return useSWR<ProductsResponse>(
-    key,
-    (url) => fetchWithOfflineFallback<ProductsResponse>(url, CACHE_TTL_CATALOG),
+    swrKey,
+    (k: readonly [string, string]) => fetchWithOfflineFallback<ProductsResponse>(k[1], CACHE_TTL_CATALOG),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30_000,
+      keepPreviousData: false,
     },
   );
 }
 
 export function useStock(sku: string | null) {
-  const key = sku ? `/api/products/${encodeURIComponent(sku)}/stock` : null;
+  const url = sku ? `/api/products/${encodeURIComponent(sku)}/stock` : null;
+  const tenant = useAuthStore((s) => s.currentTenant) ?? "_no_tenant";
+  const swrKey: readonly [string, string] | null = url ? [tenant, url] : null;
 
   return useSWR<StockResponse>(
-    key,
-    (url) => fetchWithOfflineFallback<StockResponse>(url, CACHE_TTL_STOCK),
+    swrKey,
+    (k: readonly [string, string]) => fetchWithOfflineFallback<StockResponse>(k[1], CACHE_TTL_STOCK),
     {
       revalidateOnFocus: false,
       dedupingInterval: 10_000,
+      keepPreviousData: false,
     },
   );
 }
@@ -158,11 +165,31 @@ function useMetrics<T>(key: string | null): {
   isLoading: boolean;
   mutate: KeyedMutator<T>;
 } {
-  const { data, error, isLoading, mutate } = useSWR<T>(key, apiFetchJson<T>, {
+  // BUG-FIX 2026-06-16: la cache key de SWR era solo la URL, sin el tenant.
+  // Al cambiar de negocio, SWR devolvia el response cacheado del tenant
+  // anterior porque la key /api/metrics/foo es identica. Resultado: ~2 min
+  // de datos congelados hasta el siguiente refresh.
+  //
+  // Fix: incluir currentTenant en la cache key como tupla [tenant, url].
+  // SWR considera arrays como keys distintas → al cambiar tenant, la key
+  // cambia → SWR refetch inmediato, no espera el dedupingInterval.
+  // Las entradas viejas se mantienen en cache (no las purgamos) pero ya
+  // no se devuelven, asi que volver al tenant original tampoco refetch.
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const swrKey: readonly [string, string] | null = key && currentTenant
+    ? [currentTenant, key]
+    : key
+      ? ["_no_tenant", key]
+      : null;
+
+  const fetcher = (k: readonly [string, string]): Promise<T> => apiFetchJson<T>(k[1]);
+
+  const { data, error, isLoading, mutate } = useSWR<T>(swrKey, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: DEDUP_METRICS,
     refreshInterval: 60_000, // refresh cada 60s (F7-PERF-1)
+    keepPreviousData: false, // al cambiar tenant, NO mostrar datos viejos del anterior
   });
   return { data, error, isLoading, mutate };
 }
@@ -737,11 +764,14 @@ interface ForecastResponse {
 const FORECAST_DEDUP = 60_000;
 
 export function useForecast(sku: string | null, horizon: number) {
-  const key = sku ? `/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}` : null;
-  return useSWR<ForecastResponse>(key, apiFetchJson<ForecastResponse>, {
+  const url = sku ? `/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}` : null;
+  const tenant = useAuthStore((s) => s.currentTenant) ?? "_no_tenant";
+  const swrKey: readonly [string, string] | null = url ? [tenant, url] : null;
+  return useSWR<ForecastResponse>(swrKey, (k: readonly [string, string]) => apiFetchJson<ForecastResponse>(k[1]), {
     revalidateOnFocus: false,
     dedupingInterval: FORECAST_DEDUP,
     refreshInterval: 5 * 60_000,
+    keepPreviousData: false,
   });
 }
 
@@ -783,13 +813,16 @@ interface AlertsResponse {
 
 export function useAlerts(urgency?: string) {
   const qs = urgency ? `?urgency=${urgency}` : "";
+  const tenant = useAuthStore((s) => s.currentTenant) ?? "_no_tenant";
+  const swrKey: readonly [string, string] = [tenant, `/api/alerts/stockout${qs}`];
   return useSWR<AlertsResponse>(
-    `/api/alerts/stockout${qs}`,
-    apiFetchJson<AlertsResponse>,
+    swrKey,
+    (k: readonly [string, string]) => apiFetchJson<AlertsResponse>(k[1]),
     {
       revalidateOnFocus: false,
       dedupingInterval: FORECAST_DEDUP,
       refreshInterval: 5 * 60_000,
+      keepPreviousData: false,
     },
   );
 }
@@ -802,10 +835,12 @@ interface ForecastNarrativeResponse {
 }
 
 export function useForecastNarrative() {
+  const tenant = useAuthStore((s) => s.currentTenant) ?? "_no_tenant";
+  const swrKey: readonly [string, string] = [tenant, "/api/llm/forecast/explain"];
   return useSWR<ForecastNarrativeResponse>(
-    "/api/llm/forecast/explain",
-    async (url: string) => {
-      const resp = await apiFetch(url, {
+    swrKey,
+    async (k: readonly [string, string]) => {
+      const resp = await apiFetch(k[1], {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -819,6 +854,7 @@ export function useForecastNarrative() {
       revalidateOnFocus: false,
       dedupingInterval: 60 * 60 * 1000, // 1h cache cliente
       refreshInterval: 0, // no auto-refresh
+      keepPreviousData: false,
     },
   );
 }

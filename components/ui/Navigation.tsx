@@ -237,15 +237,35 @@ function Sidebar({
 function BottomNav({
   items,
   isActive,
+  onLogout,
 }: {
   items: NavItem[];
   isActive: (href: string) => boolean;
+  onLogout?: () => void;
 }): JSX.Element {
+  const router = useRouter();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const availableTenants = useAuthStore((s) => s.availableTenants);
+  const clearTenant = useAuthStore((s) => s.clearTenant);
+  const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : null;
+
   const [open, setOpen] = useState(false);
   const primaryItems = items.slice(0, 4);
   const menuItems = items.slice(4);
   const hasMenuItems = menuItems.length > 0;
   const menuActive = menuItems.some((item) => isActive(item.href));
+  const canSwitchTenant = currentTenant && availableTenants.length > 1;
+
+  function handleCambiarNegocio(): void {
+    setOpen(false);
+    clearTenant();
+    router.push("/select-tenant");
+  }
+
+  function handleLogout(): void {
+    setOpen(false);
+    onLogout?.();
+  }
 
   return (
     <>
@@ -291,6 +311,53 @@ function BottomNav({
                     </Link>
                   );
                 })}
+              </div>
+
+              {/* BUG-FIX 2026-06-16: en mobile no se podia cambiar de
+                  negocio porque el sidebar es lg-only. Agregamos un
+                  bloque "Cuenta" al pie del menu modal con el negocio
+                  actual + botones Cambiar negocio y Salir. */}
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <p className="px-1 text-[0.65rem] font-semibold uppercase tracking-[0.24em] text-white/40">
+                  Cuenta
+                </p>
+                {currentTenant && (
+                  <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary/20 text-primary font-bold text-xs">
+                      {(tenantDisplay?.name ?? currentTenant).slice(0, 1).toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-white">
+                        {tenantDisplay?.name ?? currentTenant}
+                      </p>
+                      <p className="truncate text-[0.65rem] text-white/50">
+                        {tenantDisplay?.description ?? "Negocio activo"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-2 space-y-1">
+                  {canSwitchTenant && (
+                    <button
+                      type="button"
+                      onClick={handleCambiarNegocio}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-white/80 transition-colors active:bg-white/10"
+                    >
+                      {Icons.tenantSwitch}
+                      <span>Cambiar negocio</span>
+                    </button>
+                  )}
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-300 transition-colors active:bg-red-500/10"
+                    >
+                      {Icons.logout}
+                      <span>Salir</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -396,7 +463,7 @@ export function Navigation({
       />
 
       {/* Bottom nav mobile */}
-      <BottomNav items={enrichedItems} isActive={isActive} />
+      <BottomNav items={enrichedItems} isActive={isActive} onLogout={onLogout} />
     </div>
   );
 }
