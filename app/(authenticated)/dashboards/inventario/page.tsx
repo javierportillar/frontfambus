@@ -42,6 +42,18 @@ type SortField =
   | "abc"
   | "nom_producto";
 
+type SortDir = "desc" | "asc";
+
+interface SortCriterion {
+  field: SortField;
+  dir: SortDir;
+}
+
+// Convierte SortCriterion[] al string de API: "-es_dormido,-dias_sin_venta,abc"
+function sortsToParam(sorts: SortCriterion[]): string {
+  return sorts.map((s) => (s.dir === "desc" ? `-${s.field}` : s.field)).join(",");
+}
+
 type InventoryItem = {
   cod_producto: string;
   nom_producto: string;
@@ -389,14 +401,21 @@ function MovementsSection({
 
 function SortHeader({
   column,
-  currentSort,
+  sorts,
   onSort,
 }: {
   column: SortConfig;
-  currentSort: SortField;
-  onSort: (field: SortField) => void;
+  sorts: SortCriterion[];
+  onSort: (field: SortField, multi?: boolean) => void;
 }): JSX.Element {
-  const isActive = currentSort === column.field;
+  const active = sorts.findIndex((s) => s.field === column.field);
+  const isActive = active >= 0;
+  const activeSort = isActive ? sorts[active] : null;
+
+  function handleClick(event: React.MouseEvent): void {
+    onSort(column.field, event.metaKey || event.ctrlKey);
+  }
+
   return (
     <th
       className={`px-4 py-3 text-[0.68rem] uppercase tracking-[0.16em] transition-colors ${
@@ -404,14 +423,19 @@ function SortHeader({
           ? "cursor-pointer select-none hover:bg-surface-dark/5"
           : ""
       } ${column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"}`}
-      onClick={() => column.sortable && onSort(column.field)}
+      onClick={handleClick}
     >
       <span className={`inline-flex items-center gap-1 ${isActive ? "text-primary" : "text-text-muted"}`}>
+        {isActive && (
+          <span className="flex h-4 w-4 items-center justify-center rounded bg-primary/10 text-[9px] font-bold text-primary">
+            {active + 1}
+          </span>
+        )}
         {column.label}
         {column.sortable && (
           <svg viewBox="0 0 12 12" fill="currentColor" className={`h-3 w-3 transition-opacity ${isActive ? "opacity-100" : "opacity-30"}`}>
             <path d="M6 2l4 4H2z" />
-            <path d="M6 10l-4-4h8z" className={isActive ? "" : "opacity-40"} />
+            <path d="M6 10l-4-4h8z" className={!isActive || activeSort?.dir === "asc" ? "" : "opacity-40"} />
           </svg>
         )}
       </span>
@@ -421,13 +445,13 @@ function SortHeader({
 
 function ProductTable({
   items,
-  sortBy,
+  sorts,
   onSort,
   onProductClick,
 }: {
   items: InventoryItem[];
-  sortBy: SortField;
-  onSort: (field: SortField) => void;
+  sorts: SortCriterion[];
+  onSort: (field: SortField, multi?: boolean) => void;
   onProductClick: (sku: string) => void;
 }): JSX.Element {
   return (
@@ -438,7 +462,7 @@ function ProductTable({
             <tr className="border-b border-border bg-surface-alt">
               <th className="px-4 py-3 text-left text-[0.68rem] uppercase tracking-[0.16em] text-text-muted">SKU</th>
               {TABLE_COLUMNS.map((col) => (
-                <SortHeader key={col.field} column={col} currentSort={sortBy} onSort={onSort} />
+                <SortHeader key={col.field} column={col} sorts={sorts} onSort={onSort} />
               ))}
             </tr>
           </thead>
@@ -495,7 +519,7 @@ export default function InventarioPage(): JSX.Element {
   const [stockFilter, setStockFilter] = useState<StockFilter>("todos");
   const [dormidoFilter, setDormidoFilter] = useState<DormidoFilter>("todos");
   const [abcFilter, setAbcFilter] = useState("");
-  const [sortBy, setSortBy] = useState<SortField>("valor_inventario");
+  const [sorts, setSorts] = useState<SortCriterion[]>([{ field: "valor_inventario", dir: "desc" }]);
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
   const summary = useInventorySummary();
@@ -505,7 +529,7 @@ export default function InventarioPage(): JSX.Element {
     30,
     search || undefined,
     undefined,
-    sortBy,
+    sortsToParam(sorts),
     stockFilter,
     dormidoFilter,
     abcFilter || undefined,
@@ -552,9 +576,35 @@ export default function InventarioPage(): JSX.Element {
 
   const invariantBroken = discrepancies.data?.summary && !discrepancies.data.summary.invariant_ok;
 
-  function handleSort(field: SortField): void {
-    setSortBy(field);
+  function handleSort(field: SortField, multi = false): void {
     setPage(1);
+    if (multi) {
+      // Ctrl/Cmd+click: toggle field en la lista multi-sort
+      setSorts((prev) => {
+        const existing = prev.findIndex((s) => s.field === field);
+        if (existing >= 0) {
+          // Si ya está, toggle dirección o quitarlo
+          const current = prev[existing]!;
+          if (current.dir === "desc") {
+            const next = [...prev];
+            next[existing] = { field, dir: "asc" };
+            return next;
+          }
+          return prev.filter((s) => s.field !== field);
+        }
+        // Agregar al final
+        return [...prev, { field, dir: "desc" }];
+      });
+    } else {
+      // Click normal: reemplazar todo
+      setSorts((prev) => {
+        if (prev.length === 1 && prev[0]?.field === field) {
+          // Toggle direction
+          return [{ field, dir: prev[0].dir === "desc" ? "asc" : "desc" }];
+        }
+        return [{ field, dir: "desc" }];
+      });
+    }
   }
 
   if (summary.error || detail.error) {
@@ -622,6 +672,148 @@ export default function InventarioPage(): JSX.Element {
         </Card>
       )}
 
+      {/* ── Explorador de productos ── */}
+      <Card
+        header={
+          <div className="space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-lg font-black text-text-primary">Explorador de productos</h2>
+                <p className="text-xs text-text-muted">{total.toLocaleString("es-CO")} productos encontrados. Hacé clic en una fila para ver detalle.</p>
+              </div>
+              <div className="text-xs text-text-muted">Página {page} de {totalPages}</div>
+            </div>
+
+            <div className="grid gap-2 md:grid-cols-[1.35fr_0.75fr]">
+              <input
+                type="search"
+                placeholder="Buscar descripción o SKU, ej: retenedor, balinera, WSHRU…"
+                value={search}
+                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+                className="rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+              <select
+                value={abcFilter}
+                onChange={(event) => { setAbcFilter(event.target.value); setPage(1); }}
+                className="rounded-2xl border border-border bg-surface px-3 py-3 text-sm text-text-primary outline-none focus:border-primary"
+              >
+                <option value="">ABC todos</option>
+                <option value="A">ABC A</option>
+                <option value="B">ABC B</option>
+                <option value="C">ABC C</option>
+              </select>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <SegmentedButton active={stockFilter} value="todos" onClick={(v) => { setStockFilter(v); setPage(1); }}>Todo stock</SegmentedButton>
+              <SegmentedButton active={stockFilter} value="con_stock" onClick={(v) => { setStockFilter(v); setPage(1); }}>Con stock</SegmentedButton>
+              <SegmentedButton active={stockFilter} value="sin_stock" onClick={(v) => { setStockFilter(v); setPage(1); }}>Sin stock</SegmentedButton>
+              <SegmentedButton active={dormidoFilter} value="todos" onClick={(v) => { setDormidoFilter(v); setPage(1); }}>Todos</SegmentedButton>
+              <SegmentedButton active={dormidoFilter} value="true" onClick={(v) => { setDormidoFilter(v); setPage(1); }}>Dormidos</SegmentedButton>
+              <SegmentedButton active={dormidoFilter} value="false" onClick={(v) => { setDormidoFilter(v); setPage(1); }}>Activos</SegmentedButton>
+            </div>
+
+            {/* Chips de orden activo */}
+            {sorts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Orden:</span>
+                {sorts.map((s, i) => (
+                  <span key={s.field} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
+                    <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-primary/20 text-[9px] font-bold">{i + 1}</span>
+                    {TABLE_COLUMNS.find((c) => c.field === s.field)?.label ?? s.field}
+                    <span className="text-primary/60">{s.dir === "desc" ? "↓" : "↑"}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPage(1);
+                        setSorts((prev) => prev.filter((x) => x.field !== s.field));
+                      }}
+                      className="ml-0.5 rounded-full p-0.5 text-primary/50 hover:bg-primary/20 hover:text-primary"
+                      aria-label={`Quitar orden ${s.field}`}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+                {sorts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => { setPage(1); setSorts((prev) => { const f = prev[0]?.field ?? "valor_inventario"; return [{ field: f, dir: "desc" }]; }); }}
+                    className="text-[10px] text-text-muted underline hover:text-primary"
+                  >
+                    Limpiar
+                  </button>
+                )}
+                <span className="text-[10px] text-text-muted ml-1">· Ctrl+click para multi-orden</span>
+              </div>
+            )}
+          </div>
+        }
+      >
+        {detail.isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
+        ) : items.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-surface-alt p-8 text-center text-sm text-text-muted">Sin productos para esos filtros.</div>
+        ) : (
+          <>
+            <div className="space-y-3 md:hidden">
+              {items.map((item) => (
+                <button
+                  type="button"
+                  key={`${item.cod_producto}-${item.cod_bodega}`}
+                  className="w-full text-left"
+                  onClick={() => setSelectedSku(item.cod_producto)}
+                >
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-surface p-3 transition hover:border-primary/30">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-text">{item.nom_producto}</p>
+                      <p className="text-xs text-text-muted">{item.cod_producto} · {item.nom_bodega}</p>
+                      <p className="mt-1 text-xs">
+                        Stock: <span className="font-semibold">{item.stock_actual}</span>
+                        {item.dias_sin_venta > 0 && (
+                          <span className="ml-2 text-text-muted">· {item.dias_sin_venta} días sin venta</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="ml-3 text-right">
+                      <p className="text-sm font-semibold text-text">${compactNumber(item.valor_inventario)}</p>
+                      {item.es_dormido && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Dormido</span>}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <ProductTable
+              items={items}
+              sorts={sorts}
+              onSort={handleSort}
+              onProductClick={setSelectedSku}
+            />
+          </>
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded-full bg-surface-alt px-4 py-2 text-xs font-semibold text-text-secondary transition hover:bg-surface-dark/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ← Anterior
+          </button>
+          <span className="text-xs text-text-muted">{page} / {totalPages}</span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="rounded-full bg-surface-dark px-4 py-2 text-xs font-semibold text-text-inverse transition hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Siguiente →
+          </button>
+        </div>
+      </Card>
+
+      {/* ── Top 10 Leaderboards ── */}
       <section className="grid gap-3 xl:grid-cols-2">
         <LeaderboardCard
           title="Top 10 con más unidades"
@@ -693,124 +885,6 @@ export default function InventarioPage(): JSX.Element {
           <p className="mt-2 text-xs text-text-muted">Bodega se oculta porque la fuente actual llega sin nombre útil; mostrar &quot;Sin nombre&quot; repetido no ayuda a decidir.</p>
         </Card>
       </section>
-
-      <Card
-        header={
-          <div className="space-y-3">
-            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h2 className="text-lg font-black text-text-primary">Explorador de productos</h2>
-                <p className="text-xs text-text-muted">{total.toLocaleString("es-CO")} productos encontrados. Hacé clic en una fila para ver detalle.</p>
-              </div>
-              <div className="text-xs text-text-muted">Página {page} de {totalPages}</div>
-            </div>
-
-            <div className="grid gap-2 md:grid-cols-[1.35fr_0.75fr_0.5fr]">
-              <input
-                type="search"
-                placeholder="Buscar descripción o SKU, ej: retenedor, balinera, WSHRU…"
-                value={search}
-                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-                className="rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-              <select
-                value={sortBy}
-                onChange={(event) => { setSortBy(event.target.value as SortField); setPage(1); }}
-                className="rounded-2xl border border-border bg-surface px-3 py-3 text-sm text-text-primary outline-none focus:border-primary"
-              >
-                <option value="valor_inventario">Mayor valor inventario</option>
-                <option value="stock_actual">Más unidades</option>
-                <option value="costo_unitario">Mayor costo unitario</option>
-                <option value="abc">ABC: A primero</option>
-                <option value="dias_sin_venta">Más días sin venta</option>
-                <option value="ultima_venta">Última venta reciente</option>
-                <option value="nom_producto">Descripción</option>
-              </select>
-              <select
-                value={abcFilter}
-                onChange={(event) => { setAbcFilter(event.target.value); setPage(1); }}
-                className="rounded-2xl border border-border bg-surface px-3 py-3 text-sm text-text-primary outline-none focus:border-primary"
-              >
-                <option value="">ABC todos</option>
-                <option value="A">ABC A</option>
-                <option value="B">ABC B</option>
-                <option value="C">ABC C</option>
-              </select>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <SegmentedButton active={stockFilter} value="todos" onClick={(v) => { setStockFilter(v); setPage(1); }}>Todo stock</SegmentedButton>
-              <SegmentedButton active={stockFilter} value="con_stock" onClick={(v) => { setStockFilter(v); setPage(1); }}>Con stock</SegmentedButton>
-              <SegmentedButton active={stockFilter} value="sin_stock" onClick={(v) => { setStockFilter(v); setPage(1); }}>Sin stock</SegmentedButton>
-              <SegmentedButton active={dormidoFilter} value="todos" onClick={(v) => { setDormidoFilter(v); setPage(1); }}>Todos</SegmentedButton>
-              <SegmentedButton active={dormidoFilter} value="true" onClick={(v) => { setDormidoFilter(v); setPage(1); }}>Dormidos</SegmentedButton>
-              <SegmentedButton active={dormidoFilter} value="false" onClick={(v) => { setDormidoFilter(v); setPage(1); }}>Activos</SegmentedButton>
-            </div>
-          </div>
-        }
-      >
-        {detail.isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
-        ) : items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-surface-alt p-8 text-center text-sm text-text-muted">Sin productos para esos filtros.</div>
-        ) : (
-          <>
-            <div className="space-y-3 md:hidden">
-              {items.map((item) => (
-                <button
-                  type="button"
-                  key={`${item.cod_producto}-${item.cod_bodega}`}
-                  className="w-full text-left"
-                  onClick={() => setSelectedSku(item.cod_producto)}
-                >
-                  <div className="flex items-center justify-between rounded-xl border border-border bg-surface p-3 transition hover:border-primary/30">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-text">{item.nom_producto}</p>
-                      <p className="text-xs text-text-muted">{item.cod_producto} · {item.nom_bodega}</p>
-                      <p className="mt-1 text-xs">
-                        Stock: <span className="font-semibold">{item.stock_actual}</span>
-                        {item.dias_sin_venta > 0 && (
-                          <span className="ml-2 text-text-muted">· {item.dias_sin_venta} días sin venta</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="ml-3 text-right">
-                      <p className="text-sm font-semibold text-text">${compactNumber(item.valor_inventario)}</p>
-                      {item.es_dormido && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Dormido</span>}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <ProductTable
-              items={items}
-              sortBy={sortBy}
-              onSort={handleSort}
-              onProductClick={setSelectedSku}
-            />
-          </>
-        )}
-
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="rounded-full bg-surface-alt px-4 py-2 text-xs font-semibold text-text-secondary transition hover:bg-surface-dark/10 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            ← Anterior
-          </button>
-          <span className="text-xs text-text-muted">{page} / {totalPages}</span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="rounded-full bg-surface-dark px-4 py-2 text-xs font-semibold text-text-inverse transition hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Siguiente →
-          </button>
-        </div>
-      </Card>
 
       {/* Product Detail Modal */}
       <ProductDetailModal
