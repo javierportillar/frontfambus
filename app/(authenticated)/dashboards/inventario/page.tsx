@@ -436,14 +436,14 @@ function SortHeader({
 }: {
   column: SortConfig;
   sorts: SortCriterion[];
-  onSort: (field: SortField, multi?: boolean) => void;
+  onSort: (field: SortField) => void;
 }): JSX.Element {
   const active = sorts.findIndex((s) => s.field === column.field);
   const isActive = active >= 0;
   const activeSort = isActive ? sorts[active] : null;
 
-  function handleClick(event: React.MouseEvent): void {
-    onSort(column.field, event.metaKey || event.ctrlKey);
+  function handleClick(_event: React.MouseEvent): void {
+    onSort(column.field);
   }
 
   return (
@@ -481,7 +481,7 @@ function ProductTable({
 }: {
   items: InventoryItem[];
   sorts: SortCriterion[];
-  onSort: (field: SortField, multi?: boolean) => void;
+  onSort: (field: SortField) => void;
   onProductClick: (sku: string) => void;
 }): JSX.Element {
   return (
@@ -606,35 +606,24 @@ export default function InventarioPage(): JSX.Element {
 
   const invariantBroken = discrepancies.data?.summary && !discrepancies.data.summary.invariant_ok;
 
-  function handleSort(field: SortField, multi = false): void {
+  function handleSort(field: SortField): void {
     setPage(1);
-    if (multi) {
-      // Ctrl/Cmd+click: toggle field en la lista multi-sort
-      setSorts((prev) => {
-        const existing = prev.findIndex((s) => s.field === field);
-        if (existing >= 0) {
-          // Si ya está, toggle dirección o quitarlo
-          const current = prev[existing]!;
-          if (current.dir === "desc") {
-            const next = [...prev];
-            next[existing] = { field, dir: "asc" };
-            return next;
-          }
-          return prev.filter((s) => s.field !== field);
+    setSorts((prev) => {
+      const existing = prev.findIndex((s) => s.field === field);
+      if (existing >= 0) {
+        // Ya está en la lista: toggle dirección o quitarlo
+        const current = prev[existing]!;
+        if (current.dir === "desc") {
+          const next = [...prev];
+          next[existing] = { field, dir: "asc" };
+          return next;
         }
-        // Agregar al final
-        return [...prev, { field, dir: "desc" }];
-      });
-    } else {
-      // Click normal: reemplazar todo
-      setSorts((prev) => {
-        if (prev.length === 1 && prev[0]?.field === field) {
-          // Toggle direction
-          return [{ field, dir: prev[0].dir === "desc" ? "asc" : "desc" }];
-        }
-        return [{ field, dir: "desc" }];
-      });
-    }
+        // Ya en asc → removerlo del multi-sort
+        return prev.filter((s) => s.field !== field);
+      }
+      // Agregar al final
+      return [...prev, { field, dir: "desc" }];
+    });
   }
 
   if (summary.error || detail.error) {
