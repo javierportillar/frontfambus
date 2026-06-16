@@ -292,18 +292,36 @@ function ProductDetailModal({
           ) : data ? (
             <div className="space-y-6">
               {/* Resumen */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div className="rounded-xl bg-surface-alt p-3 text-center">
                   <p className="text-2xl font-black text-text-primary">{data.stock_actual.toLocaleString("es-CO")}</p>
-                  <p className="text-xs text-text-muted">Stock actual</p>
+                  <p className="text-xs text-text-muted">Stock actual (uds)</p>
                 </div>
                 <div className="rounded-xl bg-surface-alt p-3 text-center">
-                  <p className="text-2xl font-black text-green-600">{data.total_ventas}</p>
-                  <p className="text-xs text-text-muted">Ventas</p>
+                  <p className="text-2xl font-black text-green-600">{data.total_ventas.toLocaleString("es-CO")}</p>
+                  <p className="text-xs text-text-muted">Unid. vendidas</p>
                 </div>
                 <div className="rounded-xl bg-surface-alt p-3 text-center">
-                  <p className="text-2xl font-black text-blue-600">{data.total_compras}</p>
-                  <p className="text-xs text-text-muted">Compras</p>
+                  <p className="text-2xl font-black text-blue-600">{data.total_compras.toLocaleString("es-CO")}</p>
+                  <p className="text-xs text-text-muted">Unid. compradas</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-sm font-black text-text-primary">
+                    {data.ultimo_costo_unitario != null
+                      ? formatMoney(data.ultimo_costo_unitario)
+                      : "—"}
+                  </p>
+                  <p className="text-xs text-text-muted">Último costo unitario</p>
+                </div>
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-sm font-black text-text-primary">
+                    {data.ultimo_precio_venta != null
+                      ? formatMoney(data.ultimo_precio_venta)
+                      : "—"}
+                  </p>
+                  <p className="text-xs text-text-muted">Último precio venta</p>
                 </div>
                 <div className="rounded-xl bg-surface-alt p-3 text-center">
                   <p className="text-2xl font-black text-text-primary">
@@ -313,13 +331,21 @@ function ProductDetailModal({
                   </p>
                   <p className="text-xs text-text-muted">Total vendido</p>
                 </div>
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-2xl font-black text-text-primary">
+                    {data.compras.length > 0
+                      ? formatMoneyFull(data.compras.reduce((s, v) => s + v.total, 0))
+                      : "$0"}
+                  </p>
+                  <p className="text-xs text-text-muted">Total comprado</p>
+                </div>
               </div>
 
               {/* Historial de compras */}
               {data.compras.length > 0 && (
                 <MovementsSection
                   title="Compras"
-                  badge={`${data.compras.length}`}
+                  badge={`${data.total_compras.toLocaleString("es-CO")}`}
                   items={data.compras}
                   tipo="compra"
                 />
@@ -329,7 +355,7 @@ function ProductDetailModal({
               {data.ventas.length > 0 && (
                 <MovementsSection
                   title="Ventas"
-                  badge={`${data.ventas.length}`}
+                  badge={`${data.total_ventas.toLocaleString("es-CO")}`}
                   items={data.ventas}
                   tipo="venta"
                 />
@@ -368,9 +394,10 @@ function MovementsSection({
         <h3 className="text-sm font-bold text-text-primary">{title}</h3>
         <Badge variant={tipo === "venta" ? "success" : "info"} size="sm">{badge}</Badge>
         <span className="ml-auto text-xs text-text-muted">
-          {total.toLocaleString("es-CO")} unidades · {formatMoneyFull(valorTotal)}
+          {total.toLocaleString("es-CO")} uds en lista · {formatMoneyFull(valorTotal)}
         </span>
       </div>
+      <p className="mb-2 text-[0.65rem] text-text-muted/60">Mostrando últimos 50 documentos — los totales arriba incluyen todo el historial</p>
       <div className="space-y-1.5">
         {items.map((m, i) => (
           <div
@@ -382,7 +409,10 @@ function MovementsSection({
             }`} />
             <span className="font-mono text-xs text-text-muted">{m.fecha}</span>
             <Link
-              href={`/dashboards/ventas/dia/${m.fecha}`}
+              href={tipo === "venta"
+                ? `/dashboards/ventas/dia/${m.fecha}`
+                : `/dashboards/compras/dia/${m.fecha}`
+              }
               className="font-mono text-xs font-semibold text-accent hover:underline"
             >
               {m.documento}

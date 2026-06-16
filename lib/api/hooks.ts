@@ -1083,6 +1083,33 @@ export interface ProductMovementsResponse {
   stock_actual: number;
   total_ventas: number;
   total_compras: number;
+  ultimo_costo_unitario: number | null;
+  ultimo_precio_venta: number | null;
+}
+
+// ── Purchases Day Detail (V2.0) ───────────────────────────────────────────
+
+export interface PurchaseDayDocument {
+  num_documento: string;
+  cod_producto: string;
+  nom_producto: string;
+  cantidad: number;
+  valor_unitario: number;
+  costo_producto: number | null;
+  total: number;
+}
+
+export interface PurchasesDayDetailResponse {
+  date: string;
+  total_compras: number;
+  total_documentos: number;
+  items: PurchaseDayDocument[];
+}
+
+export function usePurchasesDayDetail(date: string | null) {
+  return useMetrics<PurchasesDayDetailResponse>(
+    date ? `/api/metrics/purchases-day-detail?date=${date}` : null,
+  );
 }
 
 export function useProductMovements(sku: string | null) {

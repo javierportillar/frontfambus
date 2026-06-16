@@ -88,6 +88,11 @@ const Icons = {
       <path d="M16 10a4 4 0 01-8 0" />
     </svg>
   ),
+  compras: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+    </svg>
+  ),
   logout: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
       <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
@@ -108,6 +113,7 @@ const Icons = {
 const iconMap: Record<string, ReactNode> = {
   home: Icons.home,
   ventas: Icons.ventas,
+  compras: Icons.compras,
   inventario: Icons.inventario,
   abc: Icons.abc,
   dormidos: Icons.dormidos,
@@ -538,6 +544,7 @@ export function gerenteNavItems(): NavItem[] {
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
     { label: "Ventas", href: "/dashboards/ventas", icon: Icons.ventas, feature: "ventas-summary" },
+    { label: "Compras", href: "/dashboards/compras", icon: Icons.compras, feature: "inventario" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
     { label: "ABC", href: "/dashboards/abc", icon: Icons.abc, feature: "abc" },
     { label: "Dormidos", href: "/dashboards/dormidos", icon: Icons.dormidos, feature: "dormidos" },
