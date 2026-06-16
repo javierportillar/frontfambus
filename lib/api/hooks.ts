@@ -1064,6 +1064,43 @@ export function useInventoryDiscrepancies() {
   return useMetrics<InventoryDiscrepanciesResponse>("/api/metrics/inventory-discrepancies");
 }
 
+// ── Product Movements (Inventario popup) ────────────────────────────────
+
+export interface MovementItem {
+  tipo: "venta" | "compra";
+  fecha: string;
+  documento: string;
+  cantidad: number;
+  valor_unitario: number;
+  total: number;
+}
+
+export interface ProductMovementsResponse {
+  sku: string;
+  nom_producto: string | null;
+  ventas: MovementItem[];
+  compras: MovementItem[];
+  stock_actual: number;
+  total_ventas: number;
+  total_compras: number;
+}
+
+export function useProductMovements(sku: string | null) {
+  const url = sku ? `/api/products/${encodeURIComponent(sku)}/movements` : null;
+  const tenant = useAuthStore((s) => s.currentTenant) ?? "_no_tenant";
+  const swrKey: readonly [string, string] | null = url ? [tenant, url] : null;
+
+  return useSWR<ProductMovementsResponse>(
+    swrKey,
+    (k: readonly [string, string]) => apiFetchJson<ProductMovementsResponse>(k[1]),
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 60_000,
+      keepPreviousData: false,
+    },
+  );
+}
+
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
 
 export interface MeResponse {

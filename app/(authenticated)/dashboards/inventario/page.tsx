@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   useInventoryDetail,
   useInventoryDiscrepancies,
   useInventorySummary,
+  useProductMovements,
+  type MovementItem,
 } from "@/lib/api/hooks";
-import { formatMoney } from "@/lib/format/currency";
+import { formatMoney, formatMoneyFull } from "@/lib/format/currency";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -36,6 +38,7 @@ type SortField =
   | "costo_unitario"
   | "dias_sin_venta"
   | "ultima_venta"
+  | "es_dormido"
   | "abc"
   | "nom_producto";
 
@@ -57,6 +60,26 @@ type LeaderboardMetric = "stock" | "value" | "cost" | "days";
 
 const PIE_COLORS = ["#7B1818", "#D97706", "#334155", "#2563EB", "#16A34A"];
 const ABC_COLORS: Record<string, string> = { A: "#16A34A", B: "#D97706", C: "#64748B" };
+
+// ── Column sort config ────────────────────────────────────────────────
+
+interface SortConfig {
+  field: SortField;
+  label: string;
+  sortable: boolean;
+  align?: "left" | "right" | "center";
+}
+
+const TABLE_COLUMNS: SortConfig[] = [
+  { field: "nom_producto", label: "Producto", sortable: true },
+  { field: "stock_actual", label: "Cantidad", sortable: true, align: "right" },
+  { field: "costo_unitario", label: "Costo", sortable: true, align: "right" },
+  { field: "valor_inventario", label: "Valor", sortable: true, align: "right" },
+  { field: "ultima_venta", label: "Última venta", sortable: true },
+  { field: "dias_sin_venta", label: "Días", sortable: true, align: "right" },
+  { field: "es_dormido", label: "Estado", sortable: true },
+  { field: "abc", label: "ABC", sortable: true },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -197,92 +220,263 @@ function LeaderboardCard({
   );
 }
 
-function ProductCard({ item }: { item: InventoryItem }): JSX.Element {
+// ── Product Detail Modal ─────────────────────────────────────────────
+
+function ProductDetailModal({
+  sku,
+  onClose,
+}: {
+  sku: string | null;
+  onClose: () => void;
+}): JSX.Element | null {
+  const { data, isLoading, error } = useProductMovements(sku);
+
+  const handleBackdrop = useCallback((e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) onClose();
+  }, [onClose]);
+
+  const handleEsc = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+  }, [onClose]);
+
+  if (!sku) return null;
+
   return (
-    <article className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-primary">
-            {item.cod_producto}
-          </p>
-          <h3 className="mt-1 text-sm font-bold leading-snug text-text-primary">
-            {item.nom_producto}
-          </h3>
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+      onClick={handleBackdrop}
+      onKeyDown={handleEsc}
+    >
+      <div className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl sm:mx-4">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-widest text-primary">{sku}</p>
+            <h2 className="text-lg font-bold text-text-primary">
+              {data?.nom_producto ?? (isLoading ? "Cargando…" : "Producto")}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-surface-alt px-3 py-1 text-xs font-semibold text-text-secondary hover:bg-surface-dark/10"
+          >
+            Cerrar
+          </button>
         </div>
-        <StockBadge qty={item.stock_actual} />
-      </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-xl bg-surface-alt p-2">
-          <p className="text-text-muted">Valor</p>
-          <p className="font-semibold text-text-primary">{formatMoney(item.valor_inventario)}</p>
-        </div>
-        <div className="rounded-xl bg-surface-alt p-2">
-          <p className="text-text-muted">Costo</p>
-          <p className="font-semibold text-text-primary">{formatMoney(item.costo_unitario)}</p>
-        </div>
-        <div className="rounded-xl bg-surface-alt p-2">
-          <p className="text-text-muted">Última venta</p>
-          <p className="font-semibold text-text-primary">{item.ultima_venta ?? "—"}</p>
-        </div>
-        <div className="rounded-xl bg-surface-alt p-2">
-          <p className="text-text-muted">Sin venta</p>
-          <p className="font-semibold text-text-primary">{daysLabel(item.dias_sin_venta)}</p>
-        </div>
-      </div>
+        <div className="overflow-y-auto p-5" style={{ maxHeight: "calc(85vh - 5rem)" }}>
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 rounded-xl" />
+              ))}
+            </div>
+          ) : error ? (
+            <p className="py-8 text-center text-sm text-red-500">
+              Error al cargar movimientos del producto.
+            </p>
+          ) : data ? (
+            <div className="space-y-6">
+              {/* Resumen */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-2xl font-black text-text-primary">{data.stock_actual.toLocaleString("es-CO")}</p>
+                  <p className="text-xs text-text-muted">Stock actual</p>
+                </div>
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-2xl font-black text-green-600">{data.total_ventas}</p>
+                  <p className="text-xs text-text-muted">Ventas</p>
+                </div>
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-2xl font-black text-blue-600">{data.total_compras}</p>
+                  <p className="text-xs text-text-muted">Compras</p>
+                </div>
+                <div className="rounded-xl bg-surface-alt p-3 text-center">
+                  <p className="text-2xl font-black text-text-primary">
+                    {data.ventas.length > 0
+                      ? formatMoneyFull(data.ventas.reduce((s, v) => s + v.total, 0))
+                      : "$0"}
+                  </p>
+                  <p className="text-xs text-text-muted">Total vendido</p>
+                </div>
+              </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Badge variant={item.es_dormido ? "error" : "success"} size="sm">
-          {item.es_dormido ? "Dormido" : "Activo"}
-        </Badge>
-        <Badge variant={item.abc === "A" ? "success" : item.abc === "B" ? "warning" : "default"} size="sm">
-          ABC {item.abc}
-        </Badge>
+              {/* Historial de compras */}
+              {data.compras.length > 0 && (
+                <MovementsSection
+                  title="Compras"
+                  badge={`${data.compras.length}`}
+                  items={data.compras}
+                  tipo="compra"
+                />
+              )}
+
+              {/* Historial de ventas */}
+              {data.ventas.length > 0 && (
+                <MovementsSection
+                  title="Ventas"
+                  badge={`${data.ventas.length}`}
+                  items={data.ventas}
+                  tipo="venta"
+                />
+              )}
+
+              {data.compras.length === 0 && data.ventas.length === 0 && (
+                <p className="py-4 text-center text-sm text-text-muted">
+                  Sin movimientos registrados para este producto.
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
-    </article>
+    </div>
   );
 }
 
-function ProductTable({ items }: { items: InventoryItem[] }): JSX.Element {
+function MovementsSection({
+  title,
+  badge,
+  items,
+  tipo,
+}: {
+  title: string;
+  badge: string;
+  items: MovementItem[];
+  tipo: "venta" | "compra";
+}): JSX.Element {
+  const total = items.reduce((s, i) => s + i.cantidad, 0);
+  const valorTotal = items.reduce((s, i) => s + i.total, 0);
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-sm font-bold text-text-primary">{title}</h3>
+        <Badge variant={tipo === "venta" ? "success" : "info"} size="sm">{badge}</Badge>
+        <span className="ml-auto text-xs text-text-muted">
+          {total.toLocaleString("es-CO")} unidades · {formatMoneyFull(valorTotal)}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {items.map((m, i) => (
+          <div
+            key={`${tipo}-${m.documento}-${i}`}
+            className="flex items-center gap-3 rounded-xl bg-surface-alt/60 px-3 py-2.5 text-sm"
+          >
+            <span className={`h-2 w-2 shrink-0 rounded-full ${
+              tipo === "venta" ? "bg-green-500" : "bg-blue-500"
+            }`} />
+            <span className="font-mono text-xs text-text-muted">{m.fecha}</span>
+            <Link
+              href={`/dashboards/ventas/dia/${m.fecha}`}
+              className="font-mono text-xs font-semibold text-accent hover:underline"
+            >
+              {m.documento}
+            </Link>
+            <span className="font-semibold text-text-primary">{m.cantidad.toLocaleString("es-CO")} uds</span>
+            <span className="text-text-muted">× {formatMoney(m.valor_unitario)}</span>
+            <span className="ml-auto font-semibold text-text-primary">{formatMoneyFull(m.total)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Sortable Product Table ───────────────────────────────────────────
+
+function SortHeader({
+  column,
+  currentSort,
+  onSort,
+}: {
+  column: SortConfig;
+  currentSort: SortField;
+  onSort: (field: SortField) => void;
+}): JSX.Element {
+  const isActive = currentSort === column.field;
+  return (
+    <th
+      className={`px-4 py-3 text-[0.68rem] uppercase tracking-[0.16em] transition-colors ${
+        column.sortable
+          ? "cursor-pointer select-none hover:bg-surface-dark/5"
+          : ""
+      } ${column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"}`}
+      onClick={() => column.sortable && onSort(column.field)}
+    >
+      <span className={`inline-flex items-center gap-1 ${isActive ? "text-primary" : "text-text-muted"}`}>
+        {column.label}
+        {column.sortable && (
+          <svg viewBox="0 0 12 12" fill="currentColor" className={`h-3 w-3 transition-opacity ${isActive ? "opacity-100" : "opacity-30"}`}>
+            <path d="M6 2l4 4H2z" />
+            <path d="M6 10l-4-4h8z" className={isActive ? "" : "opacity-40"} />
+          </svg>
+        )}
+      </span>
+    </th>
+  );
+}
+
+function ProductTable({
+  items,
+  sortBy,
+  onSort,
+  onProductClick,
+}: {
+  items: InventoryItem[];
+  sortBy: SortField;
+  onSort: (field: SortField) => void;
+  onProductClick: (sku: string) => void;
+}): JSX.Element {
   return (
     <div className="hidden overflow-hidden rounded-2xl border border-border bg-surface shadow-sm md:block">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] text-sm">
+        <table className="w-full min-w-[960px] text-sm">
           <thead>
-            <tr className="border-b border-border bg-surface-alt text-left text-[0.68rem] uppercase tracking-[0.16em] text-text-muted">
-              <th className="px-4 py-3">SKU</th>
-              <th className="px-4 py-3">Producto</th>
-              <th className="px-4 py-3 text-right">Cantidad</th>
-              <th className="px-4 py-3 text-right">Costo</th>
-              <th className="px-4 py-3 text-right">Valor</th>
-              <th className="px-4 py-3">Última venta</th>
-              <th className="px-4 py-3 text-right">Días</th>
-              <th className="px-4 py-3">Estado</th>
-              <th className="px-4 py-3">ABC</th>
+            <tr className="border-b border-border bg-surface-alt">
+              <th className="px-4 py-3 text-left text-[0.68rem] uppercase tracking-[0.16em] text-text-muted">SKU</th>
+              {TABLE_COLUMNS.map((col) => (
+                <SortHeader key={col.field} column={col} currentSort={sortBy} onSort={onSort} />
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {items.map((item) => (
-              <tr key={`${item.cod_producto}-${item.cod_bodega}`} className="transition-colors hover:bg-surface-alt/70">
+              <tr
+                key={`${item.cod_producto}-${item.cod_bodega}`}
+                className="cursor-pointer transition-colors hover:bg-surface-alt/70"
+                onClick={() => onProductClick(item.cod_producto)}
+              >
                 <td className="px-4 py-3 font-mono text-xs text-primary">{item.cod_producto}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-dark text-xs font-black text-text-inverse">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-dark text-xs font-black text-text-inverse">
                       {productInitial(item.nom_producto)}
                     </div>
-                    <p className="font-semibold text-text-primary" title={item.nom_producto}>{productShort(item.nom_producto, 72)}</p>
+                    <p className="font-semibold text-text-primary" title={item.nom_producto}>
+                      {productShort(item.nom_producto, 60)}
+                    </p>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right"><StockBadge qty={item.stock_actual} /></td>
                 <td className="px-4 py-3 text-right text-text-secondary">{formatMoney(item.costo_unitario)}</td>
                 <td className="px-4 py-3 text-right font-semibold text-text-primary">{formatMoney(item.valor_inventario)}</td>
-                <td className="px-4 py-3 text-text-secondary">{item.ultima_venta ?? "—"}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-text-secondary">{item.ultima_venta ?? "—"}</td>
                 <td className="px-4 py-3 text-right text-text-secondary">{daysLabel(item.dias_sin_venta)}</td>
                 <td className="px-4 py-3">
-                  <Badge variant={item.es_dormido ? "error" : "success"} size="sm">{item.es_dormido ? "Dormido" : "Activo"}</Badge>
+                  <Badge variant={item.es_dormido ? "error" : "success"} size="sm">
+                    {item.es_dormido ? "Dormido" : "Activo"}
+                  </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <Badge variant={item.abc === "A" ? "success" : item.abc === "B" ? "warning" : "default"} size="sm">{item.abc}</Badge>
+                  <Badge
+                    variant={item.abc === "A" ? "success" : item.abc === "B" ? "warning" : "default"}
+                    size="sm"
+                  >
+                    {item.abc}
+                  </Badge>
                 </td>
               </tr>
             ))}
@@ -302,6 +496,7 @@ export default function InventarioPage(): JSX.Element {
   const [dormidoFilter, setDormidoFilter] = useState<DormidoFilter>("todos");
   const [abcFilter, setAbcFilter] = useState("");
   const [sortBy, setSortBy] = useState<SortField>("valor_inventario");
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
   const summary = useInventorySummary();
   const discrepancies = useInventoryDiscrepancies();
@@ -356,6 +551,11 @@ export default function InventarioPage(): JSX.Element {
   ], [abcA.data?.total, abcB.data?.total, abcC.data?.total]);
 
   const invariantBroken = discrepancies.data?.summary && !discrepancies.data.summary.invariant_ok;
+
+  function handleSort(field: SortField): void {
+    setSortBy(field);
+    setPage(1);
+  }
 
   if (summary.error || detail.error) {
     return (
@@ -490,7 +690,7 @@ export default function InventarioPage(): JSX.Element {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <p className="mt-2 text-xs text-text-muted">Bodega se oculta porque la fuente actual llega sin nombre útil; mostrar “Sin nombre” repetido no ayuda a decidir.</p>
+          <p className="mt-2 text-xs text-text-muted">Bodega se oculta porque la fuente actual llega sin nombre útil; mostrar &quot;Sin nombre&quot; repetido no ayuda a decidir.</p>
         </Card>
       </section>
 
@@ -500,7 +700,7 @@ export default function InventarioPage(): JSX.Element {
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
                 <h2 className="text-lg font-black text-text-primary">Explorador de productos</h2>
-                <p className="text-xs text-text-muted">{total.toLocaleString("es-CO")} productos encontrados. Ordená por ABC, días, costo, unidades o valor.</p>
+                <p className="text-xs text-text-muted">{total.toLocaleString("es-CO")} productos encontrados. Hacé clic en una fila para ver detalle.</p>
               </div>
               <div className="text-xs text-text-muted">Página {page} de {totalPages}</div>
             </div>
@@ -556,9 +756,38 @@ export default function InventarioPage(): JSX.Element {
         ) : (
           <>
             <div className="space-y-3 md:hidden">
-              {items.map((item) => <ProductCard key={`${item.cod_producto}-${item.cod_bodega}`} item={item} />)}
+              {items.map((item) => (
+                <button
+                  type="button"
+                  key={`${item.cod_producto}-${item.cod_bodega}`}
+                  className="w-full text-left"
+                  onClick={() => setSelectedSku(item.cod_producto)}
+                >
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-surface p-3 transition hover:border-primary/30">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-text">{item.nom_producto}</p>
+                      <p className="text-xs text-text-muted">{item.cod_producto} · {item.nom_bodega}</p>
+                      <p className="mt-1 text-xs">
+                        Stock: <span className="font-semibold">{item.stock_actual}</span>
+                        {item.dias_sin_venta > 0 && (
+                          <span className="ml-2 text-text-muted">· {item.dias_sin_venta} días sin venta</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="ml-3 text-right">
+                      <p className="text-sm font-semibold text-text">${compactNumber(item.valor_inventario)}</p>
+                      {item.es_dormido && <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Dormido</span>}
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
-            <ProductTable items={items} />
+            <ProductTable
+              items={items}
+              sortBy={sortBy}
+              onSort={handleSort}
+              onProductClick={setSelectedSku}
+            />
           </>
         )}
 
@@ -582,6 +811,12 @@ export default function InventarioPage(): JSX.Element {
           </button>
         </div>
       </Card>
+
+      {/* Product Detail Modal */}
+      <ProductDetailModal
+        sku={selectedSku}
+        onClose={() => setSelectedSku(null)}
+      />
     </div>
   );
 }
