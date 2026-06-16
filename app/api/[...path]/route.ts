@@ -15,6 +15,15 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     }
   }
 
+  // Multi-tenant (M2 fix 2026-06-15): el proxy NO reenviaba X-Tenant al backend.
+  // El cliente lo seteaba via lib/api/client.ts pero aca se descartaba al crear
+  // un Headers() nuevo. Resultado: el backend nunca veia el tenant y defaulteaba
+  // a motoshop, asi MasVital y MotoShop mostraban los mismos datos.
+  const tenantHeader = req.headers.get("x-tenant");
+  if (tenantHeader) {
+    headers.set("X-Tenant", tenantHeader);
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers,
