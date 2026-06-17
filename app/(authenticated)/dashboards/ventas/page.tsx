@@ -251,25 +251,36 @@ export default function VentasPage(): JSX.Element {
           <Card
             header={<h2 className="font-semibold text-text-primary">Calendario — {monthLabel(selectedMonth)}</h2>}
           >
-            <Calendar
-              month={selectedMonth}
-              days={selectedDays
-                .filter((d) => d.sales > 0 || d.invoices > 0)
-                .map((d) => ({
-                  date: d.date,
-                  day: d.day,
-                  sales: d.sales,
-                  invoices: d.invoices,
-                  avgTicket: d.avg_ticket,
-                }))}
-              onDayClick={(date) => {
-                setSelectedDate(date);
-                setTab("diaria");
-              }}
-            />
+            {daily.isLoading && !dm ? (
+              <Skeleton className="h-80 rounded-lg" />
+            ) : selectedDays.some((d) => d.sales > 0 || d.invoices > 0) ? (
+              <Calendar
+                month={selectedMonth}
+                days={selectedDays
+                  .filter((d) => d.sales > 0 || d.invoices > 0)
+                  .map((d) => ({
+                    date: d.date,
+                    day: d.day,
+                    sales: d.sales,
+                    invoices: d.invoices,
+                    avgTicket: d.avg_ticket,
+                  }))}
+                onDayClick={(date) => {
+                  setSelectedDate(date);
+                  setTab("diaria");
+                }}
+              />
+            ) : (
+              <p className="py-12 text-center text-sm text-text-muted">Sin ventas registradas en {monthLabel(selectedMonth)}.</p>
+            )}
           </Card>
 
           <Card header={<h2 className="font-semibold text-text-primary">Evolución diaria — {monthLabel(selectedMonth)}</h2>}>
+            {daily.isLoading && !dm ? (
+              <Skeleton className="h-56 rounded-lg" />
+            ) : !selectedDays.some((d) => d.sales > 0) ? (
+              <p className="py-12 text-center text-sm text-text-muted">Sin datos diarios para {monthLabel(selectedMonth)}.</p>
+            ) : (
             <ResponsiveContainer width="100%" height={230}>
               <ComposedChart data={selectedDays.map(item=>({label:item.day,ventas:item.sales,acumulado:item.accumulated}))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -281,6 +292,7 @@ export default function VentasPage(): JSX.Element {
                 <Line yAxisId="right" type="monotone" dataKey="acumulado" stroke="#2563EB" strokeWidth={2} dot={{r:2,fill:"#2563EB"}} activeDot={{r:5}} />
               </ComposedChart>
             </ResponsiveContainer>
+            )}
           </Card>
 
           <Card header={<h2 className="font-semibold text-text-primary">Comparativa diaria: {selectedYear} vs {selectedYear-1}</h2>}>

@@ -143,9 +143,9 @@ function DayContent({
         <Card><Stat label="Ticket promedio" value={formatMoneyFull(detail.ticket_promedio)} subtitle={`Max ${formatMoneyFull(detail.ticket_mas_alto)}`} /></Card>
         <Card>
           <Stat
-            label="Margen bruto"
+            label="Ganancia del día"
             value={formatMoneyFull(detail.margen_bruto)}
-            subtitle={detail.margen_porcentaje !== null ? `${detail.margen_porcentaje.toFixed(1)}% del revenue` : "—"}
+            subtitle={detail.margen_porcentaje !== null ? `${detail.margen_porcentaje.toFixed(1)}% de margen` : "venta − costo"}
           />
         </Card>
         <Card><Stat label="Ítems por factura" value={detail.items_por_factura.toFixed(1)} subtitle={`Hora pico ${hourPico}`} /></Card>
@@ -283,7 +283,7 @@ function DayContent({
 
             <div className="space-y-2">
               {facturasFiltradas.map((inv) => (
-                <InvoiceCard key={`${inv.cod_clase}-${inv.num_documento}`} invoice={inv} />
+                <InvoiceCard key={`${inv.cod_clase}-${inv.num_documento}`} invoice={inv} abcMap={abcMap} onProductClick={onProductClick} />
               ))}
             </div>
           </>
@@ -378,7 +378,13 @@ function DayContent({
 
 // ── InvoiceCard ─────────────────────────────────────────────────────────
 
-export function InvoiceCard({ invoice }: { invoice: DayInvoice }): JSX.Element {
+export function InvoiceCard({
+  invoice, abcMap, onProductClick,
+}: {
+  invoice: DayInvoice;
+  abcMap?: ProductAbcMap;
+  onProductClick?: (sku: string) => void;
+}): JSX.Element {
   return (
     <Collapsible
       className="bg-surface-alt/30"
@@ -388,36 +394,71 @@ export function InvoiceCard({ invoice }: { invoice: DayInvoice }): JSX.Element {
             {invoice.prefijo ?? ""}-{invoice.num_documento}
           </span>
           <span className="text-xs text-text-muted">{invoice.hora}</span>
-          <span className="text-xs text-text-secondary truncate max-w-[180px]">{invoice.cliente}</span>
+          <span className="text-xs text-text-secondary truncate max-w-[160px]">{invoice.cliente}</span>
           <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[10px] text-text-secondary">
             {invoice.nombre_formapago}
           </span>
-          <span className="ml-auto text-sm font-bold text-text-primary">
-            {formatMoneyFull(invoice.total)}
+          <span className="ml-auto flex items-center gap-2">
+            {invoice.ganancia !== null && (
+              <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                gana {formatMoneyFull(invoice.ganancia)}
+              </span>
+            )}
+            <span className="text-sm font-bold text-text-primary">{formatMoneyFull(invoice.total)}</span>
           </span>
         </div>
       }
       badge={`${invoice.items.length} item${invoice.items.length === 1 ? "" : "s"}`}
     >
-      <div className="mb-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+      <div className="mb-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
         <div><span className="text-text-muted">Vendedor:</span> <strong>{invoice.vendedor}</strong></div>
         <div><span className="text-text-muted">Subtotal:</span> <strong>{formatMoneyFull(invoice.subtotal)}</strong></div>
-        <div><span className="text-text-muted">Descuento:</span> <strong>{formatMoneyFull(invoice.total_descuentos)}</strong></div>
-        <div><span className="text-text-muted">IVA:</span> <strong>{formatMoneyFull(invoice.total_iva)}</strong></div>
+        <div><span className="text-text-muted">Costo:</span> <strong>{invoice.costo_total > 0 ? formatMoneyFull(invoice.costo_total) : "—"}</strong></div>
+        <div><span className="text-text-muted">Ganancia:</span> <strong className="text-green-700">{invoice.ganancia !== null ? formatMoneyFull(invoice.ganancia) : "—"}</strong></div>
+        <div><span className="text-text-muted">Margen:</span> <strong>{invoice.margen_pct !== null ? `${invoice.margen_pct}%` : "—"}</strong></div>
       </div>
-      <Table
-        columns={[
-          { header: "SKU", cell: (r: InvoiceItem) => <span className="text-xs text-text-muted">{r.cod_producto}</span> },
-          { header: "Producto", cell: (r: InvoiceItem) => <span className="text-xs">{r.nombre}</span> },
-          { header: "Cant.", cell: (r: InvoiceItem) => r.cantidad.toString(), align: "right" },
-          { header: "P. Unit.", cell: (r: InvoiceItem) => formatMoneyFull(r.valor_unitario), align: "right" },
-          { header: "Dcto", cell: (r: InvoiceItem) => (r.descuento_valor > 0 ? formatMoneyFull(r.descuento_valor) : "—"), align: "right" },
-          { header: "Total", cell: (r: InvoiceItem) => <span className="font-semibold">{formatMoneyFull(r.total_detalle)}</span>, align: "right" },
-        ]}
-        data={invoice.items}
-        keyFn={(r: InvoiceItem) => `${r.num_item}-${r.cod_producto}`}
-        striped
-      />
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
+              <th className="py-1 pr-1 text-center">Tipo</th>
+              <th className="px-1">Producto</th>
+              <th className="px-1 text-right">Cant.</th>
+              <th className="px-1 text-right">Se compró</th>
+              <th className="px-1 text-right">Se vendió</th>
+              <th className="px-1 text-right">Ganancia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoice.items.map((r: InvoiceItem) => {
+              const abc = abcMap?.productos[r.cod_producto]?.abc;
+              return (
+                <tr key={`${r.num_item}-${r.cod_producto}`} className="border-b border-border/40">
+                  <td className="py-1 pr-1 text-center">{abc ? <AbcChip abc={abc} /> : <span className="text-text-muted">—</span>}</td>
+                  <td className="px-1">
+                    <button
+                      type="button"
+                      onClick={() => onProductClick?.(r.cod_producto)}
+                      className="text-left text-text-primary hover:text-primary hover:underline"
+                    >
+                      {r.nombre}
+                      <span className="block text-[0.6rem] text-text-muted">{r.cod_producto}</span>
+                    </button>
+                  </td>
+                  <td className="px-1 text-right tabular-nums">{r.cantidad.toLocaleString("es-CO")}</td>
+                  <td className="px-1 text-right tabular-nums text-text-secondary">{r.costo_total > 0 ? formatMoneyFull(r.costo_total) : "—"}</td>
+                  <td className="px-1 text-right tabular-nums font-medium">{formatMoneyFull(r.total_detalle)}</td>
+                  <td className="px-1 text-right tabular-nums">
+                    {r.ganancia !== null ? (
+                      <span className="text-green-700 font-semibold">{formatMoneyFull(r.ganancia)}<span className="block text-[0.6rem] font-normal text-text-muted">{r.margen_pct}%</span></span>
+                    ) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </Collapsible>
   );
 }

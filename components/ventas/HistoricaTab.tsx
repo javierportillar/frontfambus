@@ -36,6 +36,17 @@ export function HistoricaTab(): JSX.Element {
 
   return (
     <div className="space-y-4">
+      {/* Qué es el margen */}
+      <div className="rounded-lg border border-border bg-surface-alt/40 px-4 py-3 text-sm">
+        <span className="font-semibold text-text-primary">¿Qué es el margen?</span>{" "}
+        <span className="text-text-secondary">
+          Es lo que te queda después de descontar lo que te costó la mercancía.
+          Si vendés algo en $100 y te costó $65, tu margen es $35 (35%). No es la ganancia
+          final del negocio (faltan gastos como arriendo, sueldos), pero sí te dice si estás
+          vendiendo con buena diferencia o demasiado barato.
+        </span>
+      </div>
+
       {/* KPIs históricos */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>

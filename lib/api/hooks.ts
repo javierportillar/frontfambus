@@ -184,14 +184,25 @@ function useMetrics<T>(key: string | null): {
 
   const fetcher = (k: readonly [string, string]): Promise<T> => apiFetchJson<T>(k[1]);
 
-  const { data, error, isLoading, mutate } = useSWR<T>(swrKey, fetcher, {
+  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(swrKey, fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false,
+    revalidateOnReconnect: true,
     dedupingInterval: DEDUP_METRICS,
     refreshInterval: 60_000, // refresh cada 60s (F7-PERF-1)
     keepPreviousData: false, // al cambiar tenant, NO mostrar datos viejos del anterior
+    // RESILIENCIA COLD START (2026-06-16): Render Free duerme el servidor;
+    // la 1ra request tras inactividad tarda 30-60s y puede fallar. Antes el
+    // usuario veia error y tenia que recargar a mano. Ahora SWR reintenta
+    // automaticamente hasta 6 veces cada 4s, asi se recupera solo cuando el
+    // backend despierta.
+    shouldRetryOnError: true,
+    errorRetryCount: 6,
+    errorRetryInterval: 4000,
   });
-  return { data, error, isLoading, mutate };
+  // isLoadingOrRetrying: true mientras carga O reintenta sin data aun.
+  // Los componentes lo usan para mostrar "cargando" en vez de vacio/error.
+  const isLoadingOrRetrying = (isLoading || (isValidating && data === undefined));
+  return { data, error, isLoading: isLoadingOrRetrying, mutate };
 }
 
 export function useSalesSummary() {
@@ -602,6 +613,10 @@ export interface InvoiceItem {
   descuento_valor: number;
   iva_valor: number;
   total_detalle: number;
+  costo_unitario: number;
+  costo_total: number;
+  ganancia: number | null;
+  margen_pct: number | null;
   cod_bodega: string | null;
 }
 
@@ -618,6 +633,9 @@ export interface DayInvoice {
   total_descuentos: number;
   total_iva: number;
   total: number;
+  costo_total: number;
+  ganancia: number | null;
+  margen_pct: number | null;
   items: InvoiceItem[];
 }
 
@@ -625,6 +643,8 @@ export interface SalesDayInvoicesResponse {
   date: string;
   total_facturas: number;
   total_dia: number;
+  total_costo: number;
+  total_ganancia: number | null;
   total_items: number;
   invoices: DayInvoice[];
 }
