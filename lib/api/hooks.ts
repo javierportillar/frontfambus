@@ -635,6 +635,140 @@ export function useSalesDayInvoices(date: string | null) {
   );
 }
 
+// ── V1.10 — Analítica de productos / inventario ──────────────────────────
+
+export type ProductEstado =
+  | "saludable" | "quiebre" | "agotado" | "sobrestock"
+  | "dormido" | "sin_stock" | "sin_movimiento" | "servicio";
+export type ProductAccion = "reabastecer" | "liquidar" | "revisar" | "ok" | "n/a";
+export type ProductAbc = "A" | "B" | "C" | "sin_venta";
+
+export interface ProductMetric {
+  cod_producto: string;
+  nombre: string;
+  cantidad_actual: number;
+  costo_unit: number;
+  precio: number;
+  valor_inventario: number;
+  revenue_win: number;
+  unidades_win: number;
+  margen_win: number;
+  margen_pct: number | null;
+  velocidad_mensual: number;
+  dias_stock: number | null;
+  rotacion_anual: number | null;
+  ultima_venta: string | null;
+  dias_sin_venta: number | null;
+  ultima_compra: string | null;
+  dias_sin_compra: number | null;
+  proveedor: string | null;
+  pct_revenue: number;
+  rank_rev: number | null;
+  abc: ProductAbc;
+  estado: ProductEstado;
+  es_servicio: boolean;
+  accion: ProductAccion;
+}
+
+export interface DecisionList {
+  total: number;
+  valor: number;
+  items: ProductMetric[];
+}
+
+export interface InventoryOverview {
+  window_days: number;
+  kpis: {
+    valor_inventario_total: number;
+    skus_con_stock: number;
+    skus_activos: number;
+    rotacion_promedio: number;
+    revenue_total_win: number;
+    margen_total_win: number;
+  };
+  pareto: {
+    skus_activos: number;
+    skus_para_80: number;
+    skus_para_50: number;
+    pct_para_80: number;
+    curva: { pct_productos: number; pct_revenue_acum: number }[];
+  };
+  estados: { estado: string; n: number; valor: number }[];
+  listas: {
+    quiebre_inminente: DecisionList;
+    capital_atrapado: DecisionList;
+    importantes_sin_recompra: DecisionList;
+    dormidos_premium: DecisionList;
+  };
+}
+
+export function useInventoryOverview(window = 180) {
+  return useMetrics<InventoryOverview>(`/api/metrics/inventory-overview?window=${window}`);
+}
+
+export interface ProductAnalyticsResponse {
+  window_days: number;
+  page: number;
+  page_size: number;
+  total: number;
+  items: ProductMetric[];
+}
+
+export interface ProductAnalyticsParams {
+  window?: number;
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  abc?: string;
+  estado?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+}
+
+export function useProductAnalytics(p: ProductAnalyticsParams = {}) {
+  const qs = new URLSearchParams();
+  qs.set("window", String(p.window ?? 180));
+  qs.set("page", String(p.page ?? 1));
+  qs.set("page_size", String(p.pageSize ?? 50));
+  if (p.q) qs.set("q", p.q);
+  if (p.abc) qs.set("abc", p.abc);
+  if (p.estado) qs.set("estado", p.estado);
+  qs.set("sort", p.sort ?? "revenue_win");
+  qs.set("order", p.order ?? "desc");
+  return useMetrics<ProductAnalyticsResponse>(`/api/metrics/product-analytics?${qs.toString()}`);
+}
+
+export interface ProductTimelineMonth {
+  mes: string;
+  unidades_vendidas: number;
+  valor_vendido: number;
+  unidades_compradas: number;
+  valor_comprado: number;
+}
+
+export interface ProductMovimiento {
+  fecha: string;
+  tipo: "venta" | "compra";
+  cantidad: number;
+  valor: number;
+  num_documento: string;
+}
+
+export interface ProductDetailResponse {
+  found: boolean;
+  sku?: string;
+  window_days?: number;
+  metrics?: ProductMetric;
+  timeline?: ProductTimelineMonth[];
+  movimientos?: ProductMovimiento[];
+}
+
+export function useProductDetail(sku: string | null, window = 180) {
+  return useMetrics<ProductDetailResponse>(
+    sku ? `/api/metrics/product-detail/${encodeURIComponent(sku)}?window=${window}` : null,
+  );
+}
+
 interface SalesHistoricalResponse {
   total_ventas: number;
   total_facturas: number;

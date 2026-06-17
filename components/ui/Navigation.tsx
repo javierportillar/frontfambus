@@ -51,6 +51,12 @@ const Icons = {
       <rect x="14" y="14" width="7" height="7" rx="1" />
     </svg>
   ),
+  productos: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M20 7L12 3 4 7v10l8 4 8-4V7z" />
+      <path d="M4 7l8 4 8-4M12 11v10" />
+    </svg>
+  ),
   abc: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
       <path d="M12 20V10M18 20V4M6 20v-6" />
@@ -544,6 +550,7 @@ export function gerenteNavItems(): NavItem[] {
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
     { label: "Ventas", href: "/dashboards/ventas", icon: Icons.ventas, feature: "ventas-summary" },
+    { label: "Productos", href: "/dashboards/productos", icon: Icons.productos, feature: "inventario" },
     { label: "Compras", href: "/dashboards/compras", icon: Icons.compras, feature: "inventario" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
     { label: "ABC", href: "/dashboards/abc", icon: Icons.abc, feature: "abc" },
