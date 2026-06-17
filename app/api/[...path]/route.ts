@@ -19,9 +19,16 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   // El cliente lo seteaba via lib/api/client.ts pero aca se descartaba al crear
   // un Headers() nuevo. Resultado: el backend nunca veia el tenant y defaulteaba
   // a motoshop, asi MasVital y MotoShop mostraban los mismos datos.
-  const tenantHeader = req.headers.get("x-tenant");
-  if (tenantHeader) {
-    headers.set("X-Tenant", tenantHeader);
+  // Fallback: cookie motoshop_tenant para SSR y edge cases.
+  let tenant = req.headers.get("x-tenant");
+  if (!tenant && cookieHeader) {
+    const tenantMatch = cookieHeader.match(/(?:^|;\s*)motoshop_tenant=([^;]*)/);
+    if (tenantMatch?.[1]) {
+      tenant = decodeURIComponent(tenantMatch[1]);
+    }
+  }
+  if (tenant) {
+    headers.set("X-Tenant", tenant);
   }
 
   const init: RequestInit = {
