@@ -1,13 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSalesDayDetail, useSalesDayInvoices, type DayInvoice, type InvoiceItem, type SalesDailyItem, type FormaPagoItem, type VendedorDayItem } from "@/lib/api/hooks";
+import { useRouter } from "next/navigation";
+import { useSalesDayDetail, useSalesDayInvoices, useProductAbcMap, type DayInvoice, type InvoiceItem, type SalesDailyItem, type FormaPagoItem, type VendedorDayItem, type ProductAbcMap } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Table } from "@/components/ui/Table";
 import { Collapsible } from "@/components/ui/Collapsible";
+import { AbcChip } from "@/components/productos/Chips";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 const PAY_COLORS = ["#0EA5E9", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#84CC16", "#6B7280"];
@@ -28,8 +30,10 @@ export interface DayDetailContentProps {
 }
 
 export function DayDetailContent({ date }: DayDetailContentProps): JSX.Element {
+  const router = useRouter();
   const detail = useSalesDayDetail(date || null);
   const invoices = useSalesDayInvoices(date || null);
+  const abcMap = useProductAbcMap(180);
 
   const [searchProducto, setSearchProducto] = useState("");
   const [filterFormaPago, setFilterFormaPago] = useState<string | null>(null);
@@ -81,6 +85,8 @@ export function DayDetailContent({ date }: DayDetailContentProps): JSX.Element {
       setSearchProducto={setSearchProducto}
       filterFormaPago={filterFormaPago}
       setFilterFormaPago={setFilterFormaPago}
+      abcMap={abcMap.data}
+      onProductClick={(sku) => router.push(`/dashboards/productos/${encodeURIComponent(sku)}`)}
     />
   );
 }
@@ -107,6 +113,8 @@ interface DayContentProps {
   setSearchProducto: (v: string) => void;
   filterFormaPago: string | null;
   setFilterFormaPago: (v: string | null) => void;
+  abcMap?: ProductAbcMap;
+  onProductClick: (sku: string) => void;
 }
 
 function DayContent({
@@ -118,6 +126,8 @@ function DayContent({
   setSearchProducto,
   filterFormaPago,
   setFilterFormaPago,
+  abcMap,
+  onProductClick,
 }: DayContentProps): JSX.Element {
   const hourPico = detail.hora_pico !== null ? hourLabel(detail.hora_pico) : "—";
   const ventasHoraPico = detail.hora_pico !== null
@@ -194,8 +204,26 @@ function DayContent({
             <Table
               columns={[
                 { header: "#", cell: (_: SalesDailyItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
-                { header: "SKU", cell: (r: SalesDailyItem) => <span className="text-xs text-text-muted">{r.sku}</span> },
-                { header: "Producto", cell: (r: SalesDailyItem) => <span className="text-xs">{r.nombre}</span> },
+                {
+                  header: "Tipo",
+                  cell: (r: SalesDailyItem) => {
+                    const abc = abcMap?.productos[r.sku]?.abc;
+                    return abc ? <AbcChip abc={abc} /> : <span className="text-text-muted text-xs">—</span>;
+                  },
+                },
+                {
+                  header: "Producto",
+                  cell: (r: SalesDailyItem) => (
+                    <button
+                      type="button"
+                      onClick={() => onProductClick(r.sku)}
+                      className="text-left text-xs text-text-primary hover:text-primary hover:underline"
+                    >
+                      {r.nombre}
+                      <span className="block text-[0.6rem] text-text-muted">{r.sku}</span>
+                    </button>
+                  ),
+                },
                 { header: "Cant.", cell: (r: SalesDailyItem) => r.cantidad.toString(), align: "right" },
                 { header: "Valor", cell: (r: SalesDailyItem) => <span className="font-medium">{formatMoneyFull(r.valor)}</span>, align: "right" },
               ]}

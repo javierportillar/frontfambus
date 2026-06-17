@@ -769,6 +769,49 @@ export function useProductDetail(sku: string | null, window = 180) {
   );
 }
 
+// ── V1.10.1 — Mapa ABC + historico extendido ─────────────────────────────
+
+export interface AbcMapEntry {
+  abc: ProductAbc;
+  estado: ProductEstado;
+  pct_revenue: number;
+  rank: number | null;
+}
+export interface ProductAbcMap {
+  window_days: number;
+  productos: Record<string, AbcMapEntry>;
+}
+export function useProductAbcMap(window = 180) {
+  return useMetrics<ProductAbcMap>(`/api/metrics/product-abc-map?window=${window}`);
+}
+
+export interface HistoryMonth {
+  mes: string;
+  revenue: number;
+  margen: number;
+  margen_pct: number | null;
+  facturas: number;
+  unidades: number;
+  ticket_promedio: number;
+}
+export interface HistoryYoY {
+  mes: string;
+  revenue_actual: number;
+  revenue_anterior: number;
+  delta_pct: number | null;
+}
+export interface SalesHistoryExtended {
+  serie: HistoryMonth[];
+  mejor_mes: HistoryMonth | null;
+  peor_mes: HistoryMonth | null;
+  yoy: HistoryYoY[];
+  total_revenue: number;
+  total_margen: number;
+}
+export function useSalesHistoryExtended() {
+  return useMetrics<SalesHistoryExtended>("/api/metrics/sales-history-extended");
+}
+
 interface SalesHistoricalResponse {
   total_ventas: number;
   total_facturas: number;

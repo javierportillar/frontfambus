@@ -12,6 +12,8 @@ import {
   useSalesTrendByYear,
   useSalesMonthDetail,
   useSalesMonthlyFor,
+  useProductAbcMap,
+  useSalesHistoryExtended,
   type FormaPagoItem,
   type VendedorDayItem,
   type TopSkuItem,
@@ -24,6 +26,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Calendar } from "@/components/ui/Calendar";
 import { CajaTab } from "@/components/sales/CajaTab";
 import { DayDetailContent } from "@/components/sales/DayDetailContent";
+import { TopProductos, MixAbc } from "@/components/ventas/TopProductos";
+import { HistoricaTab } from "@/components/ventas/HistoricaTab";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -144,6 +148,8 @@ export default function VentasPage(): JSX.Element {
   const monthDetail = useSalesMonthDetail(selectedMonth);
   // V1.9: top productos del mes seleccionado (para card "más vendidos")
   const monthly = useSalesMonthlyFor(selectedMonth);
+  // V1.10.1: mapa ABC para etiquetar productos (compartido entre tabs)
+  const abcMap = useProductAbcMap(180);
 
   const d = sales.data;
   const dm = daily.data;
@@ -216,6 +222,30 @@ export default function VentasPage(): JSX.Element {
             <Card><Stat label={`vs ${monthLabel(prevMonth)}`} value={pctDelta(monthlyTotal, prevMonthTotal)} subtitle={`${formatCurrencyFull(prevMonthTotal)} base`} /></Card>
             <Card><Stat label={`vs ${monthLabel(prevYearMonth)}`} value={pctDelta(monthlyTotal, prevYearTotal)} subtitle={`${formatCurrencyFull(prevYearTotal)} base`} /></Card>
           </div>
+
+          {/* V1.10.1: Productos más vendidos del mes — AHORA ARRIBA y con ABC */}
+          {monthly.data && monthly.data.productos_top.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <Card className="lg:col-span-2" header={
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-text-primary">Productos más vendidos — {monthLabel(selectedMonth)}</h2>
+                  <span className="text-xs text-text-muted">click → ficha del producto</span>
+                </div>
+              }>
+                <TopProductos productos={monthly.data.productos_top} abcMap={abcMap.data} limit={10} />
+              </Card>
+              <Card header={<h2 className="font-semibold text-text-primary">Mezcla por categoría</h2>}>
+                <p className="mb-3 text-xs text-text-muted">
+                  Cuánto de las ventas del top viene de productos <strong>A</strong> (los que generan el 80%),
+                  <strong> B</strong> (siguiente 15%) y <strong>C</strong> (cola).
+                </p>
+                <MixAbc productos={monthly.data.productos_top} abcMap={abcMap.data} />
+                <p className="mt-4 text-[0.7rem] text-text-muted">
+                  Una venta sana se apoya en sus productos A. Si tu top está lleno de C, revisá tu surtido.
+                </p>
+              </Card>
+            </div>
+          )}
 
           {/* Calendario del mes — click en un día te lleva al detalle diario */}
           <Card
@@ -293,36 +323,6 @@ export default function VentasPage(): JSX.Element {
               </LineChart>
             </ResponsiveContainer>
           </Card>
-
-          {/* V1.9: top productos del mes seleccionado */}
-          {monthly.data && monthly.data.productos_top.length > 0 && (
-            <Card header={<h2 className="font-semibold text-text-primary">Productos más vendidos del mes — top 10</h2>}>
-              <div className="space-y-1.5">
-                {monthly.data.productos_top.slice(0, 10).map((sku: TopSkuItem, idx: number) => {
-                  const maxValor = monthly.data!.productos_top[0]?.valor_total ?? 1;
-                  const intensity = maxValor ? sku.valor_total / maxValor : 0;
-                  return (
-                    <div key={sku.cod_producto} className="flex items-center gap-3">
-                      <span className="w-6 text-right text-xs font-bold text-text-muted">{idx + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-text-primary truncate">{sku.nom_producto}</div>
-                        <div className="h-1.5 mt-1 rounded-full bg-surface-alt overflow-hidden">
-                          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(5, intensity * 100)}%` }} />
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold text-text-primary">{formatMoneyFull(sku.valor_total)}</div>
-                        <div className="text-[10px] text-text-muted">
-                          {sku.cantidad_total.toLocaleString("es-CO")} u
-                          {sku.porcentaje_ingreso !== null && sku.porcentaje_ingreso !== undefined ? ` · ${sku.porcentaje_ingreso.toFixed(1)}%` : ""}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
 
           {monthDetail.data && (
             <>
@@ -495,56 +495,7 @@ export default function VentasPage(): JSX.Element {
         </>
       )}
 
-      {tab === "historica" && dh && (
-        <>
-          <Card header={<h2 className="font-semibold text-text-primary">Tendencia histórica</h2>}>
-            {dh.meses.length > 0 ? (
-              <ResponsiveContainer width="100%" height={320}>
-                <ComposedChart data={(() => {
-                  const data: { month: string; ventas: number; tendencia: number | null; proy: number | null }[] = dh.meses.map(m => ({
-                    month: `${MONTHS[m.month-1]??""} ${String(m.year).slice(2)}`,
-                    ventas: m.total_ventas,
-                    tendencia: m.total_ventas,
-                    proy: null,
-                  }));
-                  if (df) {
-                    const cmIdx = data.findIndex(item => item.month === `${MONTHS[new Date().getMonth()]??""} ${String(new Date().getFullYear()).slice(2)}`);
-                    if (cmIdx >= 0) {
-                      const actual = data[cmIdx]!.ventas;
-                      data[cmIdx]!.proy = df.current_month.projected_amount - actual;
-                    }
-                    data.push({
-                      month: `${MONTHS[new Date().getMonth()+1]??""} ${String(new Date().getFullYear()).slice(2)}`,
-                      ventas: 0, tendencia: null, proy: df.next_month.projected_amount,
-                    });
-                  }
-                  return data;
-                })()}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 7, angle: -60, textAnchor: "end" }} stroke="#a3a3a3" height={70} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v/1e6).toFixed(1)}M`} />
-                  <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} contentStyle={{ borderRadius: "8px", fontSize: "12px" }} />
-                  <Bar dataKey="ventas" fill="#7B1818" stackId="a" radius={[2,2,0,0]} name="Real" />
-                  <Bar dataKey="proy" fill="#FCD34D" stackId="a" radius={[2,2,0,0]} name="Proyección" />
-                  <Line type="monotone" dataKey="tendencia" stroke="#7B1818" strokeWidth={1.5} dot={false} name="Tendencia" connectNulls />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : <p className="py-6 text-sm text-text-muted text-center">Sin datos históricos.</p>}
-            <div className="flex items-center gap-4 mt-2 text-xs text-text-muted">
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{background:"#7B1818"}} /> Real</span>
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{background:"#FCD34D"}} /> Proyección</span>
-            </div>
-          </Card>
-          <Card header={<h2 className="font-semibold text-text-primary">Histórico mensual</h2>}>
-            <Table columns={[
-              {header:"Mes",cell:(r:typeof dh.meses[number])=>`${MONTHS[r.month-1]??""} ${r.year}`},
-              {header:"Ventas",cell:(r:typeof dh.meses[number])=>formatCurrencyFull(r.total_ventas),align:"right"},
-              {header:"Facturas",cell:(r:typeof dh.meses[number])=>String(r.num_facturas),align:"right"},
-              {header:"Ticket",cell:(r:typeof dh.meses[number])=>formatCurrencyFull(r.ticket_promedio),align:"right"},
-            ]} data={dh.meses} keyFn={(r:typeof dh.meses[number])=>`${r.year}-${r.month}`} striped />
-          </Card>
-        </>
-      )}
+      {tab === "historica" && <HistoricaTab />}
 
       {tab === "forecast" && df && (
         <Card header={<h2 className="font-semibold text-text-primary">Proyección</h2>}>
