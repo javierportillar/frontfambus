@@ -115,32 +115,62 @@ function BalanceTab({ ini, fin }: { ini: string; fin: string }): JSX.Element {
         </Card>
       </div>
 
-      {/* Banner explicativo */}
+      {/* Banner explicativo — leyenda de cada serie */}
       <div className="rounded-lg border border-border bg-surface-alt/40 px-4 py-3 text-sm">
-        <p className="text-text-secondary">
-          <strong>Ventas</strong> (verde) = lo que vendiste.{" "}
-          <strong>Gastos</strong> (rojo) = lo que te costó la mercancía vendida + gastos operativos.{" "}
-          <strong>Balance acumulado</strong> (línea negra) = ganancia neta sumada en el tiempo.
-        </p>
+        <p className="mb-2 font-semibold text-text-primary">Cómo leer el gráfico</p>
+        <ul className="space-y-1 text-text-secondary">
+          <li>
+            <span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: "#16A34A" }} />
+            {" "}
+            <strong>Ventas del día</strong> (barra verde, eje izquierdo) — lo que vendiste ese día.
+          </li>
+          <li>
+            <span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: "#DC2626" }} />
+            {" "}
+            <strong>Gastos del día</strong> (barra roja, eje izquierdo) — costo de la mercancía vendida + prorrateo de gastos operativos del mes (arriendo, nómina, etc.).
+          </li>
+          <li>
+            <span className="inline-block h-2 w-4 align-middle" style={{ borderTop: "2px dashed #2563EB" }} />
+            {" "}
+            <strong>Ganancia neta del día</strong> (línea azul punteada, eje derecho) — ventas − gastos. Cuánto te quedó ese día.
+          </li>
+          <li>
+            <span className="inline-block h-2 w-4 align-middle" style={{ borderTop: "3px solid #000" }} />
+            {" "}
+            <strong>Balance acumulado</strong> (línea negra gruesa, eje derecho) — suma de la ganancia neta desde el inicio del período. Es tu rentabilidad total al día.
+          </li>
+        </ul>
       </div>
 
       {/* Gráfico principal */}
       <Card header={<h2 className="font-semibold text-text-primary">Evolución financiera — {ini} → {fin}</h2>}>
-        <ResponsiveContainer width="100%" height={320}>
-          <ComposedChart data={chartData}>
+        <ResponsiveContainer width="100%" height={340}>
+          <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="label" tick={{ fontSize: 9, angle: -45, textAnchor: "end" }} height={55} stroke="#a3a3a3" interval={Math.max(0, Math.floor(chartData.length / 15))} />
-            <YAxis yAxisId="l" tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
-            <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} stroke="#000" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
+            <YAxis yAxisId="l" tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} label={{ value: "Día ($)", angle: -90, position: "insideLeft", fontSize: 10, fill: "#666" }} />
+            <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} stroke="#000" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} label={{ value: "Acumulado ($)", angle: 90, position: "insideRight", fontSize: 10, fill: "#666" }} />
             <Tooltip
-              formatter={(v, name) => [formatMoneyFull(Number(v)), name === "ventas" ? "Ventas" : name === "gastos" ? "Gastos (costo + op.)" : name === "ganancia" ? "Ganancia día" : "Balance acumulado"]}
-              contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
+              labelFormatter={(label) => `Día: ${label}`}
+              formatter={(value, name) => [formatMoneyFull(Number(value)), String(name)]}
+              itemSorter={(item) => {
+                // Orden consistente: ventas, gastos, ganancia, acumulado
+                const order: Record<string, number> = {
+                  "Ventas del día": 1,
+                  "Gastos del día (costo + operativos)": 2,
+                  "Ganancia neta del día": 3,
+                  "Balance acumulado": 4,
+                };
+                return order[String(item.name)] ?? 99;
+              }}
+              contentStyle={{ borderRadius: "8px", fontSize: "12px", padding: "8px 12px" }}
+              itemStyle={{ padding: "2px 0" }}
             />
-            <Legend wrapperStyle={{ fontSize: "11px" }} />
+            <Legend wrapperStyle={{ fontSize: "11px" }} iconType="rect" />
             <ReferenceLine yAxisId="r" y={0} stroke="#666" strokeDasharray="3 3" />
-            <Bar yAxisId="l" dataKey="ventas" fill="#16A34A" name="Ventas" radius={[2, 2, 0, 0]} />
-            <Bar yAxisId="l" dataKey="gastos" fill="#DC2626" name="Gastos" radius={[2, 2, 0, 0]} />
-            <Line yAxisId="r" type="monotone" dataKey="ganancia" stroke="#2563EB" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Ganancia día" />
+            <Bar yAxisId="l" dataKey="ventas" fill="#16A34A" name="Ventas del día" radius={[2, 2, 0, 0]} />
+            <Bar yAxisId="l" dataKey="gastos" fill="#DC2626" name="Gastos del día (costo + operativos)" radius={[2, 2, 0, 0]} />
+            <Line yAxisId="r" type="monotone" dataKey="ganancia" stroke="#2563EB" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Ganancia neta del día" />
             <Line yAxisId="r" type="monotone" dataKey="acumulado" stroke="#000" strokeWidth={2.5} dot={false} name="Balance acumulado" />
           </ComposedChart>
         </ResponsiveContainer>
