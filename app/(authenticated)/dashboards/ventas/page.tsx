@@ -28,6 +28,7 @@ import { CajaTab } from "@/components/sales/CajaTab";
 import { DayDetailContent } from "@/components/sales/DayDetailContent";
 import { TopProductos, MixAbc } from "@/components/ventas/TopProductos";
 import { HistoricaTab } from "@/components/ventas/HistoricaTab";
+import { MargenMensualTable } from "@/components/ventas/MargenMensualTable";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -450,6 +451,12 @@ export default function VentasPage(): JSX.Element {
               )}
             </>
           )}
+
+          <MargenMensualTable
+            highlightMonth={selectedMonth}
+            initialLimit={12}
+            title={`Margen mensual — destacado ${monthLabel(selectedMonth)}`}
+          />
         </>
       )}
 
@@ -504,10 +511,21 @@ export default function VentasPage(): JSX.Element {
           </Card>
 
           <DayDetailContent date={selectedDate} />
+
+          <MargenMensualTable
+            highlightMonth={selectedDate ? selectedDate.slice(0, 7) : undefined}
+            initialLimit={6}
+            title="Margen mensual — contexto del día"
+          />
         </>
       )}
 
-      {tab === "historica" && <HistoricaTab />}
+      {tab === "historica" && (
+        <>
+          <HistoricaTab />
+          <MargenMensualTable initialLimit={12} title="Margen mensual — histórico completo" />
+        </>
+      )}
 
       {tab === "forecast" && df && (
         <Card header={<h2 className="font-semibold text-text-primary">Proyección</h2>}>
