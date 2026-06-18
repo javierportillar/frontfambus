@@ -271,6 +271,16 @@ function GerenteHome(): JSX.Element {
               </Card>
             </Link>
           )}
+
+          <Link href="/dashboards/analisis" className="block">
+            <Card hover className="cursor-pointer">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Análisis</p>
+                <p className="text-2xl font-bold text-text-primary">Balance</p>
+                <p className="text-xs text-text-muted">Horas pico · gastos →</p>
+              </div>
+            </Card>
+          </Link>
         </div>
       </div>
     </div>

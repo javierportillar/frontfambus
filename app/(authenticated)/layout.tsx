@@ -53,7 +53,7 @@ export default function AuthenticatedLayout({
     <>
       <TenantTheme />
       <Navigation items={items} role={(role as "vendedor" | "admin" | "gerente") ?? "gerente"} onLogout={handleLogout} />
-      <main className={`mx-auto w-full max-w-7xl px-4 pb-20 pt-4 transition-all duration-300 lg:pb-8 ${
+      <main className={`mx-auto w-full max-w-[1800px] px-4 pb-20 pt-4 transition-all duration-300 lg:pb-8 ${
         sidebarCollapsed ? "lg:ml-16" : "lg:ml-60"
       }`}>
         {children}

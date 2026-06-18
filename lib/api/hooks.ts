@@ -1325,6 +1325,147 @@ export function useProductMovements(sku: string | null) {
   );
 }
 
+// ── Gastos operativos (V1.11 — Supabase) ─────────────────────────────────
+
+export type GastoCategoria =
+  | "arriendo"
+  | "nomina"
+  | "servicios"
+  | "mantenimiento"
+  | "marketing"
+  | "impuestos"
+  | "combustible"
+  | "transporte"
+  | "papeleria"
+  | "seguros"
+  | "otros";
+
+export const CATEGORIA_LABELS: Record<GastoCategoria, string> = {
+  arriendo: "Arriendo",
+  nomina: "Nómina",
+  servicios: "Servicios (luz/agua/internet/gas)",
+  mantenimiento: "Mantenimiento",
+  marketing: "Marketing",
+  impuestos: "Impuestos",
+  combustible: "Combustible",
+  transporte: "Transporte",
+  papeleria: "Papelería",
+  seguros: "Seguros",
+  otros: "Otros",
+};
+
+export interface Gasto {
+  id: number;
+  tenant: string;
+  mes: string;
+  categoria: GastoCategoria;
+  monto: number;
+  descripcion: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface GastosListResponse {
+  items: Gasto[];
+  total: number;
+}
+
+export interface GastoCreatePayload {
+  mes: string;
+  categoria: GastoCategoria;
+  monto: number;
+  descripcion?: string | null;
+}
+
+export interface GastoUpdatePayload {
+  mes?: string;
+  categoria?: GastoCategoria;
+  monto?: number;
+  descripcion?: string | null;
+}
+
+export function useGastos(mes?: string) {
+  const qs = mes ? `?mes=${mes}` : "";
+  return useMetrics<GastosListResponse>(`/api/gastos${qs}`);
+}
+
+export async function createGasto(payload: GastoCreatePayload): Promise<Gasto> {
+  return apiFetchJson<Gasto>("/api/gastos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateGasto(id: number, payload: GastoUpdatePayload): Promise<Gasto> {
+  return apiFetchJson<Gasto>(`/api/gastos/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteGasto(id: number): Promise<void> {
+  await apiFetch(`/api/gastos/${id}`, { method: "DELETE" });
+}
+
+
+// ── Análisis financiero (V1.11) ──────────────────────────────────────────
+
+export interface HoraPicoItem {
+  hour: number;
+  total_ventas: number;
+  num_facturas: number;
+  ticket_promedio: number;
+}
+
+export interface HoraPicoResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  items: HoraPicoItem[];
+  hora_pico_facturas: number | null;
+  hora_pico_ventas: number | null;
+}
+
+export interface BalanceDiaItem {
+  date: string;
+  ventas: number;
+  costo_mercancia: number;
+  gastos_operativos: number;
+  ganancia_bruta: number;
+  ganancia_neta: number;
+  balance_acumulado: number;
+}
+
+export interface BalanceResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  items: BalanceDiaItem[];
+  total_ventas: number;
+  total_costo_mercancia: number;
+  total_gastos_operativos: number;
+  total_ganancia_bruta: number;
+  total_ganancia_neta: number;
+  margen_bruto_pct: number | null;
+  margen_neto_pct: number | null;
+}
+
+export function useHorasPico(fechaInicio: string, fechaFin: string) {
+  const ok = !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<HoraPicoResponse>(
+    ok ? `/api/metrics/horas-pico?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}` : null,
+  );
+}
+
+export function useAnalisisBalance(fechaInicio: string, fechaFin: string) {
+  const ok = !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<BalanceResponse>(
+    ok ? `/api/metrics/analisis-balance?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}` : null,
+  );
+}
+
+
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
 
 export interface MeResponse {

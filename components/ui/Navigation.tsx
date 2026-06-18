@@ -555,6 +555,7 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
     { label: "ABC", href: "/dashboards/abc", icon: Icons.abc, feature: "abc" },
     { label: "Dormidos", href: "/dashboards/dormidos", icon: Icons.dormidos, feature: "dormidos" },
+    { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast },
     { label: "Forecast", href: "/forecast", icon: Icons.forecast, feature: "forecast" },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
     { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
