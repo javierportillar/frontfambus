@@ -31,6 +31,19 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     headers.set("X-Tenant", tenant);
   }
 
+  // BUG-FIX 2026-06-18: el proxy no reenviaba Content-Type/Accept del cliente.
+  // El backend FastAPI/Pydantic recibia el body sin tipo declarado y lo trataba
+  // como string crudo → 422 "Input should be a valid dictionary" en POST/PATCH
+  // con JSON body. Fix: copiar headers relevantes del request original.
+  const contentType = req.headers.get("content-type");
+  if (contentType) {
+    headers.set("Content-Type", contentType);
+  }
+  const accept = req.headers.get("accept");
+  if (accept) {
+    headers.set("Accept", accept);
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers,
