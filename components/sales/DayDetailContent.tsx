@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Table } from "@/components/ui/Table";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { AbcChip } from "@/components/productos/Chips";
+import { ProductosVendidosTabla } from "@/components/ventas/ProductosVendidosTabla";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 const PAY_COLORS = ["#0EA5E9", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#84CC16", "#6B7280"];
@@ -180,12 +181,12 @@ function DayContent({
         )}
       </Card>
 
-      {/* TODOS los productos vendidos — colapsable */}
+      {/* V1.13: TODOS los productos vendidos del día — sortable + buscable */}
       <Collapsible
         header={
           <div>
-            <div className="text-sm font-semibold text-text-primary">Todos los productos vendidos</div>
-            <div className="text-xs text-text-muted">{detail.productos_top.length} productos · ordenados de más vendido a menos</div>
+            <div className="text-sm font-semibold text-text-primary">Productos vendidos del día</div>
+            <div className="text-xs text-text-muted">{detail.productos_top.length} productos · ordenable por columnas</div>
           </div>
         }
         badge={`${detail.productos_top.length} productos`}
@@ -200,38 +201,12 @@ function DayContent({
         {productosFiltrados.length === 0 ? (
           <p className="py-4 text-center text-sm text-text-muted">Sin resultados.</p>
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table
-              columns={[
-                { header: "#", cell: (_: SalesDailyItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
-                {
-                  header: "Tipo",
-                  cell: (r: SalesDailyItem) => {
-                    const abc = abcMap?.productos[r.sku]?.abc;
-                    return abc ? <AbcChip abc={abc} /> : <span className="text-text-muted text-xs">—</span>;
-                  },
-                },
-                {
-                  header: "Producto",
-                  cell: (r: SalesDailyItem) => (
-                    <button
-                      type="button"
-                      onClick={() => onProductClick(r.sku)}
-                      className="text-left text-xs text-text-primary hover:text-primary hover:underline"
-                    >
-                      {r.nombre}
-                      <span className="block text-[0.6rem] text-text-muted">{r.sku}</span>
-                    </button>
-                  ),
-                },
-                { header: "Cant.", cell: (r: SalesDailyItem) => r.cantidad.toString(), align: "right" },
-                { header: "Valor", cell: (r: SalesDailyItem) => <span className="font-medium">{formatMoneyFull(r.valor)}</span>, align: "right" },
-              ]}
-              data={productosFiltrados}
-              keyFn={(r: SalesDailyItem, idx?: number) => `${r.sku}-${idx ?? 0}`}
-              striped
-            />
-          </div>
+          <ProductosVendidosTabla
+            productos={productosFiltrados}
+            abcMap={abcMap}
+            initialLimit={10}
+            isFullDataset={true}
+          />
         )}
       </Collapsible>
 

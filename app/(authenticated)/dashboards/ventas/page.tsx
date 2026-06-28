@@ -26,9 +26,10 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Calendar } from "@/components/ui/Calendar";
 import { CajaTab } from "@/components/sales/CajaTab";
 import { DayDetailContent } from "@/components/sales/DayDetailContent";
-import { TopProductos, MixAbc } from "@/components/ventas/TopProductos";
+import { MixAbc } from "@/components/ventas/TopProductos";
 import { HistoricaTab } from "@/components/ventas/HistoricaTab";
 import { MargenMensualTable } from "@/components/ventas/MargenMensualTable";
+import { ProductosVendidosTabla } from "@/components/ventas/ProductosVendidosTabla";
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -148,7 +149,9 @@ export default function VentasPage(): JSX.Element {
   // V1.9: detalle enriquecido del mes (margen, vendedores, forma de pago, aceleradores)
   const monthDetail = useSalesMonthDetail(selectedMonth);
   // V1.9: top productos del mes seleccionado (para card "más vendidos")
-  const monthly = useSalesMonthlyFor(selectedMonth);
+  // V1.13: cuando user expande "Ver todos", piden los 5000 (todos del mes).
+  const [monthlyExpanded, setMonthlyExpanded] = useState(false);
+  const monthly = useSalesMonthlyFor(selectedMonth, monthlyExpanded ? 5000 : 10);
   // V1.10.1: mapa ABC para etiquetar productos (compartido entre tabs)
   const abcMap = useProductAbcMap(180);
 
@@ -224,23 +227,30 @@ export default function VentasPage(): JSX.Element {
             <Card><Stat label={`vs ${monthLabel(prevYearMonth)}`} value={pctDelta(monthlyTotal, prevYearTotal)} subtitle={`${formatCurrencyFull(prevYearTotal)} base`} /></Card>
           </div>
 
-          {/* V1.10.1: Productos más vendidos del mes — AHORA ARRIBA y con ABC */}
+          {/* V1.10.1 + V1.13: Productos más vendidos del mes — sortable + expand */}
           {monthly.data && monthly.data.productos_top.length > 0 && (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               <Card className="lg:col-span-2" header={
                 <div className="flex items-center justify-between">
-                  <h2 className="font-semibold text-text-primary">Productos más vendidos — {monthLabel(selectedMonth)}</h2>
-                  <span className="text-xs text-text-muted">click → ficha del producto</span>
+                  <h2 className="font-semibold text-text-primary">Productos vendidos — {monthLabel(selectedMonth)}</h2>
+                  <span className="text-xs text-text-muted">click en fila → ficha</span>
                 </div>
               }>
-                <TopProductos productos={monthly.data.productos_top} abcMap={abcMap.data} limit={10} />
+                <ProductosVendidosTabla
+                  productos={monthly.data.productos_top}
+                  abcMap={abcMap.data}
+                  initialLimit={10}
+                  isFullDataset={monthlyExpanded}
+                  loadingAll={monthlyExpanded && monthly.isLoading}
+                  onLoadAll={() => setMonthlyExpanded(true)}
+                />
               </Card>
               <Card header={<h2 className="font-semibold text-text-primary">Mezcla por categoría</h2>}>
                 <p className="mb-3 text-xs text-text-muted">
                   Cuánto de las ventas del top viene de productos <strong>A</strong> (los que generan el 80%),
                   <strong> B</strong> (siguiente 15%) y <strong>C</strong> (cola).
                 </p>
-                <MixAbc productos={monthly.data.productos_top} abcMap={abcMap.data} />
+                <MixAbc productos={monthly.data.productos_top.slice(0, 10)} abcMap={abcMap.data} />
                 <p className="mt-4 text-[0.7rem] text-text-muted">
                   Una venta sana se apoya en sus productos A. Si tu top está lleno de C, revisá tu surtido.
                 </p>

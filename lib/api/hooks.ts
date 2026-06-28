@@ -525,10 +525,28 @@ export interface SalesMonthlyForResponse {
  * siempre devuelve el mes actual, este puede ser cualquiera). Lo usamos
  * para alimentar el card "Productos mas vendidos del mes" cuando el
  * usuario cambia el selector de mes.
+ *
+ * productsLimit: cuantos productos top traer. Default 10 para el preview.
+ * Pasar un numero grande (ej 5000) para "ver todos" sin paginacion.
  */
-export function useSalesMonthlyFor(month: string) {
+export function useSalesMonthlyFor(month: string, productsLimit = 10) {
   return useMetrics<SalesMonthlyForResponse>(
-    `/api/metrics/sales-monthly?month=${month}`,
+    `/api/metrics/sales-monthly?month=${month}&products_limit=${productsLimit}`,
+  );
+}
+
+export interface SalesHistoricalProductsResponse {
+  items: TopSkuItem[];
+  total_skus_con_venta: number;
+}
+
+/**
+ * Top productos vendidos en TODO el histórico (agregado por SKU).
+ * productsLimit: 10 para preview, 5000 para "ver todos".
+ */
+export function useSalesHistoricalProducts(productsLimit = 10) {
+  return useMetrics<SalesHistoricalProductsResponse>(
+    `/api/metrics/sales-historical-products?limit=${productsLimit}`,
   );
 }
 

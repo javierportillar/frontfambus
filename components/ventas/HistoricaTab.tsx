@@ -1,10 +1,18 @@
 "use client";
 
-import { useSalesHistoryExtended, type HistoryMonth, type HistoryYoY } from "@/lib/api/hooks";
+import { useState } from "react";
+import {
+  useSalesHistoryExtended,
+  useSalesHistoricalProducts,
+  useProductAbcMap,
+  type HistoryMonth,
+  type HistoryYoY,
+} from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ProductosVendidosTabla } from "@/components/ventas/ProductosVendidosTabla";
 import {
   ComposedChart, Bar, Line, LineChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
@@ -17,6 +25,11 @@ function mesLabel(yyyymm: string): string {
 
 export function HistoricaTab(): JSX.Element {
   const { data, isLoading } = useSalesHistoryExtended();
+
+  // V1.13: top productos vendidos en TODO el histórico
+  const [productsExpanded, setProductsExpanded] = useState(false);
+  const histProducts = useSalesHistoricalProducts(productsExpanded ? 5000 : 10);
+  const abcMap = useProductAbcMap(180);
 
   if (isLoading && !data) return <Skeleton className="h-96 rounded-xl" />;
   if (!data || data.serie.length === 0) {
@@ -135,6 +148,30 @@ export function HistoricaTab(): JSX.Element {
           </div>
         </Card>
       )}
+
+      {/* V1.13: Productos más vendidos en TODO el histórico */}
+      <Card header={
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-text-primary">Productos vendidos — histórico completo</h2>
+          <span className="text-xs text-text-muted">click en fila → ficha</span>
+        </div>
+      }>
+        {histProducts.isLoading && !histProducts.data ? (
+          <Skeleton className="h-64 rounded-lg" />
+        ) : histProducts.data ? (
+          <ProductosVendidosTabla
+            productos={histProducts.data.items}
+            abcMap={abcMap.data}
+            initialLimit={10}
+            totalAvailable={histProducts.data.total_skus_con_venta}
+            isFullDataset={productsExpanded}
+            loadingAll={productsExpanded && histProducts.isLoading}
+            onLoadAll={() => setProductsExpanded(true)}
+          />
+        ) : (
+          <p className="py-8 text-center text-sm text-text-muted">Sin productos vendidos.</p>
+        )}
+      </Card>
     </div>
   );
 }
