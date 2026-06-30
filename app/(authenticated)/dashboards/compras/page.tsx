@@ -1,15 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useComprasOverview,
   useComprasHistorico,
   useComprasPorProveedor,
-  usePurchasesDayGrouped,
   useComprasProveedorDetalle,
-  type CompraDocumento,
 } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -40,8 +38,28 @@ function currentMonth(): string {
 }
 
 export default function ComprasPage(): JSX.Element {
+  return (
+    <Suspense fallback={<div className="p-4 text-sm text-text-muted">Cargando...</div>}>
+      <ComprasPageInner />
+    </Suspense>
+  );
+}
+
+function ComprasPageInner(): JSX.Element {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("mensual");
-  const [mes, setMes] = useState<string>(currentMonth());
+  // Permite volver desde /compras/dia/[date]?from=mensual con el mes correcto
+  const monthFromUrl = searchParams.get("month");
+  const initialMonth = monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl) ? monthFromUrl : currentMonth();
+  const [mes, setMes] = useState<string>(initialMonth);
+  // Cuando cambia el query param después del primer render
+  useEffect(() => {
+    if (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl) && monthFromUrl !== mes) {
+      setMes(monthFromUrl);
+      setTab("mensual");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthFromUrl]);
 
   return (
     <div className="space-y-4">
@@ -104,7 +122,6 @@ function monthRange(mes: string): { ini: string; fin: string } {
 
 function MensualTab({ mes }: { mes: string }): JSX.Element {
   const { data, isLoading } = useComprasOverview(mes);
-  const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedProv, setSelectedProv] = useState<{ nit: string } | null>(null);
   const router = useRouter();
   const range = useMemo(() => monthRange(mes), [mes]);
@@ -164,16 +181,14 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
               invoices: d.num_documentos,
               avgTicket: d.num_documentos > 0 ? d.total / d.num_documentos : 0,
             }))}
-            onDayClick={(date) => setSelectedDate(date)}
+            onDayClick={(date) => router.push(`/dashboards/compras/dia/${date}?from=mensual`)}
           />
         )}
         <p className="mt-2 text-[0.65rem] text-text-muted">
           Las cifras del calendario representan el <strong>monto comprado</strong> ese día (no ventas).
+          Click en un día → vista de detalle completa.
         </p>
       </Card>
-
-      {/* Detalle del día seleccionado */}
-      {selectedDate && <DiaDetalle date={selectedDate} onClose={() => setSelectedDate("")} />}
 
       {/* Detalle del proveedor seleccionado */}
       {selectedProv && (
@@ -272,131 +287,6 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
           )}
         </Card>
       </div>
-    </div>
-  );
-}
-
-// ── V1.20: Detalle de día agrupado por DOCUMENTO + PROVEEDOR ─────────────
-
-function DiaDetalle({ date, onClose }: { date: string; onClose: () => void }): JSX.Element {
-  const { data, isLoading } = usePurchasesDayGrouped(date);
-  const dayLabel = useMemo(() => {
-    const d = new Date(`${date}T00:00:00`);
-    const dayNames = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-    const monthNames = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-    return `${dayNames[d.getDay()]}, ${d.getDate()} de ${monthNames[d.getMonth()]} de ${d.getFullYear()}`;
-  }, [date]);
-
-  return (
-    <Card header={
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold text-text-primary">Compras del día</h2>
-          <p className="text-xs text-text-muted">{dayLabel}</p>
-        </div>
-        <button type="button" onClick={onClose} className="text-xs text-accent hover:underline">
-          Cerrar ×
-        </button>
-      </div>
-    }>
-      {isLoading ? (
-        <Skeleton className="h-32 rounded-lg" />
-      ) : !data || data.documentos.length === 0 ? (
-        <p className="py-6 text-center text-sm text-text-muted">Sin compras este día.</p>
-      ) : (
-        <>
-          <div className="mb-3 flex flex-wrap gap-3 text-xs">
-            <div className="rounded-md border border-border bg-surface-alt/40 px-2 py-1">
-              <span className="text-text-muted">Total:</span>{" "}
-              <strong>{formatMoneyFull(data.total_compras)}</strong>
-            </div>
-            <div className="rounded-md border border-border bg-surface-alt/40 px-2 py-1">
-              <span className="text-text-muted">Documentos:</span>{" "}
-              <strong>{data.total_documentos}</strong>
-            </div>
-          </div>
-          <div className="space-y-3">
-            {data.documentos.map((doc, idx) => (
-              <DocumentoCard key={`${doc.num_documento}-${idx}`} doc={doc} />
-            ))}
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
-function DocumentoCard({ doc }: { doc: CompraDocumento }): JSX.Element {
-  const router = useRouter();
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="rounded-lg border border-border bg-surface">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-surface-alt"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-base">{open ? "▾" : "▸"}</span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-text-primary truncate">
-                {doc.nombre_proveedor}
-              </div>
-              <div className="text-[0.65rem] text-text-muted">
-                Factura {doc.num_documento}{doc.cod_clase ? ` · ${doc.cod_clase}` : ""}
-                {doc.nit_proveedor && ` · NIT ${doc.nit_proveedor}`}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-sm font-bold text-text-primary tabular-nums">
-            {formatMoneyFull(doc.total_factura)}
-          </div>
-          <div className="text-[0.65rem] text-text-muted">
-            {doc.num_items} producto{doc.num_items === 1 ? "" : "s"}
-          </div>
-        </div>
-      </button>
-      {open && doc.items.length > 0 && (
-        <div className="border-t border-border overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-surface-alt/40 text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
-                <th className="py-1.5 px-3">Producto</th>
-                <th className="py-1.5 px-3 text-right">Cant.</th>
-                <th className="py-1.5 px-3 text-right">V. unit.</th>
-                <th className="py-1.5 px-3 text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {doc.items.map((it, i) => (
-                <tr
-                  key={`${it.cod_producto}-${i}`}
-                  className="border-t border-border/40 hover:bg-surface-alt cursor-pointer"
-                  onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(it.cod_producto)}`)}
-                >
-                  <td className="py-1.5 px-3">
-                    <div className="text-text-primary text-xs truncate max-w-md">{it.nom_producto}</div>
-                    <div className="text-[0.6rem] text-text-muted">{it.cod_producto}</div>
-                  </td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-xs">
-                    {it.cantidad}{" "}
-                    <span className="text-text-muted">{it.unidad_medida ?? "u"}</span>
-                  </td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-xs text-text-muted">
-                    {formatMoneyFull(it.valor_unitario)}
-                  </td>
-                  <td className="py-1.5 px-3 text-right tabular-nums text-xs font-semibold">
-                    {formatMoneyFull(it.total)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
