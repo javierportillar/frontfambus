@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useProductDetail, type ProductMovimiento, type ProductTimelineMonth } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { diasStockLabel, estadoCfg, accionCfg } from "@/lib/productos/display";
@@ -20,19 +19,36 @@ function monthLabel(yyyymm: string): string {
 export default function ProductDetailPage(): JSX.Element {
   const params = useParams();
   const search = useSearchParams();
+  const router = useRouter();
   const sku = decodeURIComponent(String(params.sku ?? ""));
-  const window = Number(search.get("window") ?? 180);
+  const windowDays = Number(search.get("window") ?? 180);
 
-  const { data, isLoading } = useProductDetail(sku || null, window);
+  const { data, isLoading } = useProductDetail(sku || null, windowDays);
+
+  function handleBack(): void {
+    // Si hay historial previo, volver a la página de origen (Ventas, Análisis, etc.)
+    // Si no (ej. bookmark o pestaña nueva), ir a la lista de productos.
+    if (globalThis.window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/dashboards/productos");
+    }
+  }
 
   return (
     <div className="space-y-4">
-      <Link href="/dashboards/productos" className="text-sm text-accent hover:underline">← Volver a productos</Link>
+      <button
+        type="button"
+        onClick={handleBack}
+        className="text-sm text-accent hover:underline cursor-pointer"
+      >
+        ← Volver
+      </button>
 
       {isLoading && !data ? (
         <Skeleton className="h-96 rounded-xl" />
       ) : data && data.found && data.metrics ? (
-        <Detail data={data} window={window} />
+        <Detail data={data} window={windowDays} />
       ) : (
         <Card><p className="py-12 text-center text-sm text-text-muted">Producto no encontrado.</p></Card>
       )}

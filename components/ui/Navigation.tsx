@@ -151,31 +151,45 @@ function Sidebar({
   const availableTenants = useAuthStore((s) => s.availableTenants);
   const clearTenant = useAuthStore((s) => s.clearTenant);
   const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : null;
+  const [hovered, setHovered] = useState(false);
 
   function handleCambiarNegocio(): void {
     clearTenant();
     router.push("/select-tenant");
   }
 
+  // Sidebar se expande si: está descolapsado (toggle explícito) O hay hover
+  const expanded = !collapsed || hovered;
+
+  function handleMouseEnter(): void {
+    if (collapsed) setHovered(true);
+  }
+
+  function handleMouseLeave(): void {
+    setHovered(false);
+  }
+
   return (
     <aside
-      className={`hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 flex-col transition-all duration-300 ${
-        collapsed ? "lg:w-16" : "lg:w-60"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 flex-col transition-all duration-200 ${
+        expanded ? "lg:w-60" : "lg:w-16"
       }`}
     >
       <div
-        className={`flex grow flex-col gap-y-5 overflow-y-auto bg-surface-dark transition-all duration-300 ${
-          collapsed ? "px-2 py-6" : "px-4 py-6"
+        className={`flex grow flex-col gap-y-5 overflow-y-auto bg-surface-dark transition-all duration-200 ${
+          expanded ? "px-4 py-6" : "px-2 py-6"
         }`}
       >
         {/* Marca — solo LogoMark cuando colapsado */}
         <div
           className={`flex items-center gap-3 ${
-            collapsed ? "justify-center px-0" : "px-2"
+            expanded ? "px-2" : "justify-center px-0"
           }`}
         >
           <LogoMark size={28} />
-          {!collapsed && (
+          {expanded && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-text-inverse tracking-tight">
                 {tenantDisplay?.name ?? "MotoShop"}
@@ -203,9 +217,9 @@ function Sidebar({
               <Link
                 key={item.href}
                 href={item.href}
-                title={collapsed ? item.label : undefined}
+                title={!expanded ? item.label : undefined}
                 className={`group flex items-center gap-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5"
+                  expanded ? "px-3 py-2.5" : "justify-center px-2 py-2.5"
                 } ${
                   active
                     ? "bg-primary text-primary-fg shadow-sm"
@@ -220,7 +234,7 @@ function Sidebar({
                   {item.icon}
                 </span>
 
-                {!collapsed && (
+                {expanded && (
                   <>
                     <span className="flex-1">{item.label}</span>
                     {active && (
@@ -240,37 +254,37 @@ function Sidebar({
           {currentTenant && availableTenants.length > 1 && (
             <button
               onClick={handleCambiarNegocio}
-              title={collapsed ? "Cambiar negocio" : undefined}
+              title={!expanded ? "Cambiar negocio" : undefined}
               className={`flex w-full items-center gap-3 rounded-lg text-sm font-medium transition-colors ${
-                collapsed
-                  ? "justify-center px-2 py-2.5"
-                  : "px-3 py-2.5"
+                expanded
+                  ? "px-3 py-2.5"
+                  : "justify-center px-2 py-2.5"
               } text-text-muted hover:bg-surface-dark-alt hover:text-text-inverse`}
             >
               {Icons.tenantSwitch}
-              {!collapsed && <span>Cambiar negocio</span>}
+              {expanded && <span>Cambiar negocio</span>}
             </button>
           )}
 
           {onLogout && (
             <button
               onClick={onLogout}
-              title={collapsed ? "Salir" : undefined}
+              title={!expanded ? "Salir" : undefined}
               className={`flex w-full items-center gap-3 rounded-lg text-sm font-medium transition-colors ${
-                collapsed
-                  ? "justify-center px-2 py-2.5"
-                  : "px-3 py-2.5"
+                expanded
+                  ? "px-3 py-2.5"
+                  : "justify-center px-2 py-2.5"
               } text-text-muted hover:bg-error/10 hover:text-error`}
             >
               {Icons.logout}
-              {!collapsed && <span>Salir</span>}
+              {expanded && <span>Salir</span>}
             </button>
           )}
 
-          {/* Toggle colapsar/expandir */}
+          {/* Toggle colapsar/expandir — "pin" permanente */}
           <button
             onClick={onToggle}
-            title={collapsed ? "Expandir menú" : "Colapsar menú"}
+            title={collapsed ? "Fijar menú abierto" : "Soltar menú"}
             className="flex w-full items-center justify-center rounded-lg py-2 text-text-muted transition-colors hover:bg-surface-dark-alt hover:text-text-inverse"
           >
             <svg
