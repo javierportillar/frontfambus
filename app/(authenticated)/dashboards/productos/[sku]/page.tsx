@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useProductDetail, type ProductMovimiento, type ProductTimelineMonth } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
@@ -62,11 +63,48 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
   const estado = estadoCfg(m.estado);
   const accion = accionCfg(m.accion);
 
-  const timeline = (data.timeline ?? []).map((t: ProductTimelineMonth) => ({
+  // Timeline base con comprado/vendido por mes
+  const timelineBase = (data.timeline ?? []).map((t: ProductTimelineMonth) => ({
     mes: monthLabel(t.mes),
     vendido: t.unidades_vendidas,
     comprado: t.unidades_compradas,
+    neto: t.unidades_compradas - t.unidades_vendidas,
   }));
+
+  // Stock acumulado: el último mes cierra con cantidad_actual; vamos hacia atrás restando el neto.
+  // stock_fin_mes_(i-1) = stock_fin_mes_i - neto_mes_i
+  const timeline = (() => {
+    if (timelineBase.length === 0) return [];
+    const closing: number[] = new Array(timelineBase.length).fill(0);
+    closing[timelineBase.length - 1] = m.cantidad_actual;
+    for (let i = timelineBase.length - 2; i >= 0; i--) {
+      const baseItem = timelineBase[i + 1];
+      const closeNext = closing[i + 1];
+      if (baseItem !== undefined && closeNext !== undefined) {
+        closing[i] = closeNext - baseItem.neto;
+      }
+    }
+    return timelineBase.map((row, i) => ({
+      ...row,
+      stock: Math.max(0, closing[i] ?? 0),
+    }));
+  })();
+
+  // Métricas derivadas para "Fechas clave"
+  const diasPorRotacion = m.rotacion_anual && m.rotacion_anual > 0 ? Math.round(365 / m.rotacion_anual) : null;
+  const ultimoMes = timelineBase[timelineBase.length - 1];
+  const promedioVentaMensual = timelineBase.length > 0
+    ? timelineBase.reduce((acc, r) => acc + r.vendido, 0) / timelineBase.length
+    : 0;
+  const tendenciaPct = ultimoMes && promedioVentaMensual > 0
+    ? ((ultimoMes.vendido - promedioVentaMensual) / promedioVentaMensual) * 100
+    : null;
+  const compradoTotalTimeline = timelineBase.reduce((acc, r) => acc + r.comprado, 0);
+  const vendidoTotalTimeline = timelineBase.reduce((acc, r) => acc + r.vendido, 0);
+  const tieneTotalesHistoricosBackend = Number.isFinite(m.comprado_total) && Number.isFinite(m.vendido_total);
+  const compradoTotal = tieneTotalesHistoricosBackend ? Number(m.comprado_total) : compradoTotalTimeline;
+  const vendidoTotal = tieneTotalesHistoricosBackend ? Number(m.vendido_total) : vendidoTotalTimeline;
+  const totalesLabel = tieneTotalesHistoricosBackend ? "históricas" : `del gráfico (${timelineBase.length} meses)`;
 
   return (
     <>
@@ -100,7 +138,20 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
 
       {/* KPIs principales */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Card><Stat label="Stock actual" value={m.cantidad_actual.toLocaleString("es-CO")} subtitle="unidades (compras − ventas)" /></Card>
+        <Card>
+          <div className="space-y-2">
+            <Stat label="Stock actual" value={m.cantidad_actual.toLocaleString("es-CO")} subtitle="unidades" />
+            <div
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.7rem] font-medium"
+              style={{ background: estado.bg, color: estado.color }}
+              title={estado.desc}
+            >
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: estado.color }} />
+              <span>{estado.label}</span>
+              <span className="ml-auto opacity-80">{estado.desc}</span>
+            </div>
+          </div>
+        </Card>
         <Card><Stat label="Valor en inventario" value={formatMoneyFull(m.valor_inventario)} subtitle={`costo ${formatMoneyFull(m.costo_unit)}/u`} /></Card>
         <Card><Stat label="Velocidad" value={`${m.velocidad_mensual}/mes`} subtitle={`${m.unidades_win.toLocaleString("es-CO")} u en ${window} días`} /></Card>
         <Card><Stat label="Días de stock" value={diasStockLabel(m.dias_stock)} subtitle={m.rotacion_anual ? `rota ${m.rotacion_anual}× al año` : "sin rotación"} /></Card>
@@ -113,96 +164,479 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
         <Card><Stat label="Proveedor" value={m.proveedor ?? "—"} subtitle={m.ultima_compra ? `última compra ${m.ultima_compra}` : "sin compras"} /></Card>
       </div>
 
-      {/* Timeline compras vs ventas */}
-      <Card header={<h2 className="font-semibold text-text-primary">Movimiento mensual — compras vs ventas</h2>}>
+      {/* Timeline compras vs ventas + stock acumulado */}
+      <Card header={<h2 className="font-semibold text-text-primary">Movimiento mensual — compras, ventas y stock</h2>}>
         {timeline.length === 0 ? (
           <p className="py-6 text-center text-sm text-text-muted">Sin movimientos registrados.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={timeline}>
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={timeline} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="mes" tick={{ fontSize: 10 }} stroke="#a3a3a3" />
-              <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" />
+              <YAxis
+                yAxisId="movs"
+                tick={{ fontSize: 10 }}
+                stroke="#a3a3a3"
+                label={{ value: "Unidades movidas", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "#9ca3af" } }}
+              />
+              <YAxis
+                yAxisId="stock"
+                orientation="right"
+                tick={{ fontSize: 10 }}
+                stroke="#a3a3a3"
+                label={{ value: "Stock acumulado", angle: 90, position: "insideRight", style: { fontSize: 10, fill: "#9ca3af" } }}
+              />
               <Tooltip
-                formatter={(v, name) => [`${Number(v)} u`, name === "vendido" ? "Vendido" : "Comprado"]}
+                formatter={(v, name) => {
+                  const label = name === "vendido" ? "Vendido" : name === "comprado" ? "Comprado" : "Stock fin de mes";
+                  return [`${Number(v).toLocaleString("es-CO")} u`, label];
+                }}
                 contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
               />
-              <Legend wrapperStyle={{ fontSize: "11px" }} formatter={(v: string) => (v === "vendido" ? "Vendido" : "Comprado")} />
-              <Bar dataKey="comprado" fill="#0EA5E9" radius={[3, 3, 0, 0]} name="comprado" />
-              <Line type="monotone" dataKey="vendido" stroke="var(--color-primary, #C83828)" strokeWidth={2} dot={{ r: 2 }} name="vendido" />
+              <Legend
+                wrapperStyle={{ fontSize: "11px" }}
+                formatter={(v: string) => (v === "vendido" ? "Vendido" : v === "comprado" ? "Comprado" : "Stock acumulado")}
+              />
+              <Bar yAxisId="movs" dataKey="comprado" fill="#0EA5E9" radius={[3, 3, 0, 0]} name="comprado" />
+              <Bar yAxisId="movs" dataKey="vendido" fill="var(--color-primary, #C83828)" radius={[3, 3, 0, 0]} name="vendido" />
+              <Line
+                yAxisId="stock"
+                type="monotone"
+                dataKey="stock"
+                stroke="#15803D"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#15803D" }}
+                name="stock"
+              />
             </ComposedChart>
           </ResponsiveContainer>
         )}
         <p className="mt-1 text-[0.65rem] text-text-muted">
-          Las barras azules son lo que compraste al proveedor; la línea roja, lo que vendiste. Si la línea está siempre arriba de las barras, te estás quedando corto de stock.
+          Barras azules = compras al proveedor · barras rojas = ventas · línea verde = stock al cierre del mes (estimado a partir del stock actual hacia atrás).
         </p>
       </Card>
 
-      {/* Datos de venta / fechas */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Card header={<h3 className="font-semibold text-text-primary">Fechas clave</h3>}>
-          <dl className="space-y-2 text-sm">
-            <Row label="Última venta" value={m.ultima_venta ?? "Nunca"} extra={m.dias_sin_venta !== null ? `hace ${m.dias_sin_venta} días` : ""} />
-            <Row label="Última compra" value={m.ultima_compra ?? "Nunca"} extra={m.dias_sin_compra !== null ? `hace ${m.dias_sin_compra} días` : ""} />
-            <Row label="Categoría ABC" value={m.abc === "sin_venta" ? "Sin ventas" : `Categoría ${m.abc}`} extra={m.rank_rev ? `puesto #${m.rank_rev}` : ""} />
-            <Row label="Rotación anual" value={m.rotacion_anual ? `${m.rotacion_anual} veces/año` : "—"} extra="" />
-          </dl>
-        </Card>
+      {/* Ritmo y rotación */}
+      <Card header={<h3 className="font-semibold text-text-primary">Ritmo y rotación</h3>}>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm md:grid-cols-2">
+          <Row
+            label="Rota cada"
+            value={diasPorRotacion ? `${diasPorRotacion} días` : "—"}
+            extra={diasPorRotacion ? `cada ${diasPorRotacion} días vendés un stock entero` : "sin movimiento suficiente"}
+          />
+          <Row
+            label="Stock alcanza para"
+            value={diasStockLabel(m.dias_stock)}
+            extra={m.dias_stock !== null && m.dias_stock > 0 ? "al ritmo de venta actual" : ""}
+          />
+          <Row
+            label="Tendencia último mes"
+            value={tendenciaPct === null ? "—" : `${tendenciaPct >= 0 ? "▲" : "▼"} ${Math.abs(tendenciaPct).toFixed(0)}%`}
+            extra={tendenciaPct === null ? "sin historial" : "vs. promedio del período"}
+          />
+          <Row
+            label="Categoría ABC"
+            value={m.abc === "sin_venta" ? "Sin ventas" : `Categoría ${m.abc}`}
+            extra={m.rank_rev ? `puesto #${m.rank_rev} en ventas` : ""}
+          />
+          <Row
+            label="Última venta"
+            value={m.ultima_venta ?? "Nunca"}
+            extra={m.dias_sin_venta !== null ? `hace ${m.dias_sin_venta} días` : ""}
+          />
+          <Row
+            label="Última compra"
+            value={m.ultima_compra ?? "Nunca"}
+            extra={m.dias_sin_compra !== null ? `hace ${m.dias_sin_compra} días` : ""}
+          />
+        </dl>
+      </Card>
 
-        <Card header={<h3 className="font-semibold text-text-primary">Últimos movimientos</h3>}>
-          {data.movimientos && data.movimientos.length > 0 ? (
-            <div className="max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border/50 text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
-                    <th className="py-1.5 pr-2">Fecha</th>
-                    <th className="py-1.5 px-2">Tipo</th>
-                    <th className="py-1.5 px-2">Documento</th>
-                    <th className="py-1.5 px-2 text-right">Cant</th>
-                    <th className="py-1.5 pl-2 text-right">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.movimientos.map((mv: ProductMovimiento, i: number) => (
-                    <tr key={i} className="border-b border-border/50">
-                      <td className="py-1.5 pr-2 text-text-muted whitespace-nowrap">{mv.fecha}</td>
-                      <td className="py-1.5 px-2">
-                        <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${mv.tipo === "venta" ? "bg-primary/10 text-primary" : "bg-sky-100 text-sky-700"}`}>
-                          {mv.tipo === "venta" ? "Venta" : "Compra"}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-2">
-                        {mv.tipo === "compra" ? (
-                          <Link
-                            href={`/dashboards/compras/dia/${mv.fecha}`}
-                            className="text-accent hover:underline font-mono"
-                            title="Ver detalle de compras del día"
-                          >
-                            {mv.num_documento}
-                          </Link>
-                        ) : (
-                          <Link
-                            href={`/dashboards/ventas/dia/${mv.fecha}`}
-                            className="text-accent hover:underline font-mono"
-                            title="Ver detalle de ventas del día"
-                          >
-                            {mv.num_documento}
-                          </Link>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-2 text-right tabular-nums">{mv.cantidad} u</td>
-                      <td className="py-1.5 pl-2 text-right tabular-nums font-medium">{formatMoneyFull(mv.valor)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="py-6 text-center text-sm text-text-muted">Sin movimientos.</p>
-          )}
-        </Card>
-      </div>
+      {/* Últimos movimientos: compras (izq) vs ventas (der) */}
+      <MovimientosSplit
+        movimientos={data.movimientos ?? []}
+        stockActual={m.cantidad_actual}
+        compradoTotal={compradoTotal}
+        vendidoTotal={vendidoTotal}
+        totalesLabel={totalesLabel}
+      />
     </>
+  );
+}
+
+/** Resultado FIFO por compra: cuántas unidades de esa tanda ya se vendieron y cuántas siguen en stock. */
+interface ComprasFifo {
+  index: number;       // posición en el array original `compras`
+  vendidas: number;    // unidades de esta compra ya consumidas por ventas posteriores
+  enStock: number;     // unidades restantes de esta compra
+}
+
+interface DiaMovimientoGroup {
+  fecha: string;
+  movimientos: ProductMovimiento[];
+  unidades: number;
+  total: number;
+}
+
+interface MesMovimientoGroup {
+  mes: string;
+  label: string;
+  movimientos: ProductMovimiento[];
+  dias: DiaMovimientoGroup[];
+  unidades: number;
+  total: number;
+}
+
+function groupMovimientosByMonth(movimientos: ProductMovimiento[], order: "asc" | "desc"): MesMovimientoGroup[] {
+  const byMonth = new Map<string, ProductMovimiento[]>();
+  for (const mv of movimientos) {
+    const mes = String(mv.fecha).slice(0, 7);
+    const list = byMonth.get(mes) ?? [];
+    list.push(mv);
+    byMonth.set(mes, list);
+  }
+
+  return Array.from(byMonth.entries())
+    .sort(([a], [b]) => (order === "asc" ? a.localeCompare(b) : b.localeCompare(a)))
+    .map(([mes, items]) => {
+      const byDay = new Map<string, ProductMovimiento[]>();
+      for (const mv of items) {
+        const dayItems = byDay.get(mv.fecha) ?? [];
+        dayItems.push(mv);
+        byDay.set(mv.fecha, dayItems);
+      }
+      const dias = Array.from(byDay.entries())
+        .sort(([a], [b]) => (order === "asc" ? a.localeCompare(b) : b.localeCompare(a)))
+        .map(([fecha, dayItems]) => ({
+          fecha,
+          movimientos: [...dayItems].sort((a, b) => String(a.num_documento).localeCompare(String(b.num_documento), "es", { numeric: true })),
+          unidades: dayItems.reduce((acc, mv) => acc + mv.cantidad, 0),
+          total: dayItems.reduce((acc, mv) => acc + mv.valor, 0),
+        }));
+
+      return {
+        mes,
+        label: monthLabel(mes),
+        movimientos: items,
+        dias,
+        unidades: items.reduce((acc, mv) => acc + mv.cantidad, 0),
+        total: items.reduce((acc, mv) => acc + mv.valor, 0),
+      };
+    });
+}
+
+function calcularFifoDesdeStockActual(compras: ProductMovimiento[], stockActual: number): ComprasFifo[] {
+  // Bajo FIFO, el stock remanente pertenece a las compras más recientes.
+  // Por eso asignamos el stock actual desde la compra más nueva hacia atrás,
+  // en vez de intentar reconstruir consumo con ventas visibles/limitadas.
+  const comprasDesc = compras
+    .map((mv, i) => ({ ...mv, _origIndex: i }))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || String(b.num_documento).localeCompare(String(a.num_documento), "es", { numeric: true }));
+
+  let stockPorAsignar = Math.max(0, stockActual);
+
+  return comprasDesc.map((c) => {
+    const enStock = Math.min(c.cantidad, stockPorAsignar);
+    stockPorAsignar -= enStock;
+    return {
+      index: c._origIndex,
+      vendidas: Math.max(0, c.cantidad - enStock),
+      enStock,
+    };
+  });
+}
+
+function MovimientosSplit({
+  movimientos,
+  stockActual,
+  compradoTotal,
+  vendidoTotal,
+  totalesLabel,
+}: {
+  movimientos: ProductMovimiento[];
+  stockActual: number;
+  compradoTotal: number;
+  vendidoTotal: number;
+  totalesLabel: string;
+}): JSX.Element {
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
+  const compras = movimientos.filter((mv) => mv.tipo === "compra");
+  const ventas = movimientos.filter((mv) => mv.tipo === "venta");
+
+  const totalCompras = compras.reduce((acc, mv) => acc + mv.valor, 0);
+  const totalVentas = ventas.reduce((acc, mv) => acc + mv.valor, 0);
+  const udsCompras = compras.reduce((acc, mv) => acc + mv.cantidad, 0);
+  const udsVentas = ventas.reduce((acc, mv) => acc + mv.cantidad, 0);
+
+  // FIFO reconciliado con stock actual: por cada compra visible, cuánto saldo queda.
+  const fifoArr = calcularFifoDesdeStockActual(compras, stockActual);
+  const fifoPorIndex = new Map(fifoArr.map((f) => [f.index, f]));
+  const stockFueraDeComprasVisibles = Math.max(0, stockActual - udsCompras);
+  const tieneTotalesHistoricos = Number.isFinite(compradoTotal) && Number.isFinite(vendidoTotal);
+
+  return (
+    <Card
+      header={
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="font-semibold text-text-primary">Historial completo de movimientos</h3>
+            <p className="text-xs font-normal text-text-muted">Agrupado por mes; abrí un mes para ver los días y documentos.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOrder((current) => (current === "desc" ? "asc" : "desc"))}
+            className="self-start rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-muted md:self-auto"
+          >
+            Fecha: {order === "desc" ? "reciente primero" : "antigua primero"}
+          </button>
+        </div>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:divide-x md:divide-border/60">
+        <MovimientoColumna
+          tipo="compra"
+          titulo="Compras"
+          movimientos={compras}
+          unidades={udsCompras}
+          total={totalCompras}
+          fifoPorIndex={fifoPorIndex}
+          order={order}
+        />
+        <div className="md:pl-4">
+          <MovimientoColumna
+            tipo="venta"
+            titulo="Ventas"
+            movimientos={ventas}
+            unidades={udsVentas}
+            total={totalVentas}
+            order={order}
+          />
+        </div>
+      </div>
+      {tieneTotalesHistoricos && (
+        <div className="mt-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-text-secondary">
+          <span className="font-semibold text-text-primary">Cálculo del stock:</span>{" "}
+          {compradoTotal.toLocaleString("es-CO")} u compradas {totalesLabel} − {vendidoTotal.toLocaleString("es-CO")} u vendidas {totalesLabel} ={" "}
+          <span className="font-semibold text-text-primary">{stockActual.toLocaleString("es-CO")} u actuales</span>.
+          <span className="ml-1 text-text-muted">
+            Abajo se muestran todos los movimientos que devuelve el backend, agrupados para que no sea una lista infinita.
+          </span>
+        </div>
+      )}
+      <p className="mt-3 text-[0.65rem] text-text-muted">
+        Saldo por compra estimado con FIFO y anclado al stock actual ({stockActual.toLocaleString("es-CO")} u). Bajo FIFO, el stock restante se asigna a las compras más recientes.
+        {stockFueraDeComprasVisibles > 0 ? ` Hay ${stockFueraDeComprasVisibles.toLocaleString("es-CO")} u de stock que no se explican con las compras visibles.` : ""}
+      </p>
+    </Card>
+  );
+}
+
+function MovimientoColumna({
+  tipo,
+  titulo,
+  movimientos,
+  unidades,
+  total,
+  fifoPorIndex,
+  order,
+}: {
+  tipo: "compra" | "venta";
+  titulo: string;
+  movimientos: ProductMovimiento[];
+  unidades: number;
+  total: number;
+  fifoPorIndex?: Map<number, ComprasFifo>;
+  order: "asc" | "desc";
+}): JSX.Element {
+  const esCompra = tipo === "compra";
+  const color = esCompra ? "#0EA5E9" : "var(--color-primary, #C83828)";
+  const bg = esCompra ? "bg-sky-50" : "bg-primary/5";
+  const text = esCompra ? "text-sky-700" : "text-primary";
+  const hrefBase = esCompra ? "/dashboards/compras/dia" : "/dashboards/ventas/dia";
+  const meses = groupMovimientosByMonth(movimientos, order);
+
+  return (
+    <div className="space-y-2">
+      <div className={`flex items-center justify-between rounded-md ${bg} px-3 py-2`}>
+        <div className="flex items-center gap-2">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
+          <span className={`text-sm font-semibold ${text}`}>{titulo}</span>
+          <span className="text-[0.7rem] text-text-muted">
+            {movimientos.length} mov · {unidades.toLocaleString("es-CO")} u
+          </span>
+        </div>
+        <span className={`text-sm font-semibold tabular-nums ${text}`}>{formatMoneyFull(total)}</span>
+      </div>
+
+      {movimientos.length === 0 ? (
+        <p className="py-6 text-center text-xs text-text-muted">
+          {esCompra ? "Sin compras en el período." : "Sin ventas en el período."}
+        </p>
+      ) : (
+        <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1">
+          {meses.map((mes) => (
+            <MesMovimientos
+              key={`${tipo}-${mes.mes}`}
+              tipo={tipo}
+              mes={mes}
+              hrefBase={hrefBase}
+              fifoPorIndex={fifoPorIndex}
+              compras={comprasSafe(movimientos, esCompra)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function comprasSafe(movimientos: ProductMovimiento[], esCompra: boolean): ProductMovimiento[] {
+  return esCompra ? movimientos : [];
+}
+
+function MesMovimientos({
+  tipo,
+  mes,
+  hrefBase,
+  fifoPorIndex,
+  compras,
+}: {
+  tipo: "compra" | "venta";
+  mes: MesMovimientoGroup;
+  hrefBase: string;
+  fifoPorIndex?: Map<number, ComprasFifo>;
+  compras: ProductMovimiento[];
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const esCompra = tipo === "compra";
+  const colorClass = esCompra ? "border-sky-200 bg-sky-50/60 text-sky-800" : "border-primary/20 bg-primary/5 text-primary";
+
+  return (
+    <div className={`overflow-hidden rounded-lg border ${colorClass}`}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left">
+        <div>
+          <div className="text-sm font-semibold">{open ? "▾" : "▸"} {mes.label}</div>
+          <div className="text-[0.7rem] opacity-75">{mes.dias.length} días · {mes.movimientos.length} mov</div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm font-bold tabular-nums">{mes.unidades.toLocaleString("es-CO")} u</div>
+          <div className="text-[0.7rem] font-semibold tabular-nums">{formatMoneyFull(mes.total)}</div>
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-current/10 bg-surface/80 px-2 py-2 text-text-secondary">
+          {mes.dias.map((dia) => (
+            <DiaMovimientos
+              key={`${tipo}-${dia.fecha}`}
+              dia={dia}
+              esCompra={esCompra}
+              hrefBase={hrefBase}
+              fifoPorIndex={fifoPorIndex}
+              compras={compras}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiaMovimientos({
+  dia,
+  esCompra,
+  hrefBase,
+  fifoPorIndex,
+  compras,
+}: {
+  dia: DiaMovimientoGroup;
+  esCompra: boolean;
+  hrefBase: string;
+  fifoPorIndex?: Map<number, ComprasFifo>;
+  compras: ProductMovimiento[];
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mb-2 rounded-md border border-border/60 bg-surface last:mb-0">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between px-2 py-1.5 text-left text-xs hover:bg-muted/60">
+        <span className="font-medium text-text-primary">{open ? "▾" : "▸"} {dia.fecha}</span>
+        <span className="tabular-nums text-text-muted">{dia.unidades.toLocaleString("es-CO")} u · {formatMoneyFull(dia.total)}</span>
+      </button>
+      {open && (
+        <table className="w-full border-t border-border/50 text-xs">
+          <thead>
+            <tr className="text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
+              <th className="py-1.5 px-2">Documento</th>
+              <th className="py-1.5 px-2 text-right">Cant</th>
+              <th className="py-1.5 px-2 text-right">Unit.</th>
+              <th className="py-1.5 px-2 text-right">Total</th>
+              {esCompra && <th className="py-1.5 px-2 text-right">Estado</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {dia.movimientos.map((mv, i) => {
+              const unitario = mv.cantidad > 0 ? mv.valor / mv.cantidad : 0;
+              const compraIndex = esCompra ? compras.indexOf(mv) : -1;
+              const fifo = esCompra && fifoPorIndex ? fifoPorIndex.get(compraIndex) : undefined;
+              return (
+                <tr key={`${mv.fecha}-${mv.num_documento}-${i}`} className="border-t border-border/40">
+                  <td className="py-1.5 px-2">
+                    <Link href={`${hrefBase}/${mv.fecha}`} className="font-mono text-accent hover:underline">
+                      {mv.num_documento}
+                    </Link>
+                  </td>
+                  <td className="py-1.5 px-2 text-right tabular-nums">{mv.cantidad} u</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-text-muted">{formatMoneyFull(unitario)}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums font-medium">{formatMoneyFull(mv.valor)}</td>
+                  {esCompra && (
+                    <td className="py-1.5 px-2 text-right">
+                      <EstadoCompraBadge fifo={fifo} cantidad={mv.cantidad} />
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function EstadoCompraBadge({ fifo, cantidad }: { fifo: ComprasFifo | undefined; cantidad: number }): JSX.Element {
+  if (!fifo) {
+    return <span className="text-[0.65rem] text-text-muted">—</span>;
+  }
+  if (fifo.enStock <= 0) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
+        style={{ background: "#DCFCE7", color: "#15803D" }}
+        title={`Según FIFO y stock actual, las ${cantidad} unidades visibles de esta compra ya salieron`}
+      >
+        ✓ Vendido
+      </span>
+    );
+  }
+  if (fifo.vendidas <= 0) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
+        style={{ background: "#FEE2E2", color: "#B91C1C" }}
+        title={`Según FIFO y stock actual, las ${cantidad} unidades visibles de esta compra siguen en stock`}
+      >
+        ● En stock
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
+      style={{ background: "#FFEDD5", color: "#C2410C" }}
+      title={`Según FIFO y stock actual: ${fifo.vendidas} vendidas · ${fifo.enStock} en stock`}
+    >
+      ◐ {fifo.vendidas}/{cantidad}
+    </span>
   );
 }
 
@@ -236,7 +670,10 @@ function recomendacion(m: NonNullable<ReturnType<typeof useProductDetail>["data"
       return "Tiene stock pero no vendió en el período. Revisá precio o ubicación, o discontinualo.";
     case "servicio":
       return "Es un servicio, no un producto inventariable. No aplica control de stock.";
-    default:
-      return `Rota ${m.rotacion_anual ?? "—"}× al año con ${diasStockLabel(m.dias_stock)} de stock. Todo en orden.`;
+    default: {
+      const cada = m.rotacion_anual && m.rotacion_anual > 0 ? Math.round(365 / m.rotacion_anual) : null;
+      const rotInfo = cada ? `rota cada ${cada} días` : "rotación estable";
+      return `${rotInfo} y el stock alcanza para ${diasStockLabel(m.dias_stock)}. Todo en orden.`;
+    }
   }
 }

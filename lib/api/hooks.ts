@@ -690,6 +690,8 @@ export type ProductAbc = "A" | "B" | "C" | "sin_venta";
 export interface ProductMetric {
   cod_producto: string;
   nombre: string;
+  comprado_total?: number;
+  vendido_total?: number;
   cantidad_actual: number;
   costo_unit: number;
   precio: number;
