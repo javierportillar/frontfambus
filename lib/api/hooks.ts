@@ -1563,6 +1563,57 @@ export function useVendorDataFlag() {
   return useMetrics<VendorDataFlagResponse>("/api/metrics/vendor-data-flag");
 }
 
+// ── V1.17: Inventario inteligente (refactor /dashboards/inventario) ──────
+
+export type InventarioAccion =
+  | "comprar_ya"
+  | "comprar_pronto"
+  | "sobrestock"
+  | "liquidar"
+  | "zombie_con_stock"
+  | "ok"
+  | "sin_accion";
+
+export interface InventarioItem {
+  cod_producto: string;
+  nom_producto: string;
+  stock: number;
+  uds_90d: number;
+  rev_90d: number;
+  rotacion_diaria: number;
+  cobertura_dias: number | null;
+  ultima_venta: string | null;
+  ultima_compra: string | null;
+  dias_desde_venta: number | null;
+  costo_unit: number;
+  precio_venta: number;
+  capital_inmovilizado: number;
+  sugerido_comprar: number;
+  abc: string | null;
+  presentacion: string | null;
+  unidad_medida: string;
+  accion: InventarioAccion;
+  ingreso_perdido_estimado: number;
+}
+
+export interface InventarioOverviewResponse {
+  total_skus: number;
+  lead_time_dias: number;
+  colchon_dias: number;
+  umbral_sobrestock_dias: number;
+  valor_total_inventario: number;
+  capital_ocioso: number;
+  ingreso_perdido_estimado_mensual: number;
+  buckets_count: Record<InventarioAccion, number>;
+  items: InventarioItem[];
+}
+
+export function useInventarioOverview(leadTime = 7, colchon = 14, sobrestock = 180) {
+  return useMetrics<InventarioOverviewResponse>(
+    `/api/metrics/inventario-overview?lead_time_dias=${leadTime}&colchon_dias=${colchon}&umbral_sobrestock_dias=${sobrestock}`,
+  );
+}
+
 
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
 

@@ -547,14 +547,14 @@ export function Navigation({
  * Si feature es undefined, la ruta es siempre visible.
  */
 export function gerenteNavItems(): NavItem[] {
+  // V1.17: ABC, Plan Compras y Dormidos consolidados en Inventario (4 tabs).
+  // Las rutas viejas redirigen automáticamente (ver app/dashboards/.../page.tsx).
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
     { label: "Ventas", href: "/dashboards/ventas", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Productos", href: "/dashboards/productos", icon: Icons.productos, feature: "inventario" },
     { label: "Compras", href: "/dashboards/compras", icon: Icons.compras, feature: "inventario" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
-    { label: "ABC", href: "/dashboards/abc", icon: Icons.abc, feature: "abc" },
-    { label: "Dormidos", href: "/dashboards/dormidos", icon: Icons.dormidos, feature: "dormidos" },
     { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast },
     { label: "Forecast", href: "/forecast", icon: Icons.forecast, feature: "forecast" },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
@@ -562,9 +562,8 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Cohortes", href: "/cohortes", icon: Icons.home, feature: "cohortes" },
     { label: "Vendedores", href: "/vendedores", icon: Icons.home, feature: "vendedores" },
     { label: "Drift", href: "/drift", icon: Icons.alerts, feature: "drift" },
-    { label: "Plan Compras", href: "/plan-compras", icon: Icons.planCompras, feature: "plan-compras" },
     { label: "Pipeline", href: "/admin/pipeline", icon: Icons.home, feature: "pipeline-observability" },
-    { label: "Catálogo", href: "/admin/data-catalog", icon: Icons.home, feature: "data-catalog" },
+    { label: "Catálogo de datos", href: "/admin/data-catalog", icon: Icons.home, feature: "data-catalog" },
   ];
 }
 
