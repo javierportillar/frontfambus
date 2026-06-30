@@ -2,9 +2,16 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useForecast, useForecastCategoria, useForecastNarrative, useProducts } from "@/lib/api/hooks";
-import FeatureGuard from "@/components/ui/FeatureGuard";
+import {
+  useForecast,
+  useForecastCategoria,
+  useForecastNarrative,
+  useProducts,
+  useSalesForecastMonthly,
+} from "@/lib/api/hooks";
+import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
+import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -24,6 +31,14 @@ import {
 
 const HORIZON_OPTIONS = [7, 14, 30] as const;
 
+type ForecastTab = "mensual" | "demanda";
+
+const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+function monthLabel(yyyymm: string): string {
+  const [y, m] = yyyymm.split("-");
+  return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
+}
+
 function CustomBarTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -42,31 +57,164 @@ function CustomBarTooltip({ active, payload, label }: any) {
   );
 }
 
-
 function ForecastContent(): JSX.Element {
+  const [tab, setTab] = useState<ForecastTab>("mensual");
+
+  return (
+    <div className="space-y-4">
+      <Link href="/" className="text-sm text-accent hover:underline">
+        ← Volver a inicio
+      </Link>
+
+      <div>
+        <h1 className="text-xl font-bold text-text-primary">Forecast</h1>
+        <p className="text-sm text-text-muted">
+          Proyección financiera mensual + predicción de demanda por categoría y SKU.
+        </p>
+      </div>
+
+      <StaleDataBanner />
+
+      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+        <TabButton active={tab === "mensual"} onClick={() => setTab("mensual")} label="📅 Mensual ($)" />
+        <TabButton active={tab === "demanda"} onClick={() => setTab("demanda")} label="📦 Por demanda (unidades)" />
+      </div>
+
+      {tab === "mensual" ? <MensualTab /> : <DemandaTab />}
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+        active
+          ? "bg-surface-dark text-text-inverse"
+          : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ── TAB 1: Mensual (proyección financiera) ──────────────────────────────
+
+function MensualTab(): JSX.Element {
+  const { data, isLoading } = useSalesForecastMonthly();
+
+  if (isLoading && !data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
+  if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos de proyección.</p></Card>;
+
+  const cm = data.current_month;
+  const nm = data.next_month;
+  const observed = cm.observed_amount ?? 0;
+  const pendingCurrent = Math.max(0, cm.projected_amount - observed);
+
+  const barData = [
+    { label: monthLabel(cm.month), real: observed, proy: pendingCurrent },
+    { label: monthLabel(nm.month), real: 0, proy: nm.projected_amount },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="space-y-2 text-xs text-text-muted">
+          <p>
+            <strong className="text-text-primary">Cómo se calcula:</strong>{" "}
+            el ritmo de venta diario se toma de los <strong>últimos 90 días completos</strong>{" "}
+            (excluyendo el mes en curso) y se proyecta a los días restantes del mes actual y a todo el mes siguiente.
+          </p>
+          <p>
+            <strong className="text-text-primary">Por qué no cambia día a día:</strong>{" "}
+            el rate se &ldquo;congela&rdquo; sobre datos cerrados, así el número proyectado del mes en curso
+            sólo se mueve por lo que vas vendiendo (parte real), no por re-cálculos del rate.
+            Al cerrar el mes, el rate se actualiza naturalmente con el mes recién terminado.
+          </p>
+          {data.rate_basis && data.rate_basis !== "rolling_90d_complete" && (
+            <p className="text-amber-700">
+              ⚠️ Forecast usando fallback: <strong>{data.rate_basis}</strong> (no hay 90d completos de datos).
+            </p>
+          )}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Card>
+          <Stat
+            label={`Mes en curso — ${monthLabel(cm.month)}`}
+            value={formatMoneyFull(cm.projected_amount)}
+            subtitle={`Real hasta hoy: ${formatMoneyFull(observed)} · proyectado: ${formatMoneyFull(pendingCurrent)} · confianza ${cm.confidence}`}
+          />
+        </Card>
+        <Card>
+          <Stat
+            label={`Próximo mes — ${monthLabel(nm.month)}`}
+            value={formatMoneyFull(nm.projected_amount)}
+            subtitle={`${nm.days_total} días · confianza ${nm.confidence}${
+              nm.last_year_same_month ? ` · año pasado mismo mes: ${formatMoneyFull(nm.last_year_same_month)}` : ""
+            }`}
+          />
+        </Card>
+      </div>
+
+      <Card header={<h2 className="font-semibold text-text-primary">Mes actual y siguiente</h2>}>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={barData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#a3a3a3" />
+            <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
+            <Tooltip
+              formatter={(value, name) => [formatMoneyFull(Number(value)), name === "real" ? "Real" : "Proyectado"]}
+              contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
+            />
+            <Bar dataKey="real" fill="#7B1818" stackId="a" radius={[0, 0, 0, 0]} name="real" />
+            <Bar dataKey="proy" fill="#FCD34D" stackId="a" radius={[4, 4, 0, 0]} name="proy" />
+          </BarChart>
+        </ResponsiveContainer>
+        <div className="mt-2 flex items-center gap-4 text-xs text-text-muted">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded" style={{ background: "#7B1818" }} /> Real (ya vendido)
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded" style={{ background: "#FCD34D" }} /> Proyectado
+          </span>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="text-xs text-text-muted">
+          <strong className="text-text-primary">Modelo:</strong> {data.model_version}
+          {data.rate_window && (
+            <> · <strong className="text-text-primary">Ventana base:</strong> {data.rate_window.start} → {data.rate_window.end} ({data.rate_window.days_with_sales} días con venta)</>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── TAB 2: Por demanda (unidades, categorías, SKU) ──────────────────────
+
+function DemandaTab(): JSX.Element {
   const [sku, setSku] = useState("");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [horizon, setHorizon] = useState<number>(7);
   const [showSuggestions, setShowSuggestions] = useState(false);
-
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data, error, isLoading } = useForecast(selectedSku, horizon);
 
-  // Debounce search query before sending to API
   useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(sku), 300);
     return () => clearTimeout(timer);
   }, [sku]);
 
-  // Fetch products from API for autocomplete
-  const { data: productsData } = useProducts(
-    searchQuery,
-    1,
-    20,
-  );
+  const { data: productsData } = useProducts(searchQuery, 1, 20);
 
-  // Auto-select first product with forecast on initial load
   useEffect(() => {
     if (!selectedSku && productsData?.items && productsData.items.length > 0) {
       const first = productsData.items.find((p: any) => p.has_forecast === true) ?? productsData.items[0];
@@ -94,10 +242,8 @@ function ForecastContent(): JSX.Element {
     }));
   }, [data]);
 
-  // Separate fetch with max horizon for bar chart aggregation
   const { data: barSourceData } = useForecast(selectedSku, 30);
 
-  // Aggregate 30-day data into 3 period buckets for the bar chart
   const barChartData = useMemo(() => {
     if (!barSourceData?.forecast) return [];
     const items = barSourceData.forecast;
@@ -123,10 +269,7 @@ function ForecastContent(): JSX.Element {
       .filter(Boolean) as { horizon: string; predicted: number; ciLower: number; ciUpper: number }[];
   }, [barSourceData]);
 
-  // Category-level data for comparative chart
   const { data: categoriaData } = useForecastCategoria();
-
-  // Forecast narrative (V1.6 Sprint B)
   const { data: narrative, isLoading: narrativeLoading, mutate: refreshNarrative } = useForecastNarrative();
 
   function handleSelect(suggestionSku: string) {
@@ -144,20 +287,7 @@ function ForecastContent(): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <Link href="/" className="text-sm text-accent hover:underline">
-        ← Volver a inicio
-      </Link>
-
-      <div>
-        <h1 className="text-xl font-bold text-text-primary">Predicciones de demanda</h1>
-        <p className="text-sm text-text-muted">
-          Forecast por categoría (vista principal) + drilldown por SKU
-        </p>
-      </div>
-
-      <StaleDataBanner />
-
-      {/* Forecast Narrative Card (V1.6 Sprint B) */}
+      {/* Narrativa LLM */}
       {narrativeLoading ? (
         <Card header={<h2 className="font-semibold text-text-primary">Análisis del forecast</h2>}>
           <div className="space-y-2">
@@ -190,7 +320,6 @@ function ForecastContent(): JSX.Element {
         </Card>
       ) : null}
 
-      {/* F7-FIX1 bug 6.2 + 4.5: explicación pedagógica de por qué por categoría */}
       <Card>
         <details className="text-sm" open>
           <summary className="cursor-pointer font-medium text-text-primary">
@@ -218,7 +347,6 @@ function ForecastContent(): JSX.Element {
         </details>
       </Card>
 
-      {/* Forecast por categoría — vista principal (F7-FIX1 bug 4.5) */}
       {categoriaData?.items && categoriaData.items.length > 0 && (
         <Card header={
           <div className="flex items-center justify-between">
@@ -272,14 +400,12 @@ function ForecastContent(): JSX.Element {
         </Card>
       )}
 
-      {/* Drilldown por SKU */}
       <div className="pt-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
           Drilldown por SKU (opcional)
         </h2>
       </div>
 
-      {/* Buscador de SKU */}
       <div className="relative">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -325,7 +451,6 @@ function ForecastContent(): JSX.Element {
         </div>
       </div>
 
-      {/* Selector de horizonte */}
       {selectedSku && (
         <div className="flex gap-2">
           {HORIZON_OPTIONS.map((h) => (
@@ -344,7 +469,6 @@ function ForecastContent(): JSX.Element {
         </div>
       )}
 
-      {/* Loading */}
       {isLoading && (
         <div className="space-y-3">
           <Skeleton className="h-5 w-48" />
@@ -352,12 +476,10 @@ function ForecastContent(): JSX.Element {
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <ErrorState title="Error al cargar" message="No se pudieron obtener los datos de predicciones." severity="warning" />
       )}
 
-      {/* Forecast chart */}
       {data && chartData.length > 0 && (
         <>
           <Card
@@ -419,7 +541,6 @@ function ForecastContent(): JSX.Element {
             </div>
           </Card>
 
-          {/* Gráfico de barras por período */}
           {barChartData.length > 0 && (
             <Card header={<h2 className="font-semibold text-text-primary">Resumen por período</h2>}>
               <ResponsiveContainer width="100%" height={220}>
@@ -433,16 +554,14 @@ function ForecastContent(): JSX.Element {
               </ResponsiveContainer>
             </Card>
           )}
-
         </>
       )}
 
-      {/* Estado vacío del SKU drilldown */}
       {!selectedSku && !isLoading && (
         <Card>
           <p className="py-8 text-center text-sm text-text-muted">
             Buscá un SKU específico arriba para ver su predicción individual.
-            La vista principal de categorías ya está mostrando arriba.
+            La vista por categorías ya está arriba.
           </p>
         </Card>
       )}
@@ -451,9 +570,8 @@ function ForecastContent(): JSX.Element {
 }
 
 export default function ForecastPage(): JSX.Element {
-  return (
-    <FeatureGuard feature="forecast" featureName="Forecast">
-      <ForecastContent />
-    </FeatureGuard>
-  );
+  // V1.23: feature flag removido — Forecast ahora también contiene la
+  // proyección mensual ($) que antes vivía dentro de Ventas, así que debe
+  // estar siempre disponible para gerentes.
+  return <ForecastContent />;
 }

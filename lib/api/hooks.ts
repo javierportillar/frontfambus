@@ -282,6 +282,13 @@ interface SalesForecastMonthly {
   next_month: SalesForecastMonth;
   model_version: string;
   drivers: string[];
+  // V1.23: nuevos campos para forecast estable (rolling 90d)
+  rate_basis?: "rolling_90d_complete" | "previous_month_complete" | "current_month_run_rate";
+  rate_window?: {
+    start: string;
+    end: string;
+    days_with_sales: number;
+  } | null;
 }
 
 export function useSalesForecastMonthly() {
