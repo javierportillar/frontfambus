@@ -561,17 +561,17 @@ export function Navigation({
  * Si feature es undefined, la ruta es siempre visible.
  */
 export function gerenteNavItems(): NavItem[] {
+  // V1.24: Forecast → Decisiones (absorbe Comprar/Optimizar de Inventario).
   // V1.23: Ventas+Compras → Movimientos (toggle interno).
-  //        Productos+Inventario → Inventario (4 tabs).
+  //        Productos+Inventario → Inventario.
   //        Las rutas viejas redirigen automáticamente.
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
+    { label: "Decisiones", href: "/dashboards/decisiones", icon: Icons.acciones },
     { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast },
-    { label: "Forecast", href: "/forecast", icon: Icons.forecast },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
-    { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
     { label: "Cohortes", href: "/cohortes", icon: Icons.home, feature: "cohortes" },
     { label: "Vendedores", href: "/vendedores", icon: Icons.home, feature: "vendedores" },
     { label: "Drift", href: "/drift", icon: Icons.alerts, feature: "drift" },

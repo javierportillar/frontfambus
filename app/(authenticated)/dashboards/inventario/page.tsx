@@ -2,32 +2,29 @@
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ResumenUnificado } from "@/components/inventario/ResumenUnificado";
-import { ComprarTab } from "@/components/inventario/ComprarTab";
-import { OptimizarTab } from "@/components/inventario/OptimizarTab";
 import { ProductsTable } from "@/components/productos/ProductsTable";
 
-// ── V1.23: Inventario unificado (absorbe Productos) ──
-// Tabs: Resumen (gerencial + operativo) / Comprar / Optimizar / Catálogo (lista filtrable)
+// ── V1.24: Inventario reducido a 2 tabs ──
+// Los tabs Comprar y Optimizar migraron a /dashboards/decisiones?tab=comprar|vender.
+// Inventario ahora se enfoca en panorama (Resumen) y exploración del catálogo (Catálogo).
 
-type InvTab = "resumen" | "comprar" | "optimizar" | "catalogo";
+type InvTab = "resumen" | "catalogo";
 
 const TABS: { key: InvTab; label: string; emoji: string }[] = [
   { key: "resumen", label: "Resumen", emoji: "📊" },
-  { key: "comprar", label: "Comprar", emoji: "🛒" },
-  { key: "optimizar", label: "Optimizar", emoji: "🧹" },
   { key: "catalogo", label: "Catálogo", emoji: "📋" },
 ];
 
 function InventarioInner(): JSX.Element {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = (searchParams.get("tab") as InvTab) || "resumen";
   const [tab, setTab] = useState<InvTab>(
     TABS.some((t) => t.key === tabParam) ? tabParam : "resumen",
   );
-  // Filtro de estado proveniente de Decision Cards / Salud (para tab Catálogo)
   const [catalogoEstado, setCatalogoEstado] = useState<string>("");
 
   useEffect(() => {
@@ -44,7 +41,8 @@ function InventarioInner(): JSX.Element {
       <div>
         <h1 className="text-xl font-bold text-text-primary">Inventario</h1>
         <p className="text-sm text-text-muted">
-          Productos, decisiones de compra, liquidación y gestión del catálogo.
+          Panorama del catálogo. Las decisiones de compra y liquidación viven en{" "}
+          <Link href="/dashboards/decisiones" className="text-accent hover:underline">Decisiones</Link>.
         </p>
       </div>
 
@@ -67,14 +65,21 @@ function InventarioInner(): JSX.Element {
 
       {tab === "resumen" && (
         <ResumenUnificado
-          onGoToTab={(t) => {
-            setCatalogoEstado("");
-            setTab(t);
+          onGoToTab={(target) => {
+            // V1.24: drilldown desde la matriz / decision cards
+            //   comprar/optimizar → /dashboards/decisiones?tab=comprar|vender
+            //   catalogo → tab interno
+            if (target === "comprar") {
+              router.push("/dashboards/decisiones?tab=comprar");
+            } else if (target === "optimizar") {
+              router.push("/dashboards/decisiones?tab=vender");
+            } else {
+              setCatalogoEstado("");
+              setTab("catalogo");
+            }
           }}
         />
       )}
-      {tab === "comprar" && <ComprarTab />}
-      {tab === "optimizar" && <OptimizarTab />}
       {tab === "catalogo" && (
         <ProductsTable key={catalogoEstado} window={180} initialEstado={catalogoEstado} />
       )}
