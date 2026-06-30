@@ -38,8 +38,10 @@ import {
 } from "recharts";
 
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-// V1.23: tab "forecast" eliminado de Ventas — unificado en /forecast (sidebar)
-type Tab = "mensual" | "diaria" | "historica" | "caja";
+// V1.24: agregado tab "anual" — absorbe la comparativa año actual vs anterior
+//        que vivía dentro de Mensual. Orden: Diaria → Mensual → Anual → Histórica → Caja.
+// V1.23: tab "forecast" eliminado de Ventas — unificado en /decisiones.
+type Tab = "diaria" | "mensual" | "anual" | "historica" | "caja";
 
 type DailyPoint = {
   date: string;
@@ -120,7 +122,7 @@ function fillDailySeries(days: DailyPoint[] | undefined, month: string, visibleD
 }
 
 export function VentasView(): JSX.Element {
-  const [tab, setTab] = useState<Tab>("mensual");
+  const [tab, setTab] = useState<Tab>("diaria");
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
   const [selectedDate, setSelectedDate] = useState<string>("");
 
@@ -180,8 +182,8 @@ export function VentasView(): JSX.Element {
 
   if (!d) return <div className="p-4"><Skeleton className="h-60 rounded-xl" /></div>;
 
-  const tabs: Tab[] = ["mensual","diaria","caja","historica"];
-  const labels: Record<Tab,string> = {mensual:"Mensual",diaria:"Diaria",caja:"Caja",historica:"Histórica"};
+  const tabs: Tab[] = ["diaria","mensual","anual","historica","caja"];
+  const labels: Record<Tab,string> = {diaria:"Diaria",mensual:"Mensual",anual:"Anual",historica:"Histórica",caja:"Caja"};
 
   const comparisonData = Array.from({ length: visibleDays }, (_, index) => {
     const day = index + 1;
@@ -314,28 +316,7 @@ export function VentasView(): JSX.Element {
             </div>
           </Card>
 
-          <Card header={<h2 className="font-semibold text-text-primary">Año actual vs anterior</h2>}>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={MONTHS.map((lbl,i)=>{
-                const m=i+1;
-                const currentMonthNumber=Number(selectedMonth.slice(5));
-                return {
-                  label:lbl,
-                  prev:trendP.get(m)??null,
-                  curr:m<currentMonthNumber?(trendCurr.get(m)??null):m===currentMonthNumber?monthlyTotal:null,
-                  proj:selectedMonth === d.business_month && m>=currentMonthNumber?(df?m===currentMonthNumber?df.current_month.projected_amount:m===currentMonthNumber+1?df.next_month.projected_amount:null:null):null,
-                };
-              })}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
-                <YAxis tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
-                <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
-                <Line type="monotone" dataKey="prev" stroke="#94A3B8" strokeDasharray="5 5" dot={{r:2}} name={`${selectedYear-1}`} />
-                <Line type="monotone" dataKey="curr" stroke="#7B1818" strokeWidth={2} dot={{r:3,fill:"#7B1818"}} name={`${selectedYear}`} connectNulls={false} />
-                <Line type="monotone" dataKey="proj" stroke="#FCD34D" strokeWidth={2} strokeDasharray="6 3" dot={{r:3,fill:"#FCD34D"}} name="Proyección" connectNulls={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
+          {/* V1.24: el chart "Año actual vs anterior" se movió al nuevo tab Anual. */}
 
           {monthDetail.data && (
             <>
@@ -542,6 +523,133 @@ export function VentasView(): JSX.Element {
         <>
           <HistoricaTab />
           <MargenMensualTable initialLimit={12} title="Margen mensual — histórico completo" />
+        </>
+      )}
+
+      {tab === "anual" && (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Card>
+              <Stat
+                label={`Acumulado ${selectedYear}`}
+                value={formatMoneyFull(
+                  Array.from(trendCurr.values()).reduce((s, v) => s + v, 0) + monthlyTotal,
+                )}
+                subtitle="ventas reales hasta hoy"
+              />
+            </Card>
+            <Card>
+              <Stat
+                label={`Acumulado ${selectedYear - 1}`}
+                value={formatMoneyFull(Array.from(trendP.values()).reduce((s, v) => s + v, 0))}
+                subtitle={`mismo período año anterior`}
+              />
+            </Card>
+            <Card>
+              <Stat
+                label="Mejor mes del año"
+                value={(() => {
+                  let bestM = 0, bestV = 0;
+                  for (const [m, v] of trendCurr) if (v > bestV) { bestV = v; bestM = m; }
+                  if (monthlyTotal > bestV) { bestV = monthlyTotal; bestM = Number(selectedMonth.slice(5)); }
+                  return bestM ? `${MONTHS[bestM - 1]} · ${formatMoneyFull(bestV)}` : "—";
+                })()}
+                subtitle={`${selectedYear}`}
+              />
+            </Card>
+            <Card>
+              <Stat
+                label="Proyección fin de año"
+                value={(() => {
+                  const acumCurr = Array.from(trendCurr.values()).reduce((s, v) => s + v, 0) + monthlyTotal;
+                  const mesesTranscurridos = Number(selectedMonth.slice(5));
+                  if (mesesTranscurridos === 0) return "—";
+                  const promedio = acumCurr / mesesTranscurridos;
+                  const proyAnual = promedio * 12;
+                  return formatMoneyFull(proyAnual);
+                })()}
+                subtitle="al ritmo actual × 12 meses"
+              />
+            </Card>
+          </div>
+
+          <Card header={<h2 className="font-semibold text-text-primary">Año actual vs anterior</h2>}>
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart data={MONTHS.map((lbl,i)=>{
+                const m=i+1;
+                const currentMonthNumber=Number(selectedMonth.slice(5));
+                return {
+                  label:lbl,
+                  prev:trendP.get(m)??null,
+                  curr:m<currentMonthNumber?(trendCurr.get(m)??null):m===currentMonthNumber?monthlyTotal:null,
+                  proj:selectedMonth === d.business_month && m>=currentMonthNumber?(df?m===currentMonthNumber?df.current_month.projected_amount:m===currentMonthNumber+1?df.next_month.projected_amount:null:null):null,
+                };
+              })}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
+                <YAxis tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
+                <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
+                <Line type="monotone" dataKey="prev" stroke="#94A3B8" strokeDasharray="5 5" dot={{r:2}} name={`${selectedYear-1}`} />
+                <Line type="monotone" dataKey="curr" stroke="#7B1818" strokeWidth={2} dot={{r:3,fill:"#7B1818"}} name={`${selectedYear}`} connectNulls={false} />
+                <Line type="monotone" dataKey="proj" stroke="#FCD34D" strokeWidth={2} strokeDasharray="6 3" dot={{r:3,fill:"#FCD34D"}} name="Proyección" connectNulls={false} />
+              </LineChart>
+            </ResponsiveContainer>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-text-muted">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-4 rounded" style={{background:"#7B1818"}} /> {selectedYear} (real)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-4 rounded" style={{background:"#94A3B8"}} /> {selectedYear-1} (real)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-4 rounded" style={{background:"#FCD34D"}} /> Proyección
+              </span>
+              <span>Proyección viene del forecast estable rolling 90d.</span>
+            </div>
+          </Card>
+
+          {/* Tabla mes a mes con delta */}
+          <Card header={<h2 className="font-semibold text-text-primary">Comparativa mes a mes</h2>}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
+                    <th className="py-2 pr-2">Mes</th>
+                    <th className="px-2 text-right">{selectedYear}</th>
+                    <th className="px-2 text-right">{selectedYear-1}</th>
+                    <th className="px-2 text-right">Δ vs año anterior</th>
+                    <th className="px-2 text-right">Δ %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MONTHS.map((lbl, i) => {
+                    const m = i + 1;
+                    const currentMonthNumber = Number(selectedMonth.slice(5));
+                    const prev = trendP.get(m) ?? null;
+                    const curr = m < currentMonthNumber ? (trendCurr.get(m) ?? null) : m === currentMonthNumber ? monthlyTotal : null;
+                    if (curr === null && prev === null) return null;
+                    const delta = (curr ?? 0) - (prev ?? 0);
+                    const deltaPct = prev && prev > 0 ? (delta / prev) * 100 : null;
+                    const sign = delta >= 0 ? "+" : "−";
+                    const color = delta >= 0 ? "text-green-700" : "text-red-700";
+                    return (
+                      <tr key={m} className="border-b border-border/60">
+                        <td className="py-1.5 pr-2 font-medium text-text-primary">{lbl}</td>
+                        <td className="px-2 text-right tabular-nums">{curr !== null ? formatMoneyFull(curr) : "—"}</td>
+                        <td className="px-2 text-right tabular-nums text-text-muted">{prev !== null ? formatMoneyFull(prev) : "—"}</td>
+                        <td className={`px-2 text-right tabular-nums ${color}`}>
+                          {curr !== null && prev !== null ? `${sign}${formatMoneyFull(Math.abs(delta))}` : "—"}
+                        </td>
+                        <td className={`px-2 text-right tabular-nums font-semibold ${color}`}>
+                          {deltaPct !== null && curr !== null ? `${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </>
       )}
 
