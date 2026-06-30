@@ -376,9 +376,11 @@ function FifoSummaryBadges({ summary }: { summary: FifoSummary }): JSX.Element {
       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
         {summary.vendidas.toLocaleString("es-CO")} vendidas
       </span>
-      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-orange-700">
-        {summary.pendientes.toLocaleString("es-CO")} pendientes
-      </span>
+      {summary.pendientes > 0 && (
+        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-orange-700">
+          {summary.pendientes.toLocaleString("es-CO")} pendientes
+        </span>
+      )}
     </span>
   );
 }
