@@ -1771,6 +1771,85 @@ export function useComprasProveedorDetalle(
   );
 }
 
+// ── V1.21: Análisis de productos y proveedores ──────────────────────────
+
+export interface AnalisisProductoItem {
+  cod_producto: string;
+  nom_producto: string;
+  unidades: number;
+  revenue: number;
+  costo: number;
+  margen: number;
+  margen_pct: number | null;
+  num_facturas: number;
+  presentacion?: string | null;
+  unidad_medida?: string;
+  revenue_prev?: number | null;
+  delta_pct?: number | null;
+}
+export interface AnalisisProductosResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  total_skus_vendidos: number;
+  total_revenue: number;
+  total_margen: number;
+  total_unidades: number;
+  margen_promedio_pct: number | null;
+  pareto: { skus_para_80_pct: number; pct_skus: number; total_skus: number };
+  top_revenue: AnalisisProductoItem[];
+  top_margen: AnalisisProductoItem[];
+  top_unidades: AnalisisProductoItem[];
+  top_ganadores: AnalisisProductoItem[];
+  top_perdedores: AnalisisProductoItem[];
+  periodo_comparado: { inicio: string | null; fin: string | null } | null;
+}
+export function useAnalisisProductos(fechaInicio: string, fechaFin: string, limit = 50) {
+  const ok = !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<AnalisisProductosResponse>(
+    ok ? `/api/metrics/analisis-productos?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}&limit=${limit}` : null,
+  );
+}
+
+export interface ProveedorAnalisis {
+  nit: string;
+  nombre: string;
+  num_documentos: number;
+  total_compras: number;
+  pct_del_total: number;
+  primera_compra: string | null;
+  ultima_compra: string | null;
+  dias_desde_ultima_compra: number | null;
+  frecuencia_dias_promedio: number | null;
+  ticket_promedio: number;
+}
+export interface AlertaProveedor {
+  tipo: string;
+  severidad: "alta" | "media" | "baja";
+  mensaje: string;
+}
+export interface AnalisisProveedoresResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  total_proveedores: number;
+  total_compras: number;
+  concentracion: {
+    top1_pct: number;
+    top3_pct: number;
+    top5_pct: number;
+    hhi: number;
+    riesgo: "crítico" | "alto" | "medio" | "diversificado" | "n/a";
+  };
+  pareto: { prov_para_80_pct: number; pct_prov: number; total_prov: number };
+  alertas: AlertaProveedor[];
+  proveedores: ProveedorAnalisis[];
+}
+export function useAnalisisProveedores(fechaInicio: string, fechaFin: string) {
+  const ok = !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<AnalisisProveedoresResponse>(
+    ok ? `/api/metrics/analisis-proveedores?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}` : null,
+  );
+}
+
 
 
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────

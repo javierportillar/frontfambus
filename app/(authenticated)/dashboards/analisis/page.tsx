@@ -18,6 +18,8 @@ import {
 } from "@/lib/api/hooks";
 import { useAuthStore } from "@/lib/auth/store";
 import { HeatmapDiaHora } from "@/components/ventas/HeatmapDiaHora";
+import { ProductosTopTab } from "@/components/analisis/ProductosTopTab";
+import { ProveedoresTab } from "@/components/analisis/ProveedoresTab";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
@@ -27,7 +29,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 
-type Tab = "balance" | "horas" | "gastos";
+type Tab = "balance" | "productos" | "proveedores" | "horas" | "gastos";
 type Shortcut = "semana" | "mes" | "3meses" | "anio" | "todo" | "custom";
 
 function todayISO(): string {
@@ -649,9 +651,11 @@ export default function AnalisisPage(): JSX.Element {
   ];
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "balance", label: "Balance" },
-    { key: "horas", label: "Horas pico" },
-    { key: "gastos", label: "Gastos operativos" },
+    { key: "balance", label: "📊 Balance" },
+    { key: "productos", label: "🏆 Productos top" },
+    { key: "proveedores", label: "🏷 Proveedores" },
+    { key: "horas", label: "⏰ Horas pico" },
+    { key: "gastos", label: "💸 Gastos operativos" },
   ];
 
   return (
@@ -659,9 +663,9 @@ export default function AnalisisPage(): JSX.Element {
       <Link href="/" className="text-sm text-accent hover:underline">← Volver a inicio</Link>
 
       <div>
-        <h1 className="text-xl font-bold text-text-primary">Análisis financiero</h1>
+        <h1 className="text-xl font-bold text-text-primary">Análisis</h1>
         <p className="text-sm text-text-muted">
-          Balance, horas pico y rentabilidad real del negocio
+          Balance, productos top, proveedores, horas pico y rentabilidad real del negocio
         </p>
       </div>
 
@@ -722,6 +726,8 @@ export default function AnalisisPage(): JSX.Element {
       </div>
 
       {tab === "balance" && <BalanceTab ini={ini} fin={fin} />}
+      {tab === "productos" && <ProductosTopTab ini={ini} fin={fin} />}
+      {tab === "proveedores" && <ProveedoresTab ini={ini} fin={fin} />}
       {tab === "horas" && <HorasPicoTab ini={ini} fin={fin} />}
       {tab === "gastos" && <GastosTab />}
     </div>
