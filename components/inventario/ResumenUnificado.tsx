@@ -220,9 +220,9 @@ function DecisionCard({
               <span className="text-[0.65rem] text-text-muted shrink-0">
                 {showValor
                   ? formatMoneyFull(p.valor_inventario)
-                  : p.dias_stock !== null && p.dias_stock >= 0
+                  : p.dias_stock != null && p.dias_stock >= 0
                     ? `${Math.round(p.dias_stock)}d`
-                    : p.dias_sin_venta !== null ? `${p.dias_sin_venta}d s/venta` : ""}
+                    : p.dias_sin_venta != null ? `${p.dias_sin_venta}d s/venta` : ""}
               </span>
             </li>
           ))}
