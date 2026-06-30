@@ -22,6 +22,9 @@ export interface ProductoVendido {
   nombre?: string;
   cantidad?: number;
   valor?: number;
+  /** Unidad real del producto (u/g/kg/L/etc.). Default "u". */
+  unidad_medida?: string;
+  presentacion?: string | null;
 }
 
 type SortKey = "valor" | "cantidad" | "nombre";
@@ -82,6 +85,7 @@ export function ProductosVendidosTabla({
       cantidad: p.cantidad_total ?? p.cantidad ?? 0,
       valor: p.valor_total ?? p.valor ?? 0,
       pct: p.porcentaje_ingreso ?? null,
+      unidad: p.unidad_medida ?? "u",
     }));
   }, [productos]);
 
@@ -181,7 +185,7 @@ export function ProductosVendidosTabla({
                   </td>
                   <td className="py-2 px-3 text-right tabular-nums text-text-primary">
                     {p.cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{" "}
-                    <span className="text-xs text-text-muted">u</span>
+                    <span className="text-xs text-text-muted">{p.unidad}</span>
                   </td>
                   <td className="py-2 px-3 text-right tabular-nums font-semibold text-text-primary">
                     {formatMoneyFull(p.valor)}
@@ -217,7 +221,7 @@ export function ProductosVendidosTabla({
                     <span>
                       Cantidad vendida:{" "}
                       <span className="font-semibold text-text-primary">
-                        {p.cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })} u
+                        {p.cantidad.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {p.unidad}
                       </span>
                     </span>
                     <span>

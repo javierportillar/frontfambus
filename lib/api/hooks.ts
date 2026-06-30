@@ -89,6 +89,9 @@ interface TopSkuItem {
   cantidad_total: number;
   valor_total: number;
   porcentaje_ingreso?: number;
+  /** V1.15: unidad real (u, g, kg, L, etc.) — default "u". */
+  unidad_medida?: string;
+  presentacion?: string | null;
 }
 
 interface SalesSummary {
@@ -421,6 +424,9 @@ export interface SalesDailyItem {
   nombre: string;
   cantidad: number;
   valor: number;
+  /** V1.15: unidad real (u, g, kg, L, etc.) — default "u". */
+  unidad_medida?: string;
+  presentacion?: string | null;
 }
 
 interface SalesDailyResponse {
