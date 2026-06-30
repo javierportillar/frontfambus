@@ -1594,6 +1594,9 @@ export interface InventarioItem {
   unidad_medida: string;
   accion: InventarioAccion;
   ingreso_perdido_estimado: number;
+  /** V1.18: proveedor de la última compra. null si nunca se compró por canal trackeado. */
+  nit_proveedor?: string | null;
+  nombre_proveedor?: string | null;
 }
 
 export interface InventarioOverviewResponse {
