@@ -2,12 +2,17 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useForecast,
   useForecastCategoria,
   useForecastNarrative,
   useProducts,
   useSalesForecastMonthly,
+  useInventarioOverview,
+  useSalesSummaryV2,
+  useSalesMonthDetail,
+  type TopSkuItem,
 } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -37,24 +42,6 @@ const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov
 function monthLabel(yyyymm: string): string {
   const [y, m] = yyyymm.split("-");
   return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
-}
-
-function CustomBarTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs shadow-md">
-      <p className="font-medium text-text-primary">{label}</p>
-      <p className="mt-1 text-text-secondary">
-        <strong>{d.predicted}</strong> unidades
-      </p>
-      {(d.ciLower != null || d.ciUpper != null) && (
-        <p className="text-text-muted">
-          IC: {d.ciLower}–{d.ciUpper}
-        </p>
-      )}
-    </div>
-  );
 }
 
 function ForecastContent(): JSX.Element {
@@ -197,9 +184,240 @@ function MensualTab(): JSX.Element {
   );
 }
 
-// ── TAB 2: Por demanda (unidades, categorías, SKU) ──────────────────────
+// ── TAB 2: Por demanda — vista de decisiones ────────────────────────────
+
+function currentMonthYM(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 function DemandaTab(): JSX.Element {
+  const router = useRouter();
+  const { data: inv, isLoading: invLoading } = useInventarioOverview();
+  const { data: forecast } = useSalesForecastMonthly();
+  const sales = useSalesSummaryV2();
+  const monthDetail = useSalesMonthDetail(sales.data?.business_month ?? currentMonthYM());
+
+  // Cálculos de demanda esperada por SKU (rotacion_diaria × 30)
+  const itemsConDemanda = useMemo(() => {
+    if (!inv) return [];
+    return inv.items
+      .filter((it) => it.rotacion_diaria > 0)
+      .map((it) => {
+        const demanda30d = it.rotacion_diaria * 30;
+        const faltante = Math.max(0, demanda30d - it.stock);
+        const cobertura = it.rotacion_diaria > 0 ? it.stock / it.rotacion_diaria : null;
+        const revenueEsperado = demanda30d * it.precio_venta;
+        const estado: "ok" | "ajustado" | "faltante" =
+          faltante > 0 ? "faltante" : (cobertura !== null && cobertura < 45) ? "ajustado" : "ok";
+        return { ...it, demanda30d, faltante, cobertura, revenueEsperado, estado };
+      })
+      .sort((a, b) => b.revenueEsperado - a.revenueEsperado);
+  }, [inv]);
+
+  const kpiUnidades30d = useMemo(
+    () => itemsConDemanda.reduce((s, it) => s + it.demanda30d, 0),
+    [itemsConDemanda],
+  );
+  const kpiSkusEnRiesgo = useMemo(
+    () => itemsConDemanda.filter((it) => it.faltante > 0).length,
+    [itemsConDemanda],
+  );
+  const kpiInversionSugerida = useMemo(
+    () => itemsConDemanda.reduce((s, it) => s + it.faltante * it.costo_unit, 0),
+    [itemsConDemanda],
+  );
+  const top30 = useMemo(() => itemsConDemanda.slice(0, 30), [itemsConDemanda]);
+
+  if (invLoading && !inv) {
+    return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Hero: KPIs accionables */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <Card>
+          <Stat
+            label="Vas a facturar — próximo mes"
+            value={forecast ? formatMoneyFull(forecast.next_month.projected_amount) : "—"}
+            subtitle={forecast ? `${forecast.next_month.month} · confianza ${forecast.next_month.confidence}` : ""}
+          />
+        </Card>
+        <Card>
+          <Stat
+            label="Vas a vender — próximos 30 días"
+            value={`${Math.round(kpiUnidades30d).toLocaleString("es-CO")} u`}
+            subtitle={`estimado sobre ${itemsConDemanda.length.toLocaleString("es-CO")} SKUs activos`}
+          />
+        </Card>
+        <Card>
+          <Stat
+            label="Productos a quedarse cortos"
+            value={kpiSkusEnRiesgo.toLocaleString("es-CO")}
+            subtitle={`inversión sugerida: ${formatMoneyFull(kpiInversionSugerida)}`}
+          />
+        </Card>
+      </div>
+
+      {/* Tabla principal: Demanda esperada vs stock */}
+      <Card header={
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-text-primary">Demanda esperada próximos 30 días</h2>
+            <p className="text-xs text-text-muted">
+              Top {top30.length} por ingreso esperado · click en fila → ficha del producto
+            </p>
+          </div>
+          <Badge variant="default" size="sm">
+            {kpiSkusEnRiesgo} en riesgo
+          </Badge>
+        </div>
+      }>
+        {top30.length === 0 ? (
+          <p className="py-6 text-center text-sm text-text-muted">Sin datos suficientes.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
+                  <th className="py-2 pr-2">#</th>
+                  <th className="py-2 px-2">Producto</th>
+                  <th className="py-2 px-2 text-right">Stock</th>
+                  <th className="py-2 px-2 text-right">Demanda 30d</th>
+                  <th className="py-2 px-2 text-right">Faltante</th>
+                  <th className="py-2 px-2 text-right">Cobertura</th>
+                  <th className="py-2 px-2 text-right">$ esperado</th>
+                  <th className="py-2 pl-2">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {top30.map((it, idx) => (
+                  <tr
+                    key={it.cod_producto}
+                    className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
+                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(it.cod_producto)}`)}
+                  >
+                    <td className="py-2 pr-2 text-xs text-text-muted tabular-nums">{idx + 1}</td>
+                    <td className="py-2 px-2">
+                      <div className="font-medium text-text-primary truncate max-w-xs">{it.nom_producto}</div>
+                      <div className="text-[0.65rem] text-text-muted">{it.cod_producto}</div>
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums">{Math.round(it.stock).toLocaleString("es-CO")}</td>
+                    <td className="py-2 px-2 text-right tabular-nums font-medium">
+                      {Math.round(it.demanda30d).toLocaleString("es-CO")} {it.unidad_medida ?? "u"}
+                    </td>
+                    <td className={`py-2 px-2 text-right tabular-nums ${it.faltante > 0 ? "text-red-700 font-semibold" : "text-text-muted"}`}>
+                      {it.faltante > 0 ? `−${Math.round(it.faltante).toLocaleString("es-CO")}` : "—"}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums text-text-muted">
+                      {it.cobertura !== null ? `${Math.round(it.cobertura)}d` : "—"}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums font-semibold">
+                      {formatMoneyFull(it.revenueEsperado)}
+                    </td>
+                    <td className="py-2 pl-2">
+                      <EstadoChip estado={it.estado} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-2 text-[0.65rem] text-text-muted">
+          Demanda 30d = rotación diaria × 30 sobre datos cerrados de los últimos 90 días.
+          Faltante = lo que necesitarías comprar para cubrir la demanda esperada.
+        </p>
+      </Card>
+
+      {/* Aceleradores / Frenadores */}
+      {monthDetail.data && (monthDetail.data.aceleradores.length > 0 || monthDetail.data.frenadores.length > 0) && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Card header={<h2 className="font-semibold text-green-700">📈 Aceleradores — productos que están creciendo</h2>}>
+            {monthDetail.data.aceleradores.length === 0 ? (
+              <p className="py-4 text-center text-sm text-text-muted">Sin aceleradores este mes.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {monthDetail.data.aceleradores.slice(0, 10).map((p: TopSkuItem) => (
+                  <li
+                    key={p.cod_producto}
+                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
+                    className="flex cursor-pointer items-center justify-between gap-2 hover:bg-surface-alt rounded px-1.5 py-1"
+                  >
+                    <span className="text-sm text-text-primary truncate">{p.nom_producto}</span>
+                    <span className="text-sm font-semibold text-green-700 shrink-0">
+                      {formatMoneyFull(p.valor_total)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 text-[0.65rem] text-text-muted">
+              Considerá reforzar stock — la demanda está empujando.
+            </p>
+          </Card>
+
+          <Card header={<h2 className="font-semibold text-red-700">📉 Frenadores — productos que se están enfriando</h2>}>
+            {monthDetail.data.frenadores.length === 0 ? (
+              <p className="py-4 text-center text-sm text-text-muted">No hay productos en caída relevante.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {monthDetail.data.frenadores.slice(0, 10).map((p: TopSkuItem) => (
+                  <li
+                    key={p.cod_producto}
+                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
+                    className="flex cursor-pointer items-center justify-between gap-2 hover:bg-surface-alt rounded px-1.5 py-1"
+                  >
+                    <span className="text-sm text-text-primary truncate">{p.nom_producto}</span>
+                    <span className="text-sm font-semibold text-red-700 shrink-0">
+                      {formatMoneyFull(p.valor_total)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 text-[0.65rem] text-text-muted">
+              Frená compras de estos — el stock actual puede estar excedido.
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {/* Análisis técnico (colapsable) — para devs/data */}
+      <Card>
+        <details className="text-sm">
+          <summary className="cursor-pointer font-semibold text-text-primary">
+            🔬 Análisis técnico del modelo (avanzado)
+          </summary>
+          <div className="mt-4 space-y-4">
+            <SeccionTecnica />
+          </div>
+        </details>
+      </Card>
+    </div>
+  );
+}
+
+/** Chip de estado del item en la tabla de demanda esperada. */
+function EstadoChip({ estado }: { estado: "ok" | "ajustado" | "faltante" }): JSX.Element {
+  const cfg = {
+    ok: { label: "✓ OK", color: "#15803D", bg: "#DCFCE7" },
+    ajustado: { label: "● Ajustado", color: "#C2410C", bg: "#FFEDD5" },
+    faltante: { label: "▲ Faltante", color: "#B91C1C", bg: "#FEE2E2" },
+  }[estado];
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
+      style={{ background: cfg.bg, color: cfg.color }}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+/** Sección técnica: confiabilidad del modelo, drilldown SKU, comparativa por categoría. */
+function SeccionTecnica(): JSX.Element {
   const [sku, setSku] = useState("");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [horizon, setHorizon] = useState<number>(7);
@@ -214,16 +432,6 @@ function DemandaTab(): JSX.Element {
   }, [sku]);
 
   const { data: productsData } = useProducts(searchQuery, 1, 20);
-
-  useEffect(() => {
-    if (!selectedSku && productsData?.items && productsData.items.length > 0) {
-      const first = productsData.items.find((p: any) => p.has_forecast === true) ?? productsData.items[0];
-      if (first) {
-        setSku(first.codprod);
-        setSelectedSku(first.codprod);
-      }
-    }
-  }, [productsData, selectedSku]);
 
   const suggestions = useMemo(() => {
     if (!productsData?.items) return [];
@@ -241,33 +449,6 @@ function DemandaTab(): JSX.Element {
       upper: f.confidence_upper ?? f.predicted_qty * 1.2,
     }));
   }, [data]);
-
-  const { data: barSourceData } = useForecast(selectedSku, 30);
-
-  const barChartData = useMemo(() => {
-    if (!barSourceData?.forecast) return [];
-    const items = barSourceData.forecast;
-    const buckets = [
-      { label: "0–7 días", start: 0, end: 7 },
-      { label: "7–14 días", start: 7, end: 14 },
-      { label: "14–30 días", start: 14, end: 30 },
-    ];
-    return buckets
-      .filter((b) => b.start < items.length)
-      .map((b) => {
-        const slice = items.slice(b.start, Math.min(b.end, items.length));
-        if (slice.length === 0) return null;
-        const predicted = Number(slice.reduce((s, f) => s + f.predicted_qty, 0).toFixed(1));
-        const ciLower = Number(
-          slice.reduce((s, f) => s + (f.confidence_lower ?? f.predicted_qty * 0.8), 0).toFixed(1),
-        );
-        const ciUpper = Number(
-          slice.reduce((s, f) => s + (f.confidence_upper ?? f.predicted_qty * 1.2), 0).toFixed(1),
-        );
-        return { horizon: b.label, predicted, ciLower, ciUpper };
-      })
-      .filter(Boolean) as { horizon: string; predicted: number; ciLower: number; ciUpper: number }[];
-  }, [barSourceData]);
 
   const { data: categoriaData } = useForecastCategoria();
   const { data: narrative, isLoading: narrativeLoading, mutate: refreshNarrative } = useForecastNarrative();
@@ -289,282 +470,180 @@ function DemandaTab(): JSX.Element {
     <div className="space-y-4">
       {/* Narrativa LLM */}
       {narrativeLoading ? (
-        <Card header={<h2 className="font-semibold text-text-primary">Análisis del forecast</h2>}>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        </Card>
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
       ) : narrative ? (
-        <Card
-          header={
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-text-primary">Análisis del forecast</h2>
-              <button
-                onClick={() => refreshNarrative()}
-                className="rounded px-2 py-1 text-xs text-text-muted hover:bg-surface-alt hover:text-text-secondary transition-colors"
-              >
-                Regenerar
-              </button>
-            </div>
-          }
-        >
+        <div className="rounded-lg border border-border bg-surface-alt/40 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">Análisis IA</span>
+            <button
+              onClick={() => refreshNarrative()}
+              className="rounded px-2 py-0.5 text-[0.65rem] text-text-muted hover:bg-surface hover:text-text-secondary"
+            >
+              Regenerar
+            </button>
+          </div>
           <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">
             {narrative.text}
           </p>
-          <p className="mt-3 text-xs text-text-muted">
-            Generado por IA · {narrative.generated_at ? new Date(narrative.generated_at).toLocaleString("es-CO") : ""}
-          </p>
-        </Card>
+        </div>
       ) : null}
 
-      <Card>
-        <details className="text-sm" open>
-          <summary className="cursor-pointer font-medium text-text-primary">
-            ¿Por qué predecimos por categoría y no por producto individual?
-          </summary>
-          <div className="mt-3 space-y-2 text-text-secondary">
-            <p>
-              El catálogo tiene <strong>~6,000 SKUs</strong>. La mayoría tiene menos de 30 ventas al año
-              — demanda intermitente, no se puede predecir cada SKU individual con confianza estadística.
-            </p>
-            <p>
-              <strong>Solución:</strong> agrupar por categoría (cod_grupo). Predicción por categoría
-              tiene WAPE ~34% sostenido; por SKU individual da WAPE 45%+ y métricas inestables.
-              Decisión documentada en ADR-0020.
-            </p>
-            <p>
-              <strong>Drilldown:</strong> abajo podés buscar un SKU específico si querés verlo.
-              Los SKUs con poca historia no devolverán predicción (es honesto, no es bug).
-            </p>
-            <p className="text-xs text-text-muted">
-              Horizonte 7/14/30 días: cada barra es la demanda esperada
-              <strong> acumulada</strong> en esa ventana (no por intervalo).
-            </p>
-          </div>
-        </details>
-      </Card>
-
+      {/* Confiabilidad por categoría */}
       {categoriaData?.items && categoriaData.items.length > 0 && (
-        <Card header={
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-text-primary">Predicción por categoría</h2>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-text-primary">Confiabilidad por categoría</h3>
             <Badge variant="default" size="sm">
-              WAPE: {categoriaData.wape_promedio?.toFixed(1)}% · {categoriaData.total_categorias} categorías
+              WAPE: {categoriaData.wape_promedio?.toFixed(1)}% · {categoriaData.total_categorias} cat.
             </Badge>
           </div>
-        }>
-          <div className="space-y-2">
-            {categoriaData.items
-              .slice()
-              .sort((a, b) => b.demanda_real - a.demanda_real)
-              .map((cat) => (
-                <div
-                  key={cat.cod_grupo}
-                  className="flex flex-col gap-2 rounded-lg border border-border bg-surface-alt px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-medium text-text-primary">
-                      {cat.cod_grupo === "SIN_GRUPO" ? "Sin clasificar" : cat.cod_grupo}
-                    </span>
-                    {cat.cod_grupo === "SIN_GRUPO" && (
-                      <Badge variant="warning" size="sm">datos stale</Badge>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <span className="text-text-muted">
-                      Real: <strong className="text-text-primary">{cat.demanda_real.toFixed(0)}</strong> u.
-                    </span>
-                    <span className="text-text-muted">
-                      Pred: <strong className="text-text-primary">{cat.demanda_predicha.toFixed(0)}</strong> u.
-                    </span>
-                    <Badge
-                      variant={
-                        Math.abs(cat.desviacion_pct) > 20
-                          ? "error"
-                          : Math.abs(cat.desviacion_pct) > 10
-                            ? "warning"
-                            : "success"
-                      }
-                      size="sm"
-                    >
-                      desv. {cat.desviacion_pct > 0 ? "+" : ""}{cat.desviacion_pct.toFixed(1)}%
-                    </Badge>
-                    <span className="text-xs text-text-muted">{cat.metodo}</span>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </Card>
-      )}
-
-      <div className="pt-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
-          Drilldown por SKU (opcional)
-        </h2>
-      </div>
-
-      <div className="relative">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={sku}
-              onChange={(e) => {
-                setSku(e.target.value);
-                setShowSuggestions(true);
-                if (selectedSku && e.target.value !== selectedSku) {
-                  setSelectedSku(null);
-                }
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Ej: MOTS1297"
-              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full rounded-lg border border-border bg-surface shadow-lg">
-                {suggestions.map((s) => (
-                  <button
-                    key={s.sku}
-                    onMouseDown={() => handleSelect(s.sku)}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-surface-alt"
+          <div className="space-y-1.5">
+            {categoriaData.items.slice().sort((a, b) => b.demanda_real - a.demanda_real).map((cat) => (
+              <div
+                key={cat.cod_grupo}
+                className="flex items-center justify-between gap-3 rounded border border-border bg-surface px-3 py-2 text-xs"
+              >
+                <span className="font-mono font-medium text-text-primary">
+                  {cat.cod_grupo === "SIN_GRUPO" ? "Sin clasificar" : cat.cod_grupo}
+                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-text-muted">Real {cat.demanda_real.toFixed(0)}u</span>
+                  <span className="text-text-muted">Pred {cat.demanda_predicha.toFixed(0)}u</span>
+                  <Badge
+                    variant={Math.abs(cat.desviacion_pct) > 20 ? "error" : Math.abs(cat.desviacion_pct) > 10 ? "warning" : "success"}
+                    size="sm"
                   >
-                    <span className="font-mono text-xs font-medium text-primary">
-                      {s.sku}
-                    </span>
-                    <span className="truncate text-text-secondary">{s.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={handleSearch}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-light"
-          >
-            Buscar
-          </button>
-        </div>
-      </div>
-
-      {selectedSku && (
-        <div className="flex gap-2">
-          {HORIZON_OPTIONS.map((h) => (
-            <button
-              key={h}
-              onClick={() => setHorizon(h)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                horizon === h
-                  ? "bg-primary text-primary-fg"
-                  : "bg-surface-alt text-text-secondary hover:bg-surface-alt/80"
-              }`}
-            >
-              {h} días
-            </button>
-          ))}
-        </div>
-      )}
-
-      {isLoading && (
-        <div className="space-y-3">
-          <Skeleton className="h-5 w-48" />
-          <Skeleton className="h-60 rounded-xl" />
-        </div>
-      )}
-
-      {error && (
-        <ErrorState title="Error al cargar" message="No se pudieron obtener los datos de predicciones." severity="warning" />
-      )}
-
-      {data && chartData.length > 0 && (
-        <>
-          <Card
-            header={
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-text-primary">{data.sku}</h2>
-                {data.metrics && (
-                  <Badge variant="default" size="sm">
-                    MAPE: {data.metrics.mape?.toFixed(1)}% · v{data.metrics.model_version}
+                    {cat.desviacion_pct > 0 ? "+" : ""}{cat.desviacion_pct.toFixed(1)}%
                   </Badge>
-                )}
+                </div>
               </div>
-            }
-          >
-            <ResponsiveContainer width="100%" height={240}>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Drilldown SKU */}
+      <div>
+        <h3 className="text-sm font-semibold text-text-primary mb-2">Drilldown por SKU</h3>
+        <p className="text-xs text-text-muted mb-2">
+          Predicción individual del modelo formal (Prophet/ARIMA). Sólo SKUs con suficiente historia.
+        </p>
+        <div className="relative">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={sku}
+                onChange={(e) => {
+                  setSku(e.target.value);
+                  setShowSuggestions(true);
+                  if (selectedSku && e.target.value !== selectedSku) setSelectedSku(null);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                placeholder="Ej: MOTS1297"
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full rounded-lg border border-border bg-surface shadow-lg">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.sku}
+                      onMouseDown={() => handleSelect(s.sku)}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-surface-alt"
+                    >
+                      <span className="font-mono text-xs font-medium text-primary">{s.sku}</span>
+                      <span className="truncate text-text-secondary">{s.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleSearch}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-light"
+            >
+              Buscar
+            </button>
+          </div>
+        </div>
+
+        {selectedSku && (
+          <div className="mt-2 flex gap-2">
+            {HORIZON_OPTIONS.map((h) => (
+              <button
+                key={h}
+                onClick={() => setHorizon(h)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  horizon === h ? "bg-primary text-primary-fg" : "bg-surface-alt text-text-secondary hover:bg-surface-alt/80"
+                }`}
+              >
+                {h} días
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isLoading && (
+          <div className="mt-3 space-y-2">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-60 rounded-xl" />
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-3">
+            <ErrorState title="Error al cargar" message="No se pudieron obtener los datos de predicciones." severity="warning" />
+          </div>
+        )}
+
+        {data && chartData.length > 0 && (
+          <div className="mt-3 rounded-lg border border-border bg-surface p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-text-primary">{data.sku}</h4>
+              {data.metrics && (
+                <Badge variant="default" size="sm">
+                  MAPE: {data.metrics.mape?.toFixed(1)}% · v{data.metrics.model_version}
+                </Badge>
+              )}
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#a3a3a3" />
                 <YAxis tick={{ fontSize: 11 }} stroke="#a3a3a3" tickFormatter={(v: number) => Math.round(v).toString()} />
                 <Tooltip
                   formatter={(value) => [Math.round(Number(value ?? 0)).toString(), "unidades"]}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "1px solid #d4d4d4",
-                    fontSize: "12px",
-                  }}
+                  contentStyle={{ borderRadius: "8px", border: "1px solid #d4d4d4", fontSize: "12px" }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="upper"
-                  stroke="none"
-                  fill="#0EA5E9"
-                  fillOpacity={0.1}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="lower"
-                  stroke="none"
-                  fill="#FFFFFF"
-                  fillOpacity={0.3}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="predicted"
-                  stroke="#0EA5E9"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "#0EA5E9" }}
-                  activeDot={{ r: 5 }}
-                />
+                <Area type="monotone" dataKey="upper" stroke="none" fill="#0EA5E9" fillOpacity={0.1} />
+                <Area type="monotone" dataKey="lower" stroke="none" fill="#FFFFFF" fillOpacity={0.3} />
+                <Line type="monotone" dataKey="predicted" stroke="#0EA5E9" strokeWidth={2} dot={{ r: 3, fill: "#0EA5E9" }} activeDot={{ r: 5 }} />
               </AreaChart>
             </ResponsiveContainer>
-            <div className="mt-2 flex items-center gap-4 text-xs text-text-muted">
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-4 rounded bg-accent" /> Predicción
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-4 rounded bg-accent/10" /> IC 80%
-              </span>
-            </div>
-          </Card>
+          </div>
+        )}
+      </div>
 
-          {barChartData.length > 0 && (
-            <Card header={<h2 className="font-semibold text-text-primary">Resumen por período</h2>}>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={barChartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="horizon" tick={{ fontSize: 11 }} stroke="#a3a3a3" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="#a3a3a3" tickFormatter={(v) => Math.round(v).toString()} />
-                  <Tooltip content={<CustomBarTooltip />} />
-                  <Bar dataKey="predicted" fill="#0EA5E9" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
-          )}
-        </>
-      )}
-
-      {!selectedSku && !isLoading && (
-        <Card>
-          <p className="py-8 text-center text-sm text-text-muted">
-            Buscá un SKU específico arriba para ver su predicción individual.
-            La vista por categorías ya está arriba.
+      {/* Nota metodológica */}
+      <details className="text-xs text-text-muted">
+        <summary className="cursor-pointer font-medium">¿Por qué el forecast principal usa rotación y no Prophet por SKU?</summary>
+        <div className="mt-2 space-y-1">
+          <p>
+            El catálogo tiene ~6.000 SKUs. La mayoría con &lt;30 ventas/año — demanda intermitente, sin
+            confianza estadística para Prophet por SKU.
           </p>
-        </Card>
-      )}
+          <p>
+            Por eso la tabla principal usa rotación diaria (últimos 90d cerrados) × 30 → demanda esperada.
+            Es simple pero estable y accionable. El modelo formal Prophet/ARIMA queda como drilldown
+            para los SKUs que sí tienen historia (WAPE ~34% por categoría vs 45%+ por SKU).
+          </p>
+        </div>
+      </details>
     </div>
   );
 }
