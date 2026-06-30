@@ -14,6 +14,7 @@ import {
   useSalesMonthlyFor,
   useProductAbcMap,
   useSalesHistoryExtended,
+  useVendorDataFlag,
   type FormaPagoItem,
   type VendedorDayItem,
   type TopSkuItem,
@@ -154,6 +155,9 @@ export default function VentasPage(): JSX.Element {
   const monthly = useSalesMonthlyFor(selectedMonth, monthlyExpanded ? 5000 : 10);
   // V1.10.1: mapa ABC para etiquetar productos (compartido entre tabs)
   const abcMap = useProductAbcMap(180);
+  // V1.16: detectar si este tenant tiene datos de vendedor (ej MasVital 99% NULL)
+  const vendorFlag = useVendorDataFlag();
+  const hasVendorData = vendorFlag.data?.has_vendor_data ?? true;
 
   const d = sales.data;
   const dm = daily.data;
@@ -372,13 +376,23 @@ export default function VentasPage(): JSX.Element {
                     subtitle={monthDetail.data.peor_dia ? `${monthDetail.data.peor_dia.date} · ${monthDetail.data.peor_dia.num_facturas} fact` : ""}
                   />
                 </Card>
-                <Card>
-                  <Stat
-                    label="Top vendedor"
-                    value={monthDetail.data.vendedores_top[0]?.nombre_vendedor ?? "—"}
-                    subtitle={monthDetail.data.vendedores_top[0] ? formatMoneyFull(monthDetail.data.vendedores_top[0].total_ventas) : ""}
-                  />
-                </Card>
+                {hasVendorData ? (
+                  <Card>
+                    <Stat
+                      label="Top vendedor"
+                      value={monthDetail.data.vendedores_top[0]?.nombre_vendedor ?? "—"}
+                      subtitle={monthDetail.data.vendedores_top[0] ? formatMoneyFull(monthDetail.data.vendedores_top[0].total_ventas) : ""}
+                    />
+                  </Card>
+                ) : (
+                  <Card>
+                    <Stat
+                      label="Margen bruto"
+                      value={monthDetail.data.margen_porcentaje != null ? `${monthDetail.data.margen_porcentaje.toFixed(1)}%` : "—"}
+                      subtitle="del revenue del mes"
+                    />
+                  </Card>
+                )}
               </div>
 
               {/* Forma de pago + Vendedores top */}
@@ -405,24 +419,36 @@ export default function VentasPage(): JSX.Element {
                   )}
                 </Card>
 
-                <Card header={<h2 className="font-semibold text-text-primary">Vendedores top del mes</h2>}>
-                  {monthDetail.data.vendedores_top.length === 0 ? (
-                    <p className="py-4 text-sm text-text-muted text-center">Sin datos de vendedor.</p>
-                  ) : (
-                    <Table
-                      columns={[
-                        { header: "#", cell: (_: VendedorDayItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
-                        { header: "Vendedor", cell: (r: VendedorDayItem) => r.nombre_vendedor },
-                        { header: "Ventas", cell: (r: VendedorDayItem) => formatMoneyFull(r.total_ventas), align: "right" },
-                        { header: "Fact.", cell: (r: VendedorDayItem) => String(r.num_facturas), align: "right" },
-                        { header: "%", cell: (r: VendedorDayItem) => (r.porcentaje !== null ? `${r.porcentaje.toFixed(1)}%` : "—"), align: "right" },
-                      ]}
-                      data={monthDetail.data.vendedores_top.slice(0, 7)}
-                      keyFn={(r: VendedorDayItem, idx?: number) => `${r.nit_vendedor ?? ""}-${idx ?? 0}`}
-                      striped
-                    />
-                  )}
-                </Card>
+                {hasVendorData ? (
+                  <Card header={<h2 className="font-semibold text-text-primary">Vendedores top del mes</h2>}>
+                    {monthDetail.data.vendedores_top.length === 0 ? (
+                      <p className="py-4 text-sm text-text-muted text-center">Sin datos de vendedor.</p>
+                    ) : (
+                      <Table
+                        columns={[
+                          { header: "#", cell: (_: VendedorDayItem, idx?: number) => String((idx ?? 0) + 1), align: "right" },
+                          { header: "Vendedor", cell: (r: VendedorDayItem) => r.nombre_vendedor },
+                          { header: "Ventas", cell: (r: VendedorDayItem) => formatMoneyFull(r.total_ventas), align: "right" },
+                          { header: "Fact.", cell: (r: VendedorDayItem) => String(r.num_facturas), align: "right" },
+                          { header: "%", cell: (r: VendedorDayItem) => (r.porcentaje !== null ? `${r.porcentaje.toFixed(1)}%` : "—"), align: "right" },
+                        ]}
+                        data={monthDetail.data.vendedores_top.slice(0, 7)}
+                        keyFn={(r: VendedorDayItem, idx?: number) => `${r.nit_vendedor ?? ""}-${idx ?? 0}`}
+                        striped
+                      />
+                    )}
+                  </Card>
+                ) : (
+                  <Card header={<h2 className="font-semibold text-text-primary">Vendedores</h2>}>
+                    <p className="py-4 text-sm text-text-muted text-center">
+                      Este negocio no registra vendedor en las facturas
+                      ({vendorFlag.data?.porcentaje_sin_vendedor}% sin asignar).
+                    </p>
+                    <p className="text-xs text-text-muted text-center">
+                      Para activar este reporte: configurar el POS para que pida vendedor en cada venta.
+                    </p>
+                  </Card>
+                )}
               </div>
 
               {/* Aceleradores / Frenadores */}

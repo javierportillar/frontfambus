@@ -17,6 +17,7 @@ import {
   type HoraPicoItem,
 } from "@/lib/api/hooks";
 import { useAuthStore } from "@/lib/auth/store";
+import { HeatmapDiaHora } from "@/components/ventas/HeatmapDiaHora";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
@@ -299,6 +300,9 @@ function HorasPicoTab({ ini, fin }: { ini: string; fin: string }): JSX.Element {
               </ComposedChart>
             </ResponsiveContainer>
           </Card>
+
+          {/* V1.16: Heatmap día × hora — combina horas pico con día de semana */}
+          <HeatmapDiaHora fechaInicio={ini} fechaFin={fin} />
         </>
       )}
     </div>

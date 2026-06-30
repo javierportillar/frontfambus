@@ -11,6 +11,8 @@ import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ProductsTable } from "@/components/productos/ProductsTable";
 import { EstadoChip, AbcChip } from "@/components/productos/Chips";
+import { SaludCatalogo } from "@/components/productos/SaludCatalogo";
+import { CatalogoZombie } from "@/components/productos/CatalogoZombie";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
 const WINDOWS = [
@@ -168,6 +170,10 @@ export default function ProductosPage(): JSX.Element {
               })}
             </div>
           </Card>
+
+          {/* V1.16: Salud del catálogo + Catálogo zombie (separa nunca vendidos de dormidos) */}
+          <SaludCatalogo />
+          <CatalogoZombie />
 
           {/* Tabla principal */}
           <div ref={tableRef}>

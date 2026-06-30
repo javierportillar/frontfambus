@@ -1489,6 +1489,80 @@ export function useAnalisisBalance(fechaInicio: string, fechaFin: string) {
   );
 }
 
+// ── V1.16: zombie, salud, heatmap, vendor-flag (derivados del EDA) ──────
+
+export interface ProductoZombieItem {
+  cod_producto: string;
+  nom_producto: string;
+  stock_actual: number;
+  costo_unitario: number;
+  capital_invertido: number;
+  ultima_compra: string | null;
+  dias_en_catalogo: number | null;
+  presentacion: string | null;
+  unidad_medida: string;
+}
+export interface ProductosZombieResponse {
+  page: number;
+  page_size: number;
+  total: number;
+  capital_inmovilizado: number;
+  items: ProductoZombieItem[];
+}
+export function useProductosZombie(page = 1, pageSize = 50) {
+  return useMetrics<ProductosZombieResponse>(
+    `/api/metrics/productos-zombie?page=${page}&page_size=${pageSize}`,
+  );
+}
+
+export interface SaludCatalogoResponse {
+  total_skus: number;
+  activos: number;
+  activos_pct: number;
+  lentos: number;
+  lentos_pct: number;
+  dormidos: number;
+  dormidos_pct: number;
+  zombie: number;
+  zombie_pct: number;
+  salud_pct: number;
+}
+export function useSaludCatalogo() {
+  return useMetrics<SaludCatalogoResponse>("/api/metrics/salud-catalogo");
+}
+
+export interface HeatmapCell {
+  dow: number;
+  dow_label: string;
+  hora: number;
+  num_facturas: number;
+  total_ventas: number;
+  ticket_promedio: number;
+}
+export interface HeatmapResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  cells: HeatmapCell[];
+  max_facturas: number;
+  max_ventas: number;
+}
+export function useHeatmapDiaHora(fechaInicio: string, fechaFin: string) {
+  const ok = !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<HeatmapResponse>(
+    ok ? `/api/metrics/heatmap-dia-hora?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}` : null,
+  );
+}
+
+export interface VendorDataFlagResponse {
+  has_vendor_data: boolean;
+  facturas_sin_vendedor: number;
+  facturas_totales: number;
+  porcentaje_sin_vendedor: number;
+}
+export function useVendorDataFlag() {
+  return useMetrics<VendorDataFlagResponse>("/api/metrics/vendor-data-flag");
+}
+
 
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
 

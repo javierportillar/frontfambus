@@ -12,6 +12,7 @@ import { Stat } from "@/components/ui/Stat";
 import { Badge } from "@/components/ui/Badge";
 import { Logo } from "@/components/Logo";
 import { SalesTrendChart } from "@/components/SalesTrendChart";
+import { SaludCatalogo } from "@/components/productos/SaludCatalogo";
 import { SearchBar } from "@/components/SearchBar";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { Skeleton, SkeletonCard } from "@/components/ui/Skeleton";
@@ -193,6 +194,9 @@ function GerenteHome(): JSX.Element {
           </Card>
         );
       })()}
+
+      {/* V1.16: Salud del catálogo — KPI agregado derivado del EDA */}
+      <SaludCatalogo />
 
       {/* Decisiones de compra */}
       <div>
