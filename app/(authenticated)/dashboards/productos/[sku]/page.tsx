@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useProductDetail, type ProductMovimiento, type ProductTimelineMonth } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
@@ -152,17 +153,45 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
           {data.movimientos && data.movimientos.length > 0 ? (
             <div className="max-h-64 overflow-y-auto">
               <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/50 text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
+                    <th className="py-1.5 pr-2">Fecha</th>
+                    <th className="py-1.5 px-2">Tipo</th>
+                    <th className="py-1.5 px-2">Documento</th>
+                    <th className="py-1.5 px-2 text-right">Cant</th>
+                    <th className="py-1.5 pl-2 text-right">Valor</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {data.movimientos.map((mv: ProductMovimiento, i: number) => (
                     <tr key={i} className="border-b border-border/50">
-                      <td className="py-1.5 text-text-muted">{mv.fecha}</td>
-                      <td className="py-1.5">
+                      <td className="py-1.5 pr-2 text-text-muted whitespace-nowrap">{mv.fecha}</td>
+                      <td className="py-1.5 px-2">
                         <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${mv.tipo === "venta" ? "bg-primary/10 text-primary" : "bg-sky-100 text-sky-700"}`}>
                           {mv.tipo === "venta" ? "Venta" : "Compra"}
                         </span>
                       </td>
-                      <td className="py-1.5 text-right tabular-nums">{mv.cantidad} u</td>
-                      <td className="py-1.5 text-right tabular-nums font-medium">{formatMoneyFull(mv.valor)}</td>
+                      <td className="py-1.5 px-2">
+                        {mv.tipo === "compra" ? (
+                          <Link
+                            href={`/dashboards/compras/dia/${mv.fecha}`}
+                            className="text-accent hover:underline font-mono"
+                            title="Ver detalle de compras del día"
+                          >
+                            {mv.num_documento}
+                          </Link>
+                        ) : (
+                          <Link
+                            href={`/dashboards/ventas/dia/${mv.fecha}`}
+                            className="text-accent hover:underline font-mono"
+                            title="Ver detalle de ventas del día"
+                          >
+                            {mv.num_documento}
+                          </Link>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{mv.cantidad} u</td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums font-medium">{formatMoneyFull(mv.valor)}</td>
                     </tr>
                   ))}
                 </tbody>

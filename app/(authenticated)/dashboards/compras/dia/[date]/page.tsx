@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { usePurchasesDayDetail } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -10,6 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 
 export default function ComprasDiaPage(): JSX.Element {
   const params = useParams();
+  const router = useRouter();
   const date = String(params.date ?? "");
 
   const { data, isLoading, error } = usePurchasesDayDetail(date);
@@ -23,12 +23,13 @@ export default function ComprasDiaPage(): JSX.Element {
   return (
     <div className="space-y-4">
       <div>
-        <Link
-          href={`/dashboards/compras`}
-          className="text-sm text-accent hover:underline"
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="text-sm text-accent hover:underline cursor-pointer"
         >
-          ← Volver a compras
-        </Link>
+          ← Volver
+        </button>
         <h1 className="mt-1 text-xl font-bold text-text-primary">
           Compras del {dayNames[d.getDay()]}, {d.getDate()} de {monthNames[d.getMonth()]} de {d.getFullYear()}
         </h1>
