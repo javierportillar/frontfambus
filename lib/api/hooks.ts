@@ -811,7 +811,7 @@ export interface ProductDetailResponse {
 
 export function useProductDetail(sku: string | null, window = 180) {
   return useMetrics<ProductDetailResponse>(
-    sku ? `/api/metrics/product-detail/${encodeURIComponent(sku)}?window=${window}` : null,
+    sku ? `/api/metrics/product-detail?sku=${encodeURIComponent(sku)}&window=${window}` : null,
   );
 }
 
