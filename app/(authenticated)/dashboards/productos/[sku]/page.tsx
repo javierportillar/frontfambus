@@ -269,6 +269,8 @@ interface ComprasFifo {
   index: number;       // posición en el array original `compras`
   vendidas: number;    // unidades de esta compra ya consumidas por ventas posteriores
   enStock: number;     // unidades restantes de esta compra
+  primeraVenta: string | null;
+  ultimaVenta: string | null;
 }
 
 interface DiaMovimientoGroup {
@@ -330,25 +332,70 @@ function groupMovimientosByMonth(movimientos: ProductMovimiento[], order: "asc" 
     });
 }
 
-function calcularFifoDesdeStockActual(compras: ProductMovimiento[], stockActual: number): ComprasFifo[] {
-  // Bajo FIFO, el stock remanente pertenece a las compras más recientes.
-  // Por eso asignamos el stock actual desde la compra más nueva hacia atrás,
-  // en vez de intentar reconstruir consumo con ventas visibles/limitadas.
-  const comprasDesc = compras
+function daysBetween(start: string, end: string): number | null {
+  const startMs = new Date(`${start}T00:00:00`).getTime();
+  const endMs = new Date(`${end}T00:00:00`).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+  return Math.max(0, Math.round((endMs - startMs) / 86_400_000));
+}
+
+function calcularFifoDesdeMovimientos(
+  compras: ProductMovimiento[],
+  ventas: ProductMovimiento[],
+  stockActual: number,
+): ComprasFifo[] {
+  // FIFO: las ventas más antiguas consumen primero las compras más antiguas.
+  // Como product-detail ya trae el historial completo, esto permite estimar
+  // cuándo empezó y cuándo terminó de venderse cada compra.
+  const comprasAsc = compras
     .map((mv, i) => ({ ...mv, _origIndex: i }))
-    .sort((a, b) => b.fecha.localeCompare(a.fecha) || String(b.num_documento).localeCompare(String(a.num_documento), "es", { numeric: true }));
+    .sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.num_documento).localeCompare(String(b.num_documento), "es", { numeric: true }));
+  const ventasAsc = [...ventas].sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.num_documento).localeCompare(String(b.num_documento), "es", { numeric: true }));
 
-  let stockPorAsignar = Math.max(0, stockActual);
+  const resultado = comprasAsc.map((compra) => ({
+    index: compra._origIndex,
+    vendidas: 0,
+    enStock: compra.cantidad,
+    primeraVenta: null as string | null,
+    ultimaVenta: null as string | null,
+  }));
 
-  return comprasDesc.map((c) => {
-    const enStock = Math.min(c.cantidad, stockPorAsignar);
-    stockPorAsignar -= enStock;
-    return {
-      index: c._origIndex,
-      vendidas: Math.max(0, c.cantidad - enStock),
-      enStock,
-    };
-  });
+  for (const venta of ventasAsc) {
+    let porConsumir = venta.cantidad;
+    for (let i = 0; i < comprasAsc.length && porConsumir > 0; i++) {
+      const compra = comprasAsc[i];
+      const fifo = resultado[i];
+      if (!compra || !fifo || fifo.enStock <= 0) continue;
+      if (compra.fecha > venta.fecha) break;
+      const tomar = Math.min(fifo.enStock, porConsumir);
+      fifo.vendidas += tomar;
+      fifo.enStock -= tomar;
+      fifo.primeraVenta = fifo.primeraVenta ?? venta.fecha;
+      fifo.ultimaVenta = venta.fecha;
+      porConsumir -= tomar;
+    }
+  }
+
+  // Si por alguna inconsistencia el saldo FIFO no cuadra exacto con stock actual,
+  // mantenemos el stock canónico ajustando sólo el remanente desde compras recientes.
+  const saldoFifo = resultado.reduce((acc, f) => acc + f.enStock, 0);
+  if (Math.abs(saldoFifo - stockActual) > 0.001) {
+    let stockPorAsignar = Math.max(0, stockActual);
+    const comprasDesc = compras
+      .map((mv, i) => ({ ...mv, _origIndex: i }))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha) || String(b.num_documento).localeCompare(String(a.num_documento), "es", { numeric: true }));
+    const byIndex = new Map(resultado.map((f) => [f.index, f]));
+    for (const compra of comprasDesc) {
+      const fifo = byIndex.get(compra._origIndex);
+      if (!fifo) continue;
+      const enStock = Math.min(compra.cantidad, stockPorAsignar);
+      stockPorAsignar -= enStock;
+      fifo.enStock = enStock;
+      fifo.vendidas = Math.max(0, compra.cantidad - enStock);
+    }
+  }
+
+  return resultado;
 }
 
 function summarizeFifo(
@@ -385,6 +432,31 @@ function FifoSummaryBadges({ summary }: { summary: FifoSummary }): JSX.Element {
   );
 }
 
+function FifoSaleTiming({ fifo, fechaCompra }: { fifo: ComprasFifo | undefined; fechaCompra: string }): JSX.Element {
+  if (!fifo || fifo.vendidas <= 0 || !fifo.ultimaVenta) {
+    return <span className="text-[0.65rem] text-text-muted">Sin venta asignada</span>;
+  }
+
+  const diasPrimeraVenta = fifo.primeraVenta ? daysBetween(fechaCompra, fifo.primeraVenta) : null;
+  const diasUltimaVenta = daysBetween(fechaCompra, fifo.ultimaVenta);
+  const rango = fifo.primeraVenta && fifo.primeraVenta !== fifo.ultimaVenta
+    ? `${fifo.primeraVenta} → ${fifo.ultimaVenta}`
+    : fifo.ultimaVenta;
+  const textoDias = fifo.enStock > 0
+    ? diasUltimaVenta !== null ? `última venta a ${diasUltimaVenta} días` : "parcial"
+    : diasUltimaVenta !== null ? `se agotó en ${diasUltimaVenta} días` : "agotada";
+
+  return (
+    <span
+      className="inline-flex max-w-[10rem] flex-col items-end leading-tight"
+      title={`Primera venta FIFO: ${fifo.primeraVenta ?? "—"}${diasPrimeraVenta !== null ? ` (${diasPrimeraVenta} días)` : ""}. Última venta FIFO: ${fifo.ultimaVenta}${diasUltimaVenta !== null ? ` (${diasUltimaVenta} días)` : ""}.`}
+    >
+      <span className="font-mono text-[0.65rem] text-text-primary">{rango}</span>
+      <span className="text-[0.6rem] text-text-muted">{textoDias}</span>
+    </span>
+  );
+}
+
 function MovimientosSplit({
   movimientos,
   stockActual,
@@ -408,7 +480,7 @@ function MovimientosSplit({
   const udsVentas = ventas.reduce((acc, mv) => acc + mv.cantidad, 0);
 
   // FIFO reconciliado con stock actual: por cada compra visible, cuánto saldo queda.
-  const fifoArr = calcularFifoDesdeStockActual(compras, stockActual);
+  const fifoArr = calcularFifoDesdeMovimientos(compras, ventas, stockActual);
   const fifoPorIndex = new Map(fifoArr.map((f) => [f.index, f]));
   const stockFueraDeComprasVisibles = Math.max(0, stockActual - udsCompras);
   const tieneTotalesHistoricos = Number.isFinite(compradoTotal) && Number.isFinite(vendidoTotal);
@@ -616,6 +688,7 @@ function DiaMovimientos({
               <th className="py-1.5 px-2 text-right">Unit.</th>
               <th className="py-1.5 px-2 text-right">Total</th>
               {esCompra && <th className="py-1.5 px-2 text-right">Estado</th>}
+              {esCompra && <th className="py-1.5 px-2 text-right">Venta FIFO</th>}
             </tr>
           </thead>
           <tbody>
@@ -636,6 +709,11 @@ function DiaMovimientos({
                   {esCompra && (
                     <td className="py-1.5 px-2 text-right">
                       <EstadoCompraBadge fifo={fifo} cantidad={mv.cantidad} />
+                    </td>
+                  )}
+                  {esCompra && (
+                    <td className="py-1.5 px-2 text-right">
+                      <FifoSaleTiming fifo={fifo} fechaCompra={mv.fecha} />
                     </td>
                   )}
                 </tr>
