@@ -287,6 +287,11 @@ interface MesMovimientoGroup {
   total: number;
 }
 
+interface FifoSummary {
+  vendidas: number;
+  pendientes: number;
+}
+
 function groupMovimientosByMonth(movimientos: ProductMovimiento[], order: "asc" | "desc"): MesMovimientoGroup[] {
   const byMonth = new Map<string, ProductMovimiento[]>();
   for (const mv of movimientos) {
@@ -344,6 +349,38 @@ function calcularFifoDesdeStockActual(compras: ProductMovimiento[], stockActual:
       enStock,
     };
   });
+}
+
+function summarizeFifo(
+  movimientos: ProductMovimiento[],
+  compras: ProductMovimiento[],
+  fifoPorIndex: Map<number, ComprasFifo> | undefined,
+): FifoSummary {
+  if (!fifoPorIndex) return { vendidas: 0, pendientes: 0 };
+  return movimientos.reduce(
+    (acc, mv) => {
+      const compraIndex = compras.indexOf(mv);
+      const fifo = compraIndex >= 0 ? fifoPorIndex.get(compraIndex) : undefined;
+      return {
+        vendidas: acc.vendidas + (fifo?.vendidas ?? 0),
+        pendientes: acc.pendientes + (fifo?.enStock ?? 0),
+      };
+    },
+    { vendidas: 0, pendientes: 0 },
+  );
+}
+
+function FifoSummaryBadges({ summary }: { summary: FifoSummary }): JSX.Element {
+  return (
+    <span className="inline-flex flex-wrap justify-end gap-1 text-[0.65rem] font-semibold">
+      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
+        {summary.vendidas.toLocaleString("es-CO")} vendidas
+      </span>
+      <span className="rounded-full bg-orange-100 px-2 py-0.5 text-orange-700">
+        {summary.pendientes.toLocaleString("es-CO")} pendientes
+      </span>
+    </span>
+  );
 }
 
 function MovimientosSplit({
@@ -510,6 +547,7 @@ function MesMovimientos({
   const [open, setOpen] = useState(false);
   const esCompra = tipo === "compra";
   const colorClass = esCompra ? "border-sky-200 bg-sky-50/60 text-sky-800" : "border-primary/20 bg-primary/5 text-primary";
+  const fifoSummary = esCompra ? summarizeFifo(mes.movimientos, compras, fifoPorIndex) : null;
 
   return (
     <div className={`overflow-hidden rounded-lg border ${colorClass}`}>
@@ -521,6 +559,7 @@ function MesMovimientos({
         <div className="text-right">
           <div className="text-sm font-bold tabular-nums">{mes.unidades.toLocaleString("es-CO")} u</div>
           <div className="text-[0.7rem] font-semibold tabular-nums">{formatMoneyFull(mes.total)}</div>
+          {fifoSummary && <div className="mt-1"><FifoSummaryBadges summary={fifoSummary} /></div>}
         </div>
       </button>
       {open && (
@@ -555,12 +594,16 @@ function DiaMovimientos({
   compras: ProductMovimiento[];
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const fifoSummary = esCompra ? summarizeFifo(dia.movimientos, compras, fifoPorIndex) : null;
 
   return (
     <div className="mb-2 rounded-md border border-border/60 bg-surface last:mb-0">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between px-2 py-1.5 text-left text-xs hover:bg-muted/60">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted/60">
         <span className="font-medium text-text-primary">{open ? "▾" : "▸"} {dia.fecha}</span>
-        <span className="tabular-nums text-text-muted">{dia.unidades.toLocaleString("es-CO")} u · {formatMoneyFull(dia.total)}</span>
+        <span className="flex flex-col items-end gap-1 tabular-nums text-text-muted sm:flex-row sm:items-center">
+          <span>{dia.unidades.toLocaleString("es-CO")} u · {formatMoneyFull(dia.total)}</span>
+          {fifoSummary && <FifoSummaryBadges summary={fifoSummary} />}
+        </span>
       </button>
       {open && (
         <table className="w-full border-t border-border/50 text-xs">
