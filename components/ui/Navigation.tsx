@@ -561,16 +561,15 @@ export function Navigation({
  * Si feature es undefined, la ruta es siempre visible.
  */
 export function gerenteNavItems(): NavItem[] {
-  // V1.17: ABC, Plan Compras y Dormidos consolidados en Inventario (4 tabs).
-  // Las rutas viejas redirigen automáticamente (ver app/dashboards/.../page.tsx).
+  // V1.23: Ventas+Compras → Movimientos (toggle interno).
+  //        Productos+Inventario → Inventario (4 tabs).
+  //        Las rutas viejas redirigen automáticamente.
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
-    { label: "Ventas", href: "/dashboards/ventas", icon: Icons.ventas, feature: "ventas-summary" },
-    { label: "Productos", href: "/dashboards/productos", icon: Icons.productos, feature: "inventario" },
-    { label: "Compras", href: "/dashboards/compras", icon: Icons.compras, feature: "inventario" },
+    { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
     { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast },
-    { label: "Forecast", href: "/forecast", icon: Icons.forecast, feature: "forecast" },
+    { label: "Forecast", href: "/forecast", icon: Icons.forecast },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
     { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
     { label: "Cohortes", href: "/cohortes", icon: Icons.home, feature: "cohortes" },
