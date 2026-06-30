@@ -7,7 +7,9 @@ import {
   useComprasOverview,
   useComprasHistorico,
   useComprasPorProveedor,
-  usePurchasesDayDetail,
+  usePurchasesDayGrouped,
+  useComprasProveedorDetalle,
+  type CompraDocumento,
 } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -93,10 +95,19 @@ function TabPill({ active, onClick, label }: { active: boolean; onClick: () => v
 
 // ── TAB 1: Mensual ───────────────────────────────────────────────────────
 
+function monthRange(mes: string): { ini: string; fin: string } {
+  // Devuelve el primer y último día del mes YYYY-MM
+  const [y, m] = mes.split("-");
+  const last = new Date(Number(y), Number(m), 0).getDate();
+  return { ini: `${mes}-01`, fin: `${mes}-${String(last).padStart(2, "0")}` };
+}
+
 function MensualTab({ mes }: { mes: string }): JSX.Element {
   const { data, isLoading } = useComprasOverview(mes);
   const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedProv, setSelectedProv] = useState<{ nit: string } | null>(null);
   const router = useRouter();
+  const range = useMemo(() => monthRange(mes), [mes]);
 
   if (isLoading && !data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
   if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos.</p></Card>;
@@ -164,9 +175,25 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
       {/* Detalle del día seleccionado */}
       {selectedDate && <DiaDetalle date={selectedDate} onClose={() => setSelectedDate("")} />}
 
+      {/* Detalle del proveedor seleccionado */}
+      {selectedProv && (
+        <ProveedorDetalle
+          nit={selectedProv.nit}
+          fechaInicio={range.ini}
+          fechaFin={range.fin}
+          contextoLabel={mesLabel(mes)}
+          onClose={() => setSelectedProv(null)}
+        />
+      )}
+
       {/* Top proveedores + Top productos */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card header={<h2 className="font-semibold text-text-primary">Top 10 proveedores</h2>}>
+        <Card header={
+          <div>
+            <h2 className="font-semibold text-text-primary">Top 10 proveedores</h2>
+            <p className="text-xs text-text-muted">click → detalle de qué le compraste</p>
+          </div>
+        }>
           {data.top_proveedores.length === 0 ? (
             <p className="py-6 text-center text-sm text-text-muted">Sin proveedores en el mes.</p>
           ) : (
@@ -174,8 +201,17 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
               {data.top_proveedores.map((p, idx) => {
                 const max = data.top_proveedores[0]?.total_compras ?? 1;
                 const intensity = p.total_compras / max;
+                const canClick = !!p.nit;
                 return (
-                  <div key={`${p.nit}-${idx}`} className="rounded-lg border border-border bg-surface px-3 py-2">
+                  <button
+                    key={`${p.nit}-${idx}`}
+                    type="button"
+                    disabled={!canClick}
+                    onClick={() => canClick && p.nit && setSelectedProv({ nit: p.nit })}
+                    className={`block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left ${
+                      canClick ? "hover:bg-surface-alt cursor-pointer" : "opacity-60 cursor-default"
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-text-primary truncate">{p.nombre}</div>
@@ -188,7 +224,7 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
                     <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-alt">
                       <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, intensity * 100)}%` }} />
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -240,11 +276,10 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
   );
 }
 
-// ── Detalle de día (popup expandible) ────────────────────────────────────
+// ── V1.20: Detalle de día agrupado por DOCUMENTO + PROVEEDOR ─────────────
 
 function DiaDetalle({ date, onClose }: { date: string; onClose: () => void }): JSX.Element {
-  const { data, isLoading } = usePurchasesDayDetail(date);
-  const router = useRouter();
+  const { data, isLoading } = usePurchasesDayGrouped(date);
   const dayLabel = useMemo(() => {
     const d = new Date(`${date}T00:00:00`);
     const dayNames = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -266,7 +301,7 @@ function DiaDetalle({ date, onClose }: { date: string; onClose: () => void }): J
     }>
       {isLoading ? (
         <Skeleton className="h-32 rounded-lg" />
-      ) : !data || data.items.length === 0 ? (
+      ) : !data || data.documentos.length === 0 ? (
         <p className="py-6 text-center text-sm text-text-muted">Sin compras este día.</p>
       ) : (
         <>
@@ -279,45 +314,238 @@ function DiaDetalle({ date, onClose }: { date: string; onClose: () => void }): J
               <span className="text-text-muted">Documentos:</span>{" "}
               <strong>{data.total_documentos}</strong>
             </div>
-            <div className="rounded-md border border-border bg-surface-alt/40 px-2 py-1">
-              <span className="text-text-muted">Líneas:</span>{" "}
-              <strong>{data.items.length}</strong>
-            </div>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
-                  <th className="py-2 px-3">Documento</th>
-                  <th className="py-2 px-3">Producto</th>
-                  <th className="py-2 px-3 text-right">Cant.</th>
-                  <th className="py-2 px-3 text-right">V. unit.</th>
-                  <th className="py-2 px-3 text-right">Costo</th>
-                  <th className="py-2 px-3 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((it, idx) => (
-                  <tr
-                    key={`${it.num_documento}-${it.cod_producto}-${idx}`}
-                    className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(it.cod_producto)}`)}
-                  >
-                    <td className="py-2 px-3 text-xs text-text-muted">{it.num_documento}</td>
-                    <td className="py-2 px-3">
-                      <div className="text-text-primary truncate max-w-xs">{it.nom_producto}</div>
-                      <div className="text-[0.6rem] text-text-muted">{it.cod_producto}</div>
-                    </td>
-                    <td className="py-2 px-3 text-right tabular-nums">{it.cantidad}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-text-muted">{formatMoneyFull(it.valor_unitario)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums text-text-muted">{formatMoneyFull(it.costo_producto)}</td>
-                    <td className="py-2 px-3 text-right tabular-nums font-semibold">{formatMoneyFull(it.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {data.documentos.map((doc, idx) => (
+              <DocumentoCard key={`${doc.num_documento}-${idx}`} doc={doc} />
+            ))}
           </div>
         </>
+      )}
+    </Card>
+  );
+}
+
+function DocumentoCard({ doc }: { doc: CompraDocumento }): JSX.Element {
+  const router = useRouter();
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-lg border border-border bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-surface-alt"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-base">{open ? "▾" : "▸"}</span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-text-primary truncate">
+                {doc.nombre_proveedor}
+              </div>
+              <div className="text-[0.65rem] text-text-muted">
+                Factura {doc.num_documento}{doc.cod_clase ? ` · ${doc.cod_clase}` : ""}
+                {doc.nit_proveedor && ` · NIT ${doc.nit_proveedor}`}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-sm font-bold text-text-primary tabular-nums">
+            {formatMoneyFull(doc.total_factura)}
+          </div>
+          <div className="text-[0.65rem] text-text-muted">
+            {doc.num_items} producto{doc.num_items === 1 ? "" : "s"}
+          </div>
+        </div>
+      </button>
+      {open && doc.items.length > 0 && (
+        <div className="border-t border-border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface-alt/40 text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
+                <th className="py-1.5 px-3">Producto</th>
+                <th className="py-1.5 px-3 text-right">Cant.</th>
+                <th className="py-1.5 px-3 text-right">V. unit.</th>
+                <th className="py-1.5 px-3 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {doc.items.map((it, i) => (
+                <tr
+                  key={`${it.cod_producto}-${i}`}
+                  className="border-t border-border/40 hover:bg-surface-alt cursor-pointer"
+                  onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(it.cod_producto)}`)}
+                >
+                  <td className="py-1.5 px-3">
+                    <div className="text-text-primary text-xs truncate max-w-md">{it.nom_producto}</div>
+                    <div className="text-[0.6rem] text-text-muted">{it.cod_producto}</div>
+                  </td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-xs">
+                    {it.cantidad}{" "}
+                    <span className="text-text-muted">{it.unidad_medida ?? "u"}</span>
+                  </td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-xs text-text-muted">
+                    {formatMoneyFull(it.valor_unitario)}
+                  </td>
+                  <td className="py-1.5 px-3 text-right tabular-nums text-xs font-semibold">
+                    {formatMoneyFull(it.total)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── V1.20: Detalle de proveedor (popup) ──────────────────────────────────
+
+function ProveedorDetalle({
+  nit,
+  fechaInicio,
+  fechaFin,
+  contextoLabel,
+  onClose,
+}: {
+  nit: string;
+  fechaInicio: string;
+  fechaFin: string;
+  contextoLabel: string;
+  onClose: () => void;
+}): JSX.Element {
+  const { data, isLoading } = useComprasProveedorDetalle(nit, fechaInicio, fechaFin);
+
+  return (
+    <Card header={
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-text-primary">
+            {data?.nombre_proveedor ?? "Proveedor"}
+          </h2>
+          <p className="text-xs text-text-muted">
+            NIT {nit} · {contextoLabel}
+          </p>
+        </div>
+        <button type="button" onClick={onClose} className="text-xs text-accent hover:underline">
+          Cerrar ×
+        </button>
+      </div>
+    }>
+      {isLoading ? (
+        <Skeleton className="h-32 rounded-lg" />
+      ) : !data || data.documentos.length === 0 ? (
+        <p className="py-6 text-center text-sm text-text-muted">Sin compras a este proveedor en el período.</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 text-xs">
+            <div className="rounded-md border border-border bg-surface-alt/40 px-2 py-1.5">
+              <div className="text-text-muted">Total comprado</div>
+              <div className="font-semibold text-text-primary tabular-nums">
+                {formatMoneyFull(data.total_compras)}
+              </div>
+            </div>
+            <div className="rounded-md border border-border bg-surface-alt/40 px-2 py-1.5">
+              <div className="text-text-muted">Documentos</div>
+              <div className="font-semibold text-text-primary">{data.total_documentos}</div>
+            </div>
+            <div className="rounded-md border border-border bg-surface-alt/40 px-2 py-1.5">
+              <div className="text-text-muted">Productos distintos</div>
+              <div className="font-semibold text-text-primary">{data.productos_resumen.length}</div>
+            </div>
+          </div>
+
+          {data.productos_resumen.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-text-primary">Resumen — qué le compraste</h3>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
+                      <th className="py-2 px-3">#</th>
+                      <th className="py-2 px-3">Producto</th>
+                      <th className="py-2 px-3 text-right">Cantidad</th>
+                      <th className="py-2 px-3 text-right">Veces</th>
+                      <th className="py-2 px-3 text-right">Valor total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.productos_resumen.slice(0, 20).map((p, idx) => (
+                      <tr key={p.cod_producto} className="border-b border-border/60">
+                        <td className="py-2 px-3 text-xs text-text-muted">{idx + 1}</td>
+                        <td className="py-2 px-3">
+                          <div className="text-text-primary truncate max-w-md">{p.nom_producto}</div>
+                          <div className="text-[0.6rem] text-text-muted">{p.cod_producto}</div>
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums">
+                          {p.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{" "}
+                          <span className="text-xs text-text-muted">{p.unidad_medida ?? "u"}</span>
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums text-text-muted">
+                          {p.veces_comprado}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums font-semibold">
+                          {formatMoneyFull(p.valor_total)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {data.productos_resumen.length > 20 && (
+                  <p className="border-t border-border bg-surface-alt/40 px-3 py-1.5 text-center text-[0.65rem] text-text-muted">
+                    Mostrando 20 de {data.productos_resumen.length}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-text-primary">
+              Documentos individuales ({data.documentos.length})
+            </h3>
+            <div className="space-y-2">
+              {data.documentos.map((d, idx) => (
+                <details key={`${d.num_documento}-${idx}`} className="rounded-lg border border-border bg-surface">
+                  <summary className="cursor-pointer px-3 py-2 hover:bg-surface-alt">
+                    <span className="text-sm">
+                      <strong>{d.fecha}</strong> · Factura {d.num_documento}
+                      {d.cod_clase ? ` · ${d.cod_clase}` : ""}
+                      <span className="ml-3 text-text-muted">— {d.num_items} prod</span>
+                    </span>
+                    <span className="float-right text-sm font-bold tabular-nums">
+                      {formatMoneyFull(d.total_factura)}
+                    </span>
+                  </summary>
+                  {d.items.length > 0 && (
+                    <div className="border-t border-border overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {d.items.map((it, i) => (
+                            <tr key={`${it.cod_producto}-${i}`} className="border-t border-border/40">
+                              <td className="py-1.5 px-3 truncate max-w-md">{it.nom_producto}</td>
+                              <td className="py-1.5 px-3 text-right tabular-nums">
+                                {it.cantidad} {it.unidad_medida ?? "u"}
+                              </td>
+                              <td className="py-1.5 px-3 text-right tabular-nums">
+                                {formatMoneyFull(it.valor_unitario)}
+                              </td>
+                              <td className="py-1.5 px-3 text-right tabular-nums font-semibold">
+                                {formatMoneyFull(it.total)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </details>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </Card>
   );
@@ -432,6 +660,8 @@ function ProveedorTab(): JSX.Element {
 
 function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.Element {
   const { data, isLoading } = useComprasHistorico();
+  const [selectedProv, setSelectedProv] = useState<{ nit: string } | null>(null);
+  const router = useRouter();
 
   if (isLoading && !data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
   if (!data || data.serie.length === 0) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin histórico de compras.</p></Card>;
@@ -528,6 +758,112 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
         </div>
         <p className="mt-2 text-xs text-text-muted">Click en un mes para ir a su vista detallada</p>
       </Card>
+
+      {/* Detalle del proveedor seleccionado (sobre todo el histórico) */}
+      {selectedProv && data.fecha_primera_compra && data.fecha_ultima_compra && (
+        <ProveedorDetalle
+          nit={selectedProv.nit}
+          fechaInicio={data.fecha_primera_compra}
+          fechaFin={data.fecha_ultima_compra}
+          contextoLabel="histórico completo"
+          onClose={() => setSelectedProv(null)}
+        />
+      )}
+
+      {/* V1.20: Top proveedores históricos + Top productos históricos */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card header={
+          <div>
+            <h2 className="font-semibold text-text-primary">Top 15 proveedores históricos</h2>
+            <p className="text-xs text-text-muted">click → detalle de qué le has comprado</p>
+          </div>
+        }>
+          {!data.top_proveedores || data.top_proveedores.length === 0 ? (
+            <p className="py-6 text-center text-sm text-text-muted">Sin proveedores con compras registradas.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {data.top_proveedores.map((p, idx) => {
+                const max = data.top_proveedores?.[0]?.total_compras ?? 1;
+                const intensity = p.total_compras / max;
+                const canClick = !!p.nit;
+                return (
+                  <button
+                    key={`${p.nit}-${idx}`}
+                    type="button"
+                    disabled={!canClick}
+                    onClick={() => canClick && setSelectedProv({ nit: p.nit })}
+                    className={`block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left ${
+                      canClick ? "hover:bg-surface-alt cursor-pointer" : "opacity-60 cursor-default"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-text-primary truncate">{p.nombre}</div>
+                        <div className="text-[0.65rem] text-text-muted">
+                          NIT {p.nit} · {p.num_documentos} doc ·{" "}
+                          {p.primera_compra && p.ultima_compra ? `${p.primera_compra} → ${p.ultima_compra}` : ""}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-semibold tabular-nums">{formatMoneyFull(p.total_compras)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-alt">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, intensity * 100)}%` }} />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card header={
+          <div>
+            <h2 className="font-semibold text-text-primary">Top 15 productos comprados (histórico)</h2>
+            <p className="text-xs text-text-muted">click → ficha del producto</p>
+          </div>
+        }>
+          {!data.top_productos || data.top_productos.length === 0 ? (
+            <p className="py-6 text-center text-sm text-text-muted">Sin productos registrados.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
+                    <th className="py-2 pr-2">#</th>
+                    <th className="py-2 px-2">Producto</th>
+                    <th className="py-2 px-2 text-right">Cantidad</th>
+                    <th className="py-2 px-2 text-right">Veces</th>
+                    <th className="py-2 px-2 text-right">Valor total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.top_productos.map((p, idx) => (
+                    <tr
+                      key={p.cod_producto}
+                      className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
+                      onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
+                    >
+                      <td className="py-2 pr-2 text-xs text-text-muted">{idx + 1}</td>
+                      <td className="py-2 px-2">
+                        <div className="text-text-primary font-medium text-sm truncate max-w-xs">{p.nom_producto}</div>
+                        <div className="text-[0.65rem] text-text-muted">{p.cod_producto}</div>
+                      </td>
+                      <td className="py-2 px-2 text-right tabular-nums text-text-muted">
+                        {p.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{" "}
+                        <span className="text-xs">{p.unidad_medida ?? "u"}</span>
+                      </td>
+                      <td className="py-2 px-2 text-right tabular-nums text-text-muted">{p.veces_comprado}</td>
+                      <td className="py-2 px-2 text-right tabular-nums font-semibold">{formatMoneyFull(p.valor_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

@@ -1657,6 +1657,23 @@ export interface ComprasHistoricoMes {
   num_documentos: number;
   proveedores_unicos: number;
 }
+export interface ComprasHistoricoProveedor {
+  nit: string;
+  nombre: string;
+  num_documentos: number;
+  total_compras: number;
+  primera_compra: string | null;
+  ultima_compra: string | null;
+}
+export interface ComprasHistoricoProducto {
+  cod_producto: string;
+  nom_producto: string;
+  cantidad_total: number;
+  valor_total: number;
+  veces_comprado: number;
+  presentacion?: string | null;
+  unidad_medida?: string;
+}
 export interface ComprasHistoricoResponse {
   total_compras: number;
   total_documentos: number;
@@ -1664,6 +1681,10 @@ export interface ComprasHistoricoResponse {
   fecha_primera_compra: string | null;
   fecha_ultima_compra: string | null;
   serie: ComprasHistoricoMes[];
+  /** V1.20: top proveedores del histórico (puede no venir en versiones viejas) */
+  top_proveedores?: ComprasHistoricoProveedor[];
+  /** V1.20: top productos del histórico */
+  top_productos?: ComprasHistoricoProducto[];
 }
 export interface ComprasPorProveedorResponse {
   fecha_inicio: string;
@@ -1683,6 +1704,73 @@ export function useComprasPorProveedor(fechaInicio: string, fechaFin: string) {
     ok ? `/api/metrics/compras-por-proveedor?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}` : null,
   );
 }
+
+// V1.20: día agrupado por documento + proveedor detalle
+
+export interface CompraItem {
+  cod_producto: string;
+  nom_producto: string;
+  cantidad: number;
+  valor_unitario: number;
+  costo_producto?: number;
+  total: number;
+  presentacion?: string | null;
+  unidad_medida?: string;
+}
+export interface CompraDocumento {
+  num_documento: string;
+  cod_clase?: string;
+  nit_proveedor?: string | null;
+  nombre_proveedor?: string;
+  total_factura: number;
+  num_items: number;
+  items: CompraItem[];
+  fecha?: string;
+}
+export interface PurchasesDayGroupedResponse {
+  date: string;
+  total_compras: number;
+  total_documentos: number;
+  documentos: CompraDocumento[];
+}
+export function usePurchasesDayGrouped(date: string | null) {
+  return useMetrics<PurchasesDayGroupedResponse>(
+    date ? `/api/metrics/purchases-day-grouped?date=${date}` : null,
+  );
+}
+
+export interface ProductoResumenProveedor {
+  cod_producto: string;
+  nom_producto: string;
+  cantidad_total: number;
+  valor_total: number;
+  veces_comprado: number;
+  presentacion?: string | null;
+  unidad_medida?: string;
+}
+export interface ComprasProveedorDetalleResponse {
+  nit_proveedor: string;
+  nombre_proveedor: string;
+  fecha_inicio: string;
+  fecha_fin: string;
+  total_compras: number;
+  total_documentos: number;
+  documentos: CompraDocumento[];
+  productos_resumen: ProductoResumenProveedor[];
+}
+export function useComprasProveedorDetalle(
+  nit: string | null,
+  fechaInicio: string,
+  fechaFin: string,
+) {
+  const ok = !!nit && !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<ComprasProveedorDetalleResponse>(
+    ok
+      ? `/api/metrics/compras-proveedor-detalle?nit_proveedor=${encodeURIComponent(nit)}&fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`
+      : null,
+  );
+}
+
 
 
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
