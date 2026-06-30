@@ -7,6 +7,7 @@ import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AbcLegend } from "@/components/productos/AbcLegend";
 
 type Grupo = "liquidar" | "sobrestock" | "zombie";
 
@@ -113,13 +114,16 @@ export function OptimizarTab(): JSX.Element {
           <p className="mt-1 text-xs text-text-muted">{meta.desc}</p>
         </div>
       }>
-        <input
-          type="search"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Buscar SKU o nombre..."
-          className="mb-3 block w-full max-w-md rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
-        />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <input
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Buscar SKU o nombre..."
+            className="block w-full max-w-md rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+          />
+          <AbcLegend />
+        </div>
         {visible.length === 0 ? (
           <p className="py-6 text-center text-sm text-text-secondary">
             {filter ? "Sin resultados para el filtro." : "🎉 No hay productos en este grupo."}

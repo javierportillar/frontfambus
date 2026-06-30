@@ -7,6 +7,7 @@ import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AbcLegend } from "@/components/productos/AbcLegend";
 
 type SortKey = "ingreso" | "rotacion" | "sugerido" | "cobertura";
 
@@ -128,6 +129,9 @@ export function ComprarTab(): JSX.Element {
         <p className="mt-2 text-[0.65rem] text-text-muted">
           Fórmula: sugerido = rotación × ({leadTime}d lead + {colchon}d colchón) − stock actual
         </p>
+        <div className="mt-3 border-t border-border pt-2">
+          <AbcLegend />
+        </div>
       </Card>
 
       {/* Comprar YA */}

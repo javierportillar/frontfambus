@@ -19,6 +19,7 @@ import { Stat } from "@/components/ui/Stat";
 import { ResumenTab } from "@/components/inventario/ResumenTab";
 import { ComprarTab } from "@/components/inventario/ComprarTab";
 import { OptimizarTab } from "@/components/inventario/OptimizarTab";
+import { AbcLegend } from "@/components/productos/AbcLegend";
 import {
   Bar,
   BarChart,
@@ -714,6 +715,9 @@ function CatalogoCompletoTab(): JSX.Element {
 
   return (
     <div className="space-y-5 pb-6">
+      <div className="rounded-lg border border-border bg-surface-alt/40 px-3 py-2">
+        <AbcLegend />
+      </div>
       <section className="relative overflow-hidden rounded-[2rem] border border-border bg-[#15110f] p-5 text-text-inverse shadow-2xl md:p-7">
         <div className="absolute -left-24 top-6 h-64 w-64 rounded-full bg-primary/35 blur-3xl" />
         <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-warning/25 blur-3xl" />

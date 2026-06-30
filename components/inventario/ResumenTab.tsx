@@ -11,6 +11,7 @@ import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AbcLegend } from "@/components/productos/AbcLegend";
 
 // Etiquetas legibles y color por bucket
 const ACCION_META: Record<InventarioAccion, { label: string; emoji: string; color: string; tabDestino: string }> = {
@@ -211,6 +212,9 @@ export function ResumenTab({ onGoToTab }: Props): JSX.Element {
             </button>
           </div>
         }>
+          <div className="mb-3">
+            <AbcLegend />
+          </div>
           <div className="space-y-2">
             {topAlertas.map((it) => (
               <AlertaRow key={it.cod_producto} item={it} />
