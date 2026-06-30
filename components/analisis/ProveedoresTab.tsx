@@ -178,7 +178,7 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
           </table>
         </div>
         {proveedoresFiltrados.length === 0 && filter && (
-          <p className="mt-3 text-center text-sm text-text-muted">Sin resultados para "{filter}"</p>
+          <p className="mt-3 text-center text-sm text-text-muted">Sin resultados para &ldquo;{filter}&rdquo;</p>
         )}
       </Card>
     </div>
