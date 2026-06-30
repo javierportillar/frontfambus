@@ -8,7 +8,6 @@ import { ResumenUnificado } from "@/components/inventario/ResumenUnificado";
 import { ComprarTab } from "@/components/inventario/ComprarTab";
 import { OptimizarTab } from "@/components/inventario/OptimizarTab";
 import { ProductsTable } from "@/components/productos/ProductsTable";
-import type { MatrizFilter } from "@/components/inventario/ResumenTab";
 
 // ── V1.23: Inventario unificado (absorbe Productos) ──
 // Tabs: Resumen (gerencial + operativo) / Comprar / Optimizar / Catálogo (lista filtrable)
@@ -28,8 +27,6 @@ function InventarioInner(): JSX.Element {
   const [tab, setTab] = useState<InvTab>(
     TABS.some((t) => t.key === tabParam) ? tabParam : "resumen",
   );
-  // Filtro proveniente de la Matriz Stock×Rotación
-  const [matrizFilter, setMatrizFilter] = useState<MatrizFilter | null>(null);
   // Filtro de estado proveniente de Decision Cards / Salud (para tab Catálogo)
   const [catalogoEstado, setCatalogoEstado] = useState<string>("");
 
@@ -70,25 +67,14 @@ function InventarioInner(): JSX.Element {
 
       {tab === "resumen" && (
         <ResumenUnificado
-          onGoToTab={(t, filter) => {
-            setMatrizFilter(filter ?? null);
+          onGoToTab={(t) => {
             setCatalogoEstado("");
             setTab(t);
           }}
         />
       )}
-      {tab === "comprar" && (
-        <ComprarTab
-          matrizFilter={matrizFilter}
-          onClearFilter={() => setMatrizFilter(null)}
-        />
-      )}
-      {tab === "optimizar" && (
-        <OptimizarTab
-          matrizFilter={matrizFilter}
-          onClearFilter={() => setMatrizFilter(null)}
-        />
-      )}
+      {tab === "comprar" && <ComprarTab />}
+      {tab === "optimizar" && <OptimizarTab />}
       {tab === "catalogo" && (
         <ProductsTable key={catalogoEstado} window={180} initialEstado={catalogoEstado} />
       )}

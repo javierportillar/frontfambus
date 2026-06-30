@@ -12,7 +12,7 @@ import { AbcChip } from "@/components/productos/Chips";
 import { SaludCatalogo } from "@/components/productos/SaludCatalogo";
 import { CatalogoZombie } from "@/components/productos/CatalogoZombie";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { ResumenTab, type MatrizFilter } from "./ResumenTab";
+import { ResumenTab } from "./ResumenTab";
 
 const WINDOWS = [
   { value: 90, label: "90 días" },
@@ -22,7 +22,7 @@ const WINDOWS = [
 
 interface Props {
   // eslint-disable-next-line no-unused-vars
-  onGoToTab: (tab: "comprar" | "optimizar" | "catalogo", filter?: MatrizFilter) => void;
+  onGoToTab: (tab: "comprar" | "optimizar" | "catalogo") => void;
 }
 
 export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
