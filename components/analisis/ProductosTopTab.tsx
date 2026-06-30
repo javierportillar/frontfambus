@@ -175,7 +175,7 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
         </div>
         <p className="mt-2 text-[0.65rem] text-text-muted">
           <strong>Ratio v/c</strong>: revenue / compras del período. ≥1.5 verde (rota muy bien) · 1-1.5 ok ·
-          0.5-1 lento · &lt;0.5 rojo (sobrecomprado). "—" cuando no hay compra en el período.
+          0.5-1 lento · &lt;0.5 rojo (sobrecomprado). &ldquo;—&rdquo; cuando no hay compra en el período.
         </p>
       </Card>
 
