@@ -1617,6 +1617,73 @@ export function useInventarioOverview(leadTime = 7, colchon = 14, sobrestock = 1
   );
 }
 
+// ── V1.19: Compras refactor ─────────────────────────────────────────────
+
+export interface ComprasDia {
+  date: string;
+  day: number;
+  total: number;
+  num_documentos: number;
+}
+export interface ComprasProveedorRow {
+  nit: string | null;
+  nombre: string;
+  num_documentos: number;
+  total_compras: number;
+  primera_compra?: string | null;
+  ultima_compra?: string | null;
+}
+export interface ComprasProductoRow {
+  cod_producto: string;
+  nom_producto: string;
+  cantidad_total: number;
+  valor_total: number;
+  presentacion?: string | null;
+  unidad_medida?: string;
+}
+export interface ComprasOverviewResponse {
+  month: string;
+  total_compras: number;
+  total_documentos: number;
+  proveedores_unicos: number;
+  ticket_promedio: number;
+  dias: ComprasDia[];
+  top_proveedores: ComprasProveedorRow[];
+  top_productos: ComprasProductoRow[];
+}
+export interface ComprasHistoricoMes {
+  mes: string;
+  total: number;
+  num_documentos: number;
+  proveedores_unicos: number;
+}
+export interface ComprasHistoricoResponse {
+  total_compras: number;
+  total_documentos: number;
+  proveedores_totales: number;
+  fecha_primera_compra: string | null;
+  fecha_ultima_compra: string | null;
+  serie: ComprasHistoricoMes[];
+}
+export interface ComprasPorProveedorResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  proveedores: ComprasProveedorRow[];
+}
+
+export function useComprasOverview(month: string) {
+  return useMetrics<ComprasOverviewResponse>(`/api/metrics/compras-overview?month=${month}`);
+}
+export function useComprasHistorico() {
+  return useMetrics<ComprasHistoricoResponse>("/api/metrics/compras-historico");
+}
+export function useComprasPorProveedor(fechaInicio: string, fechaFin: string) {
+  const ok = !!fechaInicio && !!fechaFin && fechaInicio <= fechaFin;
+  return useMetrics<ComprasPorProveedorResponse>(
+    ok ? `/api/metrics/compras-por-proveedor?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}` : null,
+  );
+}
+
 
 // ── Multi-tenant (M2): /api/auth/me ──────────────────────────────────────
 
