@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 
-type Ranking = "revenue" | "margen" | "unidades";
+type Ranking = "revenue" | "margen" | "unidades" | "compras";
 
 interface Props {
   ini: string;
@@ -24,6 +24,7 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
     if (!data) return [];
     if (ranking === "revenue") return data.top_revenue;
     if (ranking === "margen") return data.top_margen;
+    if (ranking === "compras") return data.top_compras ?? [];
     return data.top_unidades;
   }, [data, ranking]);
 
@@ -47,16 +48,16 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>
           <Stat
-            label="SKUs vendidos"
-            value={data.total_skus_vendidos.toLocaleString("es-CO")}
-            subtitle={`del catálogo total`}
+            label="Revenue vendido"
+            value={formatMoneyFull(data.total_revenue)}
+            subtitle={`${data.total_skus_vendidos.toLocaleString("es-CO")} SKUs · ${data.total_unidades.toLocaleString("es-CO", { maximumFractionDigits: 0 })} u`}
           />
         </Card>
         <Card>
           <Stat
-            label="Revenue total"
-            value={formatMoneyFull(data.total_revenue)}
-            subtitle={`${data.total_unidades.toLocaleString("es-CO", { maximumFractionDigits: 0 })} unidades`}
+            label="Total comprado"
+            value={formatMoneyFull(data.total_compras_periodo ?? 0)}
+            subtitle={`${(data.total_skus_comprados ?? 0).toLocaleString("es-CO")} SKUs reabastecidos`}
           />
         </Card>
         <Card>
@@ -68,9 +69,9 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
         </Card>
         <Card>
           <Stat
-            label="Concentración"
+            label="Pareto 80/20"
             value={`${pareto.pct_skus}%`}
-            subtitle={`${pareto.skus_para_80_pct} SKUs generan el 80%`}
+            subtitle={`${pareto.skus_para_80_pct} SKUs generan el 80% del revenue`}
           />
         </Card>
       </div>
@@ -100,59 +101,82 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
       <Card header={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold text-text-primary">🏆 Top 50 productos</h2>
-          <div className="flex gap-1">
-            <RankPill label="Por revenue $" active={ranking === "revenue"} onClick={() => setRanking("revenue")} />
-            <RankPill label="Por margen $" active={ranking === "margen"} onClick={() => setRanking("margen")} />
-            <RankPill label="Por unidades" active={ranking === "unidades"} onClick={() => setRanking("unidades")} />
+          <div className="flex flex-wrap gap-1">
+            <RankPill label="🟢 Por revenue $" active={ranking === "revenue"} onClick={() => setRanking("revenue")} />
+            <RankPill label="🟢 Por margen $" active={ranking === "margen"} onClick={() => setRanking("margen")} />
+            <RankPill label="🟢 Por unidades" active={ranking === "unidades"} onClick={() => setRanking("unidades")} />
+            <RankPill label="🔵 Por compras $" active={ranking === "compras"} onClick={() => setRanking("compras")} />
           </div>
         </div>
       }>
+        <p className="mb-2 text-xs text-text-muted">
+          🟢 = lado venta (qué aporta a tus ingresos) · 🔵 = lado compra (en qué gastaste reposición)
+        </p>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
                 <th className="py-2 px-3">#</th>
                 <th className="py-2 px-3">Producto</th>
-                <th className="py-2 px-3 text-right">Unidades</th>
-                <th className="py-2 px-3 text-right">Revenue</th>
+                <th className="py-2 px-3 text-right">Vendido $</th>
                 <th className="py-2 px-3 text-right">Margen $</th>
                 <th className="py-2 px-3 text-right">Margen %</th>
+                <th className="py-2 px-3 text-right">Comprado $</th>
+                <th className="py-2 px-3 text-right">Ratio v/c</th>
                 {data.periodo_comparado && <th className="py-2 px-3 text-right">vs prev</th>}
               </tr>
             </thead>
             <tbody>
-              {items.map((p, idx) => (
-                <tr
-                  key={p.cod_producto}
-                  className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                  onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-                >
-                  <td className="py-2 px-3 text-xs text-text-muted tabular-nums">{idx + 1}</td>
-                  <td className="py-2 px-3">
-                    <div className="text-text-primary font-medium truncate max-w-md">{p.nom_producto}</div>
-                    <div className="text-[0.65rem] text-text-muted">{p.cod_producto}</div>
-                  </td>
-                  <td className="py-2 px-3 text-right tabular-nums">
-                    {p.unidades.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{" "}
-                    <span className="text-xs text-text-muted">{p.unidad_medida ?? "u"}</span>
-                  </td>
-                  <td className="py-2 px-3 text-right tabular-nums font-semibold">{formatMoneyFull(p.revenue)}</td>
-                  <td className="py-2 px-3 text-right tabular-nums text-green-700 font-semibold">
-                    {formatMoneyFull(p.margen)}
-                  </td>
-                  <td className={`py-2 px-3 text-right tabular-nums ${(p.margen_pct ?? 0) >= 30 ? "text-green-700" : (p.margen_pct ?? 0) >= 15 ? "text-amber-600" : "text-red-600"}`}>
-                    {p.margen_pct != null ? `${p.margen_pct.toFixed(1)}%` : "—"}
-                  </td>
-                  {data.periodo_comparado && (
-                    <td className={`py-2 px-3 text-right tabular-nums text-xs ${(p.delta_pct ?? 0) > 0 ? "text-green-700" : (p.delta_pct ?? 0) < 0 ? "text-red-600" : "text-text-muted"}`}>
-                      {p.delta_pct != null ? `${p.delta_pct > 0 ? "+" : ""}${p.delta_pct.toFixed(1)}%` : "—"}
+              {items.map((p, idx) => {
+                const ratio = p.ratio_venta_compra;
+                const ratioColor = ratio == null
+                  ? "text-text-muted"
+                  : ratio >= 1.5 ? "text-green-700 font-semibold"
+                  : ratio >= 1 ? "text-text-primary"
+                  : ratio >= 0.5 ? "text-amber-600"
+                  : "text-red-600";
+                return (
+                  <tr
+                    key={p.cod_producto}
+                    className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
+                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
+                  >
+                    <td className="py-2 px-3 text-xs text-text-muted tabular-nums">{idx + 1}</td>
+                    <td className="py-2 px-3">
+                      <div className="text-text-primary font-medium truncate max-w-md">{p.nom_producto}</div>
+                      <div className="text-[0.65rem] text-text-muted">
+                        {p.cod_producto} ·{" "}
+                        {p.unidades.toLocaleString("es-CO", { maximumFractionDigits: 0 })} {p.unidad_medida ?? "u"} vendidas
+                      </div>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="py-2 px-3 text-right tabular-nums font-semibold">{formatMoneyFull(p.revenue)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-green-700 font-semibold">
+                      {formatMoneyFull(p.margen)}
+                    </td>
+                    <td className={`py-2 px-3 text-right tabular-nums ${(p.margen_pct ?? 0) >= 30 ? "text-green-700" : (p.margen_pct ?? 0) >= 15 ? "text-amber-600" : "text-red-600"}`}>
+                      {p.margen_pct != null ? `${p.margen_pct.toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums text-text-secondary">
+                      {(p.valor_comprado ?? 0) > 0 ? formatMoneyFull(p.valor_comprado ?? 0) : "—"}
+                    </td>
+                    <td className={`py-2 px-3 text-right tabular-nums text-xs ${ratioColor}`} title="Revenue / Compras del período">
+                      {ratio != null ? ratio.toFixed(2) : "—"}
+                    </td>
+                    {data.periodo_comparado && (
+                      <td className={`py-2 px-3 text-right tabular-nums text-xs ${(p.delta_pct ?? 0) > 0 ? "text-green-700" : (p.delta_pct ?? 0) < 0 ? "text-red-600" : "text-text-muted"}`}>
+                        {p.delta_pct != null ? `${p.delta_pct > 0 ? "+" : ""}${p.delta_pct.toFixed(1)}%` : "—"}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-[0.65rem] text-text-muted">
+          <strong>Ratio v/c</strong>: revenue / compras del período. ≥1.5 verde (rota muy bien) · 1-1.5 ok ·
+          0.5-1 lento · &lt;0.5 rojo (sobrecomprado). "—" cuando no hay compra en el período.
+        </p>
       </Card>
 
       {/* Crecimiento vs período anterior */}

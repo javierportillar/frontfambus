@@ -1786,19 +1786,30 @@ export interface AnalisisProductoItem {
   unidad_medida?: string;
   revenue_prev?: number | null;
   delta_pct?: number | null;
+  /** V1.22: lado compras */
+  valor_comprado?: number;
+  uds_compradas?: number;
+  num_docs_compra?: number;
+  ratio_venta_compra?: number | null;
 }
 export interface AnalisisProductosResponse {
   fecha_inicio: string;
   fecha_fin: string;
   total_skus_vendidos: number;
+  /** V1.22 */
+  total_skus_comprados?: number;
   total_revenue: number;
   total_margen: number;
   total_unidades: number;
+  /** V1.22 */
+  total_compras_periodo?: number;
   margen_promedio_pct: number | null;
   pareto: { skus_para_80_pct: number; pct_skus: number; total_skus: number };
   top_revenue: AnalisisProductoItem[];
   top_margen: AnalisisProductoItem[];
   top_unidades: AnalisisProductoItem[];
+  /** V1.22: top productos más comprados */
+  top_compras?: AnalisisProductoItem[];
   top_ganadores: AnalisisProductoItem[];
   top_perdedores: AnalisisProductoItem[];
   periodo_comparado: { inicio: string | null; fin: string | null } | null;
@@ -1821,6 +1832,13 @@ export interface ProveedorAnalisis {
   dias_desde_ultima_compra: number | null;
   frecuencia_dias_promedio: number | null;
   ticket_promedio: number;
+  /** V1.22: lado ventas (de los productos asociados a este proveedor) */
+  revenue_periodo?: number;
+  margen_periodo?: number;
+  margen_pct?: number | null;
+  skus_vendidos?: number;
+  ratio_venta_compra?: number | null;
+  pct_ventas_asociadas?: number;
 }
 export interface AlertaProveedor {
   tipo: string;
@@ -1832,6 +1850,9 @@ export interface AnalisisProveedoresResponse {
   fecha_fin: string;
   total_proveedores: number;
   total_compras: number;
+  /** V1.22 */
+  total_ventas_de_proveedores?: number;
+  total_margen_de_proveedores?: number;
   concentracion: {
     top1_pct: number;
     top3_pct: number;

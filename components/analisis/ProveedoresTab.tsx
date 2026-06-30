@@ -20,9 +20,12 @@ const RIESGO_CFG: Record<string, { label: string; color: string; bg: string; des
   "n/a":           { label: "—",                color: "#6B7280", bg: "#F3F4F6", desc: "Sin datos suficientes." },
 };
 
+type SortBy = "compras" | "ventas" | "margen" | "ratio";
+
 export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
   const { data, isLoading } = useAnalisisProveedores(ini, fin);
   const [filter, setFilter] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("compras");
 
   if (isLoading && !data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
   if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos.</p></Card>;
@@ -32,40 +35,49 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
 
   const riesgoFallback = RIESGO_CFG["n/a"] ?? { label: "—", color: "#6B7280", bg: "#F3F4F6", desc: "Sin datos suficientes." };
   const riesgo = RIESGO_CFG[data.concentracion.riesgo] ?? riesgoFallback;
-  const proveedoresFiltrados = data.proveedores.filter((p) =>
-    !filter || p.nombre.toLowerCase().includes(filter.toLowerCase()) || p.nit.includes(filter),
-  );
+  const proveedoresFiltrados = data.proveedores
+    .filter((p) => !filter || p.nombre.toLowerCase().includes(filter.toLowerCase()) || p.nit.includes(filter))
+    .sort((a, b) => {
+      if (sortBy === "ventas") return (b.revenue_periodo ?? 0) - (a.revenue_periodo ?? 0);
+      if (sortBy === "margen") return (b.margen_periodo ?? 0) - (a.margen_periodo ?? 0);
+      if (sortBy === "ratio") return (b.ratio_venta_compra ?? 0) - (a.ratio_venta_compra ?? 0);
+      return b.total_compras - a.total_compras;
+    });
 
   return (
     <div className="space-y-4">
-      {/* KPIs principales */}
+      {/* KPIs principales (cruce compra + venta) */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>
           <Stat
             label="Proveedores activos"
             value={data.total_proveedores.toLocaleString("es-CO")}
-            subtitle="en el período"
+            subtitle="con compras en el período"
           />
         </Card>
         <Card>
           <Stat
-            label="Total comprado"
+            label="🔵 Total comprado"
             value={formatMoneyFull(data.total_compras)}
-            subtitle="periodo seleccionado"
+            subtitle="le pagaste a tus proveedores"
           />
         </Card>
         <Card>
           <Stat
-            label="Top 1 proveedor"
-            value={`${data.concentracion.top1_pct}%`}
-            subtitle="del total"
+            label="🟢 Total vendido"
+            value={formatMoneyFull(data.total_ventas_de_proveedores ?? 0)}
+            subtitle="ventas de productos asociados"
           />
         </Card>
         <Card>
           <Stat
-            label="Top 5 proveedores"
-            value={`${data.concentracion.top5_pct}%`}
-            subtitle="acumulado"
+            label="🟢 Margen aportado"
+            value={formatMoneyFull(data.total_margen_de_proveedores ?? 0)}
+            subtitle={
+              data.total_ventas_de_proveedores
+                ? `${((data.total_margen_de_proveedores ?? 0) / data.total_ventas_de_proveedores * 100).toFixed(1)}% del revenue`
+                : "—"
+            }
           />
         </Card>
       </div>
@@ -147,26 +159,40 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
       <Card header={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-semibold text-text-primary">Detalle por proveedor</h2>
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Buscar proveedor o NIT..."
-            className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm w-64"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1">
+              <SortPill label="🔵 Compras" active={sortBy === "compras"} onClick={() => setSortBy("compras")} />
+              <SortPill label="🟢 Ventas" active={sortBy === "ventas"} onClick={() => setSortBy("ventas")} />
+              <SortPill label="🟢 Margen" active={sortBy === "margen"} onClick={() => setSortBy("margen")} />
+              <SortPill label="⚡ Ratio" active={sortBy === "ratio"} onClick={() => setSortBy("ratio")} />
+            </div>
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Buscar proveedor o NIT..."
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm w-56"
+            />
+          </div>
         </div>
       }>
+        <p className="mb-2 text-xs text-text-muted">
+          🔵 = lado compra (cuánto le pagaste) · 🟢 = lado venta (qué generaron sus productos) ·
+          ⚡ ratio = ventas / compras (eficiencia de rotación)
+        </p>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
                 <th className="py-2 px-3">#</th>
                 <th className="py-2 px-3">Proveedor</th>
-                <th className="py-2 px-3 text-right">% del total</th>
-                <th className="py-2 px-3 text-right">Total</th>
-                <th className="py-2 px-3 text-right">Docs</th>
-                <th className="py-2 px-3 text-right">Ticket prom.</th>
-                <th className="py-2 px-3 text-right">Frec. (días)</th>
+                <th className="py-2 px-3 text-right">Comprado</th>
+                <th className="py-2 px-3 text-right">% compras</th>
+                <th className="py-2 px-3 text-right">Vendido</th>
+                <th className="py-2 px-3 text-right">Margen $</th>
+                <th className="py-2 px-3 text-right">Margen %</th>
+                <th className="py-2 px-3 text-right">SKUs</th>
+                <th className="py-2 px-3 text-right">Ratio v/c</th>
                 <th className="py-2 px-3 text-right">Días desde última</th>
               </tr>
             </thead>
@@ -180,29 +206,65 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
         {proveedoresFiltrados.length === 0 && filter && (
           <p className="mt-3 text-center text-sm text-text-muted">Sin resultados para &ldquo;{filter}&rdquo;</p>
         )}
+        <p className="mt-2 text-[0.65rem] text-text-muted">
+          <strong>Ratio v/c</strong>: por cada peso comprado a este proveedor, cuántos pesos vendiste
+          de sus productos en el período. ≥1.5 verde (excelente rotación) · 1-1.5 ok · 0.5-1 lento ·
+          &lt;0.5 rojo (sobre-comprado, capital atrapado).
+        </p>
       </Card>
     </div>
+  );
+}
+
+function SortPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md px-2 py-1 text-[0.7rem] ${
+        active ? "bg-surface-dark text-text-inverse" : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
 function ProveedorRow({ p, rank }: { p: ProveedorAnalisis; rank: number }): JSX.Element {
   const dependencia = p.pct_del_total >= 30 ? "text-red-600 font-bold" : p.pct_del_total >= 15 ? "text-amber-600 font-semibold" : "text-text-primary";
   const durmiendo = (p.dias_desde_ultima_compra ?? 0) > 180;
+  const ratio = p.ratio_venta_compra;
+  const ratioColor = ratio == null
+    ? "text-text-muted"
+    : ratio >= 1.5 ? "text-green-700 font-bold"
+    : ratio >= 1 ? "text-text-primary font-semibold"
+    : ratio >= 0.5 ? "text-amber-600"
+    : "text-red-600 font-semibold";
   return (
     <tr className="border-b border-border/60 hover:bg-surface-alt">
       <td className="py-2 px-3 text-xs text-text-muted tabular-nums">{rank}</td>
       <td className="py-2 px-3">
         <div className="text-text-primary font-medium">{p.nombre}</div>
-        <div className="text-[0.65rem] text-text-muted">NIT {p.nit}</div>
+        <div className="text-[0.65rem] text-text-muted">
+          NIT {p.nit} · {p.num_documentos} doc · ticket {formatMoneyFull(p.ticket_promedio)}
+        </div>
       </td>
-      <td className={`py-2 px-3 text-right tabular-nums ${dependencia}`}>{p.pct_del_total}%</td>
       <td className="py-2 px-3 text-right tabular-nums font-semibold">{formatMoneyFull(p.total_compras)}</td>
-      <td className="py-2 px-3 text-right tabular-nums">{p.num_documentos}</td>
-      <td className="py-2 px-3 text-right tabular-nums text-text-muted">{formatMoneyFull(p.ticket_promedio)}</td>
-      <td className="py-2 px-3 text-right tabular-nums text-text-muted">
-        {p.frecuencia_dias_promedio != null ? `${p.frecuencia_dias_promedio}d` : "—"}
+      <td className={`py-2 px-3 text-right tabular-nums ${dependencia}`}>{p.pct_del_total}%</td>
+      <td className="py-2 px-3 text-right tabular-nums font-semibold text-green-700">
+        {formatMoneyFull(p.revenue_periodo ?? 0)}
       </td>
-      <td className={`py-2 px-3 text-right tabular-nums ${durmiendo ? "text-red-600 font-semibold" : "text-text-muted"}`}>
+      <td className="py-2 px-3 text-right tabular-nums text-green-700">
+        {formatMoneyFull(p.margen_periodo ?? 0)}
+      </td>
+      <td className={`py-2 px-3 text-right tabular-nums text-xs ${(p.margen_pct ?? 0) >= 30 ? "text-green-700" : (p.margen_pct ?? 0) >= 15 ? "text-amber-600" : "text-text-muted"}`}>
+        {p.margen_pct != null ? `${p.margen_pct.toFixed(1)}%` : "—"}
+      </td>
+      <td className="py-2 px-3 text-right tabular-nums text-xs text-text-muted">{p.skus_vendidos ?? 0}</td>
+      <td className={`py-2 px-3 text-right tabular-nums ${ratioColor}`} title="Revenue / Compras">
+        {ratio != null ? ratio.toFixed(2) : "—"}
+      </td>
+      <td className={`py-2 px-3 text-right tabular-nums text-xs ${durmiendo ? "text-red-600 font-semibold" : "text-text-muted"}`}>
         {p.dias_desde_ultima_compra != null ? `${p.dias_desde_ultima_compra}d` : "—"}
         {durmiendo && " 💤"}
       </td>
