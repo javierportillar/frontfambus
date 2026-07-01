@@ -61,11 +61,50 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
         <>
           {/* KPIs gerenciales */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Card><Stat label="Valor del inventario" value={formatMoneyFull(data.kpis.valor_inventario_total)} subtitle={`${data.kpis.skus_con_stock.toLocaleString("es-CO")} con stock · valuados a costo`} /></Card>
+            <Card><Stat label="Valor del inventario" value={formatMoneyFull(data.kpis.valor_inventario_total)} subtitle={`${(data.kpis.skus_vendibles ?? data.kpis.skus_con_stock).toLocaleString("es-CO")} vendibles · valuados a costo`} /></Card>
             <Card><Stat label="Productos activos" value={data.kpis.skus_activos.toLocaleString("es-CO")} subtitle={`vendieron en ${window} días`} /></Card>
             <Card><Stat label="Rotación promedio" value={`${data.kpis.rotacion_promedio}×`} subtitle="veces al año" /></Card>
             <Card><Stat label="Margen del período" value={formatMoneyFull(data.kpis.margen_total_win)} subtitle={data.kpis.revenue_total_win > 0 ? `${(data.kpis.margen_total_win / data.kpis.revenue_total_win * 100).toFixed(0)}% sobre ventas` : ""} /></Card>
           </div>
+
+          {/* V1.28: Universo del catálogo — desglose transparente para responder
+              honestamente "¿cuántos productos puedo vender ahora?". */}
+          {data.kpis.total_catalogo !== undefined && (
+            <Card header={<h3 className="text-sm font-semibold text-text-primary">Universo del catálogo</h3>}>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 text-sm">
+                <div>
+                  <div className="text-2xl font-bold tabular-nums text-text-primary">
+                    {data.kpis.total_catalogo.toLocaleString("es-CO")}
+                  </div>
+                  <div className="text-xs text-text-muted">En catálogo (todos los SKUs registrados)</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold tabular-nums text-text-primary">
+                    {data.kpis.skus_con_stock.toLocaleString("es-CO")}
+                  </div>
+                  <div className="text-xs text-text-muted">Con stock físico (piezas &gt; 0)</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "#15803D" }}>
+                    {(data.kpis.skus_vendibles ?? data.kpis.skus_con_stock).toLocaleString("es-CO")}
+                  </div>
+                  <div className="text-xs text-text-muted">
+                    <strong className="text-text-primary">Vendibles hoy</strong> (con stock, sin servicios)
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold tabular-nums text-text-primary">
+                    {(data.kpis.skus_vendibles_con_historia ?? data.kpis.skus_activos).toLocaleString("es-CO")}
+                  </div>
+                  <div className="text-xs text-text-muted">Con historial de venta (probados)</div>
+                </div>
+              </div>
+              <p className="mt-3 text-[0.65rem] text-text-muted">
+                <strong>Vendibles hoy</strong> es el número que responde &ldquo;¿cuántos productos puedo vender ahora?&rdquo;.
+                Los &ldquo;con historial&rdquo; son un subset probado — al menos una venta en la historia del negocio.
+              </p>
+            </Card>
+          )}
 
           {/* Pareto */}
           <Card>

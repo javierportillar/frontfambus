@@ -743,6 +743,10 @@ export interface InventoryOverview {
   kpis: {
     valor_inventario_total: number;
     skus_con_stock: number;
+    // V1.28: desglose transparente del universo de productos vendibles
+    skus_vendibles?: number;              // con stock AND NOT servicio
+    skus_vendibles_con_historia?: number; // con stock AND NOT servicio AND alguna venta histórica
+    total_catalogo?: number;              // TODOS los SKUs registrados
     skus_activos: number;
     rotacion_promedio: number;
     revenue_total_win: number;
