@@ -21,8 +21,11 @@ const WINDOWS = [
 ];
 
 interface Props {
-  // eslint-disable-next-line no-unused-vars
-  onGoToTab: (tab: "comprar" | "optimizar" | "catalogo") => void;
+  // V1.24: agregado 'estado' — cuando target='catalogo' se puede filtrar por estado
+  // (soporta lista separada por coma, p.ej. 'quiebre,agotado' para "Por agotarse").
+  /* eslint-disable no-unused-vars */
+  onGoToTab: (target: "comprar" | "optimizar" | "catalogo", estado?: string) => void;
+  /* eslint-enable no-unused-vars */
 }
 
 export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
@@ -108,14 +111,16 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
             </div>
           </Card>
 
-          {/* 4 decision cards */}
+          {/* 4 decision cards — V1.24: cada card lleva al Catálogo filtrado
+              con el estado que ella cuenta, para que "Ver los N" muestre
+              exactamente los mismos N productos. */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <DecisionCard
               title="🔴 Por agotarse"
-              subtitle="Se acaban pronto y se venden bien"
+              subtitle="Se acaban pronto o ya se agotaron y se venden bien"
               list={data.listas.quiebre_inminente}
               accent="#B91C1C"
-              onVerTodos={() => onGoToTab("comprar")}
+              onVerTodos={() => onGoToTab("catalogo", "quiebre,agotado")}
             />
             <DecisionCard
               title="❤️ Importantes sin reabastecer"
@@ -130,7 +135,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.capital_atrapado}
               accent="#C2410C"
               showValor
-              onVerTodos={() => onGoToTab("optimizar")}
+              onVerTodos={() => onGoToTab("catalogo", "sobrestock")}
             />
             <DecisionCard
               title="😴 Dormidos con valor"
@@ -138,7 +143,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.dormidos_premium}
               accent="#6B7280"
               showValor
-              onVerTodos={() => onGoToTab("optimizar")}
+              onVerTodos={() => onGoToTab("catalogo", "dormido")}
             />
           </div>
 
@@ -152,8 +157,8 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
                   <button
                     key={e.estado}
                     type="button"
-                    onClick={() => onGoToTab("catalogo")}
-                    className="flex w-full items-center gap-3 text-left"
+                    onClick={() => onGoToTab("catalogo", e.estado)}
+                    className="flex w-full items-center gap-3 text-left hover:bg-surface-alt rounded px-1 py-0.5"
                   >
                     <span className="w-32 shrink-0 text-xs" style={{ color: cfg.color }}>{cfg.label}</span>
                     <div className="h-4 flex-1 overflow-hidden rounded-full bg-surface-alt">

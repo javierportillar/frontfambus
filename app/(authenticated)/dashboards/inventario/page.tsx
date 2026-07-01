@@ -10,6 +10,7 @@ import { ProductsTable } from "@/components/productos/ProductsTable";
 // ── V1.24: Inventario reducido a 2 tabs ──
 // Los tabs Comprar y Optimizar migraron a /dashboards/decisiones?tab=comprar|vender.
 // Inventario ahora se enfoca en panorama (Resumen) y exploración del catálogo (Catálogo).
+// El drilldown de las Decision Cards en Resumen navega al Catálogo con filtro por estado.
 
 type InvTab = "resumen" | "catalogo";
 
@@ -22,10 +23,12 @@ function InventarioInner(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = (searchParams.get("tab") as InvTab) || "resumen";
+  const estadoParam = searchParams.get("estado") ?? "";
+
   const [tab, setTab] = useState<InvTab>(
     TABS.some((t) => t.key === tabParam) ? tabParam : "resumen",
   );
-  const [catalogoEstado, setCatalogoEstado] = useState<string>("");
+  const [catalogoEstado, setCatalogoEstado] = useState<string>(estadoParam);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -34,6 +37,14 @@ function InventarioInner(): JSX.Element {
       window.history.replaceState({}, "", url);
     }
   }, [tab]);
+
+  // Si cambia el ?estado en URL (por navegación desde otra vista), sincronizar
+  useEffect(() => {
+    if (estadoParam !== catalogoEstado) {
+      setCatalogoEstado(estadoParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estadoParam]);
 
   return (
     <div className="space-y-4">
@@ -65,17 +76,23 @@ function InventarioInner(): JSX.Element {
 
       {tab === "resumen" && (
         <ResumenUnificado
-          onGoToTab={(target) => {
-            // V1.24: drilldown desde la matriz / decision cards
-            //   comprar/optimizar → /dashboards/decisiones?tab=comprar|vender
-            //   catalogo → tab interno
+          onGoToTab={(target, estado) => {
+            // V1.24:
+            //   comprar/optimizar → /decisiones (contexto de acción)
+            //   catalogo (con estado opcional) → tab local Catálogo filtrado
             if (target === "comprar") {
               router.push("/dashboards/decisiones?tab=comprar");
             } else if (target === "optimizar") {
               router.push("/dashboards/decisiones?tab=vender");
             } else {
-              setCatalogoEstado("");
+              // target === "catalogo"
+              setCatalogoEstado(estado ?? "");
               setTab("catalogo");
+              const url = new URL(window.location.href);
+              url.searchParams.set("tab", "catalogo");
+              if (estado) url.searchParams.set("estado", estado);
+              else url.searchParams.delete("estado");
+              window.history.replaceState({}, "", url);
             }
           }}
         />

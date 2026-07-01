@@ -528,6 +528,15 @@ export function VentasView(): JSX.Element {
 
       {tab === "anual" && (
         <>
+          {(trend.isLoading || trendPrev.isLoading) && !trend.data && !trendPrev.data ? (
+            <Card><Skeleton className="h-96 rounded-lg" /></Card>
+          ) : (trendCurr.size === 0 && trendP.size === 0 && monthlyTotal === 0) ? (
+            <Card>
+              <p className="py-8 text-center text-sm text-text-muted">
+                Sin datos históricos para comparar. Requiere ventas de al menos 2 meses.
+              </p>
+            </Card>
+          ) : (<>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Card>
               <Stat
@@ -650,6 +659,7 @@ export function VentasView(): JSX.Element {
               </table>
             </div>
           </Card>
+          </>)}
         </>
       )}
 
