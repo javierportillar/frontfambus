@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useInventoryOverview, type DecisionList, type ProductMetric } from "@/lib/api/hooks";
+import {
+  useInventoryOverview,
+  useInventarioOverview,
+  type DecisionList,
+  type ProductMetric,
+  type InventarioItem,
+} from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { estadoCfg } from "@/lib/productos/display";
 import { Card } from "@/components/ui/Card";
@@ -13,6 +19,32 @@ import { SaludCatalogo } from "@/components/productos/SaludCatalogo";
 import { CatalogoZombie } from "@/components/productos/CatalogoZombie";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { ResumenTab } from "./ResumenTab";
+
+/** Convierte items del endpoint inventario-overview a la forma DecisionList que
+ * espera el componente DecisionCard (que originalmente vino de inventory-overview).
+ * Así ambas cards y la pantalla destino (Decisiones/Comprar o Vender) usan el
+ * mismo criterio de accion y muestran exactamente el mismo N. */
+function emptyList(): DecisionList {
+  return { total: 0, valor: 0, items: [] };
+}
+
+function inventarioItemsToDecisionList(items: InventarioItem[]): DecisionList {
+  const sorted = [...items].sort(
+    (a, b) => (b.capital_inmovilizado ?? 0) - (a.capital_inmovilizado ?? 0),
+  );
+  return {
+    total: items.length,
+    valor: items.reduce((s, it) => s + (it.capital_inmovilizado ?? 0), 0),
+    items: sorted.slice(0, 8).map((it) => ({
+      cod_producto: it.cod_producto,
+      nombre: it.nom_producto,
+      abc: (it.abc as ProductMetric["abc"]) ?? "sin_venta",
+      dias_stock: it.cobertura_dias,
+      dias_sin_venta: it.dias_desde_venta,
+      valor_inventario: it.capital_inmovilizado,
+    })) as DecisionList["items"],
+  };
+}
 
 const WINDOWS = [
   { value: 90, label: "90 días" },
@@ -31,6 +63,32 @@ interface Props {
 export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
   const [window, setWindow] = useState(180);
   const { data, isLoading } = useInventoryOverview(window);
+  // V1.25: mismo endpoint que Decisiones/Comprar y Decisiones/Vender.
+  // Las cards se construyen sobre `accion` (mismo criterio que las páginas
+  // destino) para que los conteos coincidan cuando el usuario hace click.
+  const { data: invAccion } = useInventarioOverview();
+
+  const porAgotarseList = useMemo<DecisionList | null>(() => {
+    if (!invAccion) return null;
+    const items = invAccion.items.filter(
+      (i) => i.accion === "comprar_ya" || i.accion === "comprar_pronto",
+    );
+    return inventarioItemsToDecisionList(items);
+  }, [invAccion]);
+
+  const sobrestockList = useMemo<DecisionList | null>(() => {
+    if (!invAccion) return null;
+    const items = invAccion.items.filter((i) => i.accion === "sobrestock");
+    return inventarioItemsToDecisionList(items);
+  }, [invAccion]);
+
+  const dormidosList = useMemo<DecisionList | null>(() => {
+    if (!invAccion) return null;
+    const items = invAccion.items.filter(
+      (i) => i.accion === "liquidar" || i.accion === "zombie_con_stock",
+    );
+    return inventarioItemsToDecisionList(items);
+  }, [invAccion]);
 
   return (
     <div className="space-y-4">
@@ -111,14 +169,18 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
             </div>
           </Card>
 
-          {/* 4 decision cards — V1.25: cada card tiene dos accesos:
-              - Primario: llevar a la ACCIÓN (Decisiones/Comprar o Vender)
-              - Secundario: ver la LISTA COMPLETA filtrada en Catálogo */}
+          {/* 4 decision cards — V1.25:
+              - "Por agotarse", "Capital atrapado" y "Dormidos con valor" usan
+                el MISMO endpoint que Decisiones (accion), por eso el N coincide
+                con lo que se ve al abrir el plan.
+              - "Importantes sin reabastecer" mantiene su criterio propio
+                (A/B sin recompra 45+ días) porque no tiene equivalente directo
+                en accion; su link secundario cae al catálogo filtrado por ABC. */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <DecisionCard
               title="🔴 Por agotarse"
-              subtitle="Se acaban pronto o ya se agotaron y se venden bien"
-              list={data.listas.quiebre_inminente}
+              subtitle="Sin stock o cobertura corta con demanda real"
+              list={porAgotarseList ?? emptyList()}
               accent="#B91C1C"
               primaryLabel="Ver plan de compras"
               onPrimary={() => onGoToTab("comprar")}
@@ -135,8 +197,8 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
             />
             <DecisionCard
               title="💸 Capital atrapado"
-              subtitle="Sobrestock: más de 6 meses de inventario"
-              list={data.listas.capital_atrapado}
+              subtitle="Sobrestock: más de 6 meses de cobertura"
+              list={sobrestockList ?? emptyList()}
               accent="#C2410C"
               showValor
               primaryLabel="Ver plan de liquidación"
@@ -146,8 +208,8 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
             />
             <DecisionCard
               title="😴 Dormidos con valor"
-              subtitle="Sin venta hace 90+ días, plata quieta"
-              list={data.listas.dormidos_premium}
+              subtitle="Vendía y frenó, o nunca vendió — plata quieta"
+              list={dormidosList ?? emptyList()}
               accent="#6B7280"
               showValor
               primaryLabel="Ver plan de liquidación"
