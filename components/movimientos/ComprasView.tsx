@@ -113,8 +113,9 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
   const router = useRouter();
   const range = useMemo(() => monthRange(mes), [mes]);
 
-  if (isLoading && !data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
-  if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos.</p></Card>;
+  // V1.26: skeleton mientras !data (loading o revalidando) — evita flash de "Sin datos".
+  if (!data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
+  void isLoading;
 
   return (
     <div className="space-y-4">

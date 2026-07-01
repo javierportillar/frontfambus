@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSWRConfig } from "swr";
 import {
@@ -73,137 +73,349 @@ function formatHour(h: number): string {
   return `${String(h).padStart(2, "0")}:00`;
 }
 
+// ── Drill-down helpers ──────────────────────────────────────────────────────
+
+type DrillLevel = "year" | "month" | "week" | "day";
+
+function levelFromShortcut(sc: Shortcut): DrillLevel {
+  switch (sc) {
+    case "semana": return "day";
+    case "mes":    return "week";
+    case "3meses": return "month";
+    case "anio":   return "month";
+    case "todo":   return "year";
+    default:       return "week";
+  }
+}
+
+function getWeekMonday(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  const day = d.getDay(); // 0=dom,1=lun,...
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return d.toISOString().slice(0, 10);
+}
+
+const F_MONTHS = [
+  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+];
+
+function monthLabel(key: string): string {
+  const m = Number(key.split("-")[1]);
+  return F_MONTHS[m - 1] ?? key;
+}
+
+function weekLabel(monday: string): string {
+  const [, m, day] = monday.split("-");
+  return `Sem ${day} ${F_MONTHS[Number(m) - 1]?.slice(0, 3).toLowerCase()}`;
+}
+
+function lastDayOfMonth(monthKey: string): string {
+  const d = new Date(`${monthKey}-01T12:00:00`);
+  d.setMonth(d.getMonth() + 1);
+  d.setDate(0); // last day of previous month → end of `monthKey`
+  return d.toISOString().slice(0, 10);
+}
+
+interface AggRow {
+  key: string;
+  label: string;
+  dateFrom: string;
+  dateTo: string;
+  numDays: number;
+  ventas: number;
+  costo_mercancia: number;
+  gastos_operativos: number;
+  ganancia_bruta: number;
+  ganancia_neta: number;
+  balance_acumulado: number;
+}
+
+function computeAgg(items: BalanceDiaItem[], level: DrillLevel): AggRow[] {
+  const groups = new Map<string, BalanceDiaItem[]>();
+  for (const item of items) {
+    let k: string;
+    if (level === "year") k = item.date.slice(0, 4);
+    else if (level === "month") k = item.date.slice(0, 7);
+    else if (level === "week") k = getWeekMonday(item.date);
+    else k = item.date;
+    const arr = groups.get(k) ?? [];
+    arr.push(item);
+    groups.set(k, arr);
+  }
+
+  const rows: AggRow[] = [];
+  for (const [key, dayItems] of groups) {
+    const last = dayItems[dayItems.length - 1]!;
+    let label: string;
+    let dateFrom: string;
+    let dateTo: string;
+    if (level === "year") {
+      label = key;
+      dateFrom = `${key}-01-01`;
+      dateTo = `${key}-12-31`;
+    } else if (level === "month") {
+      label = monthLabel(key);
+      dateFrom = `${key}-01`;
+      dateTo = lastDayOfMonth(key);
+    } else if (level === "week") {
+      label = weekLabel(key);
+      dateFrom = key;
+      const d = new Date(`${key}T12:00:00`);
+      d.setDate(d.getDate() + 6);
+      dateTo = d.toISOString().slice(0, 10);
+    } else {
+      label = formatDateLabel(key);
+      dateFrom = key;
+      dateTo = key;
+    }
+    rows.push({
+      key, label, dateFrom, dateTo, numDays: dayItems.length,
+      ventas: dayItems.reduce((s, i) => s + i.ventas, 0),
+      costo_mercancia: dayItems.reduce((s, i) => s + i.costo_mercancia, 0),
+      gastos_operativos: dayItems.reduce((s, i) => s + i.gastos_operativos, 0),
+      ganancia_bruta: dayItems.reduce((s, i) => s + i.ganancia_bruta, 0),
+      ganancia_neta: dayItems.reduce((s, i) => s + i.ganancia_neta, 0),
+      balance_acumulado: last.balance_acumulado,
+    });
+  }
+  rows.sort((a, b) => a.key.localeCompare(b.key));
+  return rows;
+}
+
+const LEVEL_ORDER: Record<DrillLevel, number> = { year: 0, month: 1, week: 2, day: 3 };
+
 // ── Balance Tab ─────────────────────────────────────────────────────────────
 
-function BalanceTab({ ini, fin }: { ini: string; fin: string }): JSX.Element {
+function BalanceTab({ ini, fin, shortcut }: { ini: string; fin: string; shortcut: Shortcut }): JSX.Element {
   const { data, isLoading, error } = useAnalisisBalance(ini, fin);
 
-  const chartData = useMemo(() => {
+  const initialLevel = levelFromShortcut(shortcut);
+  const [displayLevel, setDisplayLevel] = useState<DrillLevel>(initialLevel);
+  const [selYear, setSelYear] = useState<string | null>(null);
+  const [selMonth, setSelMonth] = useState<string | null>(null);
+  const [selWeek, setSelWeek] = useState<string | null>(null);
+
+  // Reset drill when range or shortcut changes
+  useEffect(() => {
+    setDisplayLevel(initialLevel);
+    setSelYear(null);
+    setSelMonth(null);
+    setSelWeek(null);
+  }, [ini, fin, shortcut]);
+
+  // ── ALL useMemo hooks BEFORE early returns ──────────────────────────────
+  const filtered = useMemo(() => {
     if (!data) return [];
-    return data.items.map((it: BalanceDiaItem) => ({
+    let items = data.items;
+    if (selYear) items = items.filter((i) => i.date.startsWith(selYear!));
+    if (selMonth) items = items.filter((i) => i.date.startsWith(selMonth!));
+    if (selWeek) items = items.filter((i) => getWeekMonday(i.date) === selWeek);
+    return items;
+  }, [data, selYear, selMonth, selWeek]);
+
+  const rows = useMemo(() => {
+    if (filtered.length === 0) return [];
+    return computeAgg(filtered, displayLevel);
+  }, [filtered, displayLevel]);
+
+  const chartData = useMemo(() => {
+    if (displayLevel !== "day" || filtered.length === 0) return [];
+    return filtered.map((it: BalanceDiaItem) => ({
       label: formatDateLabel(it.date),
       ventas: it.ventas,
       gastos: it.costo_mercancia + it.gastos_operativos,
       ganancia: it.ganancia_neta,
       acumulado: it.balance_acumulado,
     }));
-  }, [data]);
+  }, [filtered, displayLevel]);
 
+  // ── Early returns (after ALL hooks) ─────────────────────────────────────
   if (isLoading && !data) return <Skeleton className="h-96 rounded-xl" />;
   if (error) return <Card><p className="py-8 text-center text-sm text-error">Error cargando balance.</p></Card>;
   if (!data || data.items.length === 0) {
     return <Card><p className="py-12 text-center text-sm text-text-muted">Sin datos en el período {ini} → {fin}.</p></Card>;
   }
 
+  // ── Drill logic ──────────────────────────────────────────────────────────
+  const isInitial = selYear == null && selMonth == null && selWeek == null;
+  const canGoUp = displayLevel !== initialLevel;
+
+  const drillDown = (key: string) => {
+    if (displayLevel === "year") { setSelYear(key); setDisplayLevel("month"); }
+    else if (displayLevel === "month") { setSelMonth(key); setDisplayLevel("week"); }
+    else if (displayLevel === "week") { setSelWeek(key); setDisplayLevel("day"); }
+  };
+
+  const goBack = () => {
+    if (displayLevel === "day") { setSelWeek(null); setDisplayLevel("week"); }
+    else if (displayLevel === "week") { setSelMonth(null); setDisplayLevel("month"); }
+    else if (displayLevel === "month") { setSelYear(null); setDisplayLevel("year"); }
+  };
+
+  const goToLevel = (level: DrillLevel) => {
+    const idx = LEVEL_ORDER[level];
+    const minIdx = LEVEL_ORDER[initialLevel];
+    if (idx < minIdx) return;
+    if (level === "year") { setSelYear(null); setSelMonth(null); setSelWeek(null); }
+    else if (level === "month") { setSelMonth(null); setSelWeek(null); }
+    else if (level === "week") { setSelWeek(null); }
+    setDisplayLevel(level);
+  };
+
+  // ── KPI totals (plain computations, not hooks) ─────────────────────────
+  const totVtas = filtered.reduce((s, i) => s + i.ventas, 0);
+  const totCsto = filtered.reduce((s, i) => s + i.costo_mercancia, 0);
+  const totGast = filtered.reduce((s, i) => s + i.gastos_operativos, 0);
+  const totGBru = filtered.reduce((s, i) => s + i.ganancia_bruta, 0);
+  const totGNet = filtered.reduce((s, i) => s + i.ganancia_neta, 0);
+  const mBrutoPct = totVtas > 0 ? (totGBru / totVtas) * 100 : null;
+  const mNetoPct = totVtas > 0 ? (totGNet / totVtas) * 100 : null;
+
+  // ── Breadcrumb ──────────────────────────────────────────────────────────
+  const bc: { label: string; level: DrillLevel }[] = [];
+  if (selYear) bc.push({ label: selYear, level: "year" });
+  if (selMonth) bc.push({ label: monthLabel(selMonth), level: "month" });
+  if (selWeek) bc.push({ label: weekLabel(selWeek), level: "week" });
+
+  // ── Level labels for table header ───────────────────────────────────────
+  const levelLabel: Record<DrillLevel, string> = {
+    year: "Año",
+    month: "Mes",
+    week: "Semana",
+    day: "Día",
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {/* Navigation header */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {canGoUp && (
+          <button type="button" onClick={goBack} className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface-alt">
+            ← Volver
+          </button>
+        )}
+        <span className="text-xs text-text-muted">
+          {bc.length === 0 ? (
+            <span className="font-medium text-text-primary">Inicio</span>
+          ) : (
+            bc.map((b, i) => (
+              <span key={b.level}>
+                {i > 0 && <span className="mx-1">›</span>}
+                {i < bc.length - 1 ? (
+                  <button type="button" onClick={() => goToLevel(b.level)} className="text-accent hover:underline">
+                    {b.label}
+                  </button>
+                ) : (
+                  <span className="font-medium text-text-primary">{b.label}</span>
+                )}
+              </span>
+            ))
+          )}
+        </span>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Card><Stat label="Ventas" value={formatMoneyFull(data.total_ventas)} subtitle={`${data.items.length} días`} /></Card>
-        <Card><Stat label="Costo mercancía" value={formatMoneyFull(data.total_costo_mercancia)} subtitle="lo que te costó" /></Card>
-        <Card><Stat label="Gastos operativos" value={formatMoneyFull(data.total_gastos_operativos)} subtitle="arriendo, nómina, etc." /></Card>
+        <Card><Stat label="Ventas" value={formatMoneyFull(totVtas)} subtitle={`${filtered.length} días`} /></Card>
+        <Card><Stat label="Costo mercancía" value={formatMoneyFull(totCsto)} subtitle="lo que te costó" /></Card>
+        <Card><Stat label="Gastos operativos" value={formatMoneyFull(totGast)} subtitle="arriendo, nómina, etc." /></Card>
         <Card>
           <Stat
             label="Ganancia bruta"
-            value={formatMoneyFull(data.total_ganancia_bruta)}
-            subtitle={data.margen_bruto_pct != null ? `${data.margen_bruto_pct.toFixed(1)}% margen` : "—"}
+            value={formatMoneyFull(totGBru)}
+            subtitle={mBrutoPct != null ? `${mBrutoPct.toFixed(1)}% margen` : "—"}
           />
         </Card>
         <Card>
           <Stat
             label="Ganancia neta"
-            value={formatMoneyFull(data.total_ganancia_neta)}
-            subtitle={data.margen_neto_pct != null ? `${data.margen_neto_pct.toFixed(1)}% neto` : "Cargá gastos operativos"}
+            value={formatMoneyFull(totGNet)}
+            subtitle={mNetoPct != null ? `${mNetoPct.toFixed(1)}% neto` : "Cargá gastos operativos"}
           />
         </Card>
       </div>
 
-      {/* Banner explicativo — leyenda de cada serie */}
-      <div className="rounded-lg border border-border bg-surface-alt/40 px-4 py-3 text-sm">
-        <p className="mb-2 font-semibold text-text-primary">Cómo leer el gráfico</p>
-        <ul className="space-y-1 text-text-secondary">
-          <li>
-            <span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: "#16A34A" }} />
-            {" "}
-            <strong>Ventas del día</strong> (barra verde, eje izquierdo) — lo que vendiste ese día.
-          </li>
-          <li>
-            <span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: "#DC2626" }} />
-            {" "}
-            <strong>Gastos del día</strong> (barra roja, eje izquierdo) — costo de la mercancía vendida + prorrateo de gastos operativos del mes (arriendo, nómina, etc.).
-          </li>
-          <li>
-            <span className="inline-block h-2 w-4 align-middle" style={{ borderTop: "2px dashed #2563EB" }} />
-            {" "}
-            <strong>Ganancia neta del día</strong> (línea azul punteada, eje derecho) — ventas − gastos. Cuánto te quedó ese día.
-          </li>
-          <li>
-            <span className="inline-block h-2 w-4 align-middle" style={{ borderTop: "3px solid #000" }} />
-            {" "}
-            <strong>Balance acumulado</strong> (línea negra gruesa, eje derecho) — suma de la ganancia neta desde el inicio del período. Es tu rentabilidad total al día.
-          </li>
-        </ul>
-      </div>
+      {/* Banner + Chart: only at day level */}
+      {displayLevel === "day" && (
+        <>
+          <div className="rounded-lg border border-border bg-surface-alt/40 px-4 py-3 text-sm">
+            <p className="mb-2 font-semibold text-text-primary">Cómo leer el gráfico</p>
+            <ul className="space-y-1 text-text-secondary">
+              <li><span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: "#16A34A" }} />{" "}<strong>Ventas del día</strong> (barra verde, eje izquierdo) — lo que vendiste ese día.</li>
+              <li><span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: "#DC2626" }} />{" "}<strong>Gastos del día</strong> (barra roja, eje izquierdo) — costo de la mercancía vendida + prorrateo de gastos operativos del mes.</li>
+              <li><span className="inline-block h-2 w-4 align-middle" style={{ borderTop: "2px dashed #2563EB" }} />{" "}<strong>Ganancia neta del día</strong> (línea azul punteada, eje derecho).</li>
+              <li><span className="inline-block h-2 w-4 align-middle" style={{ borderTop: "3px solid #000" }} />{" "}<strong>Balance acumulado</strong> (línea negra gruesa, eje derecho).</li>
+            </ul>
+          </div>
 
-      {/* Gráfico principal */}
-      <Card header={<h2 className="font-semibold text-text-primary">Evolución financiera — {ini} → {fin}</h2>}>
-        <ResponsiveContainer width="100%" height={340}>
-          <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 9, angle: -45, textAnchor: "end" }} height={55} stroke="#a3a3a3" interval={Math.max(0, Math.floor(chartData.length / 15))} />
-            <YAxis yAxisId="l" tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} label={{ value: "Día ($)", angle: -90, position: "insideLeft", fontSize: 10, fill: "#666" }} />
-            <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} stroke="#000" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} label={{ value: "Acumulado ($)", angle: 90, position: "insideRight", fontSize: 10, fill: "#666" }} />
-            <Tooltip
-              labelFormatter={(label) => `Día: ${label}`}
-              formatter={(value, name) => [formatMoneyFull(Number(value)), String(name)]}
-              itemSorter={(item) => {
-                // Orden consistente: ventas, gastos, ganancia, acumulado
-                const order: Record<string, number> = {
-                  "Ventas del día": 1,
-                  "Gastos del día (costo + operativos)": 2,
-                  "Ganancia neta del día": 3,
-                  "Balance acumulado": 4,
-                };
-                return order[String(item.name)] ?? 99;
-              }}
-              contentStyle={{ borderRadius: "8px", fontSize: "12px", padding: "8px 12px" }}
-              itemStyle={{ padding: "2px 0" }}
-            />
-            <Legend wrapperStyle={{ fontSize: "11px" }} iconType="rect" />
-            <ReferenceLine yAxisId="r" y={0} stroke="#666" strokeDasharray="3 3" />
-            <Bar yAxisId="l" dataKey="ventas" fill="#16A34A" name="Ventas del día" radius={[2, 2, 0, 0]} />
-            <Bar yAxisId="l" dataKey="gastos" fill="#DC2626" name="Gastos del día (costo + operativos)" radius={[2, 2, 0, 0]} />
-            <Line yAxisId="r" type="monotone" dataKey="ganancia" stroke="#2563EB" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Ganancia neta del día" />
-            <Line yAxisId="r" type="monotone" dataKey="acumulado" stroke="#000" strokeWidth={2.5} dot={false} name="Balance acumulado" />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </Card>
+          {chartData.length > 0 && (
+            <Card header={<h2 className="font-semibold text-text-primary">Evolución financiera — {selWeek ? `Semana del ${selWeek}` : `${ini} → ${fin}`}</h2>}>
+              <ResponsiveContainer width="100%" height={340}>
+                <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 9, angle: -45, textAnchor: "end" }} height={55} stroke="#a3a3a3" interval={Math.max(0, Math.floor(chartData.length / 15))} />
+                  <YAxis yAxisId="l" tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`} label={{ value: "Día ($)", angle: -90, position: "insideLeft", fontSize: 10, fill: "#666" }} />
+                  <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} stroke="#000" tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`} label={{ value: "Acumulado ($)", angle: 90, position: "insideRight", fontSize: 10, fill: "#666" }} />
+                  <Tooltip
+                    labelFormatter={(label) => `Día: ${label}`}
+                    formatter={(value, name) => [formatMoneyFull(Number(value)), String(name)]}
+                    itemSorter={(item) => {
+                      const order: Record<string, number> = { "Ventas del día": 1, "Gastos del día (costo + operativos)": 2, "Ganancia neta del día": 3, "Balance acumulado": 4 };
+                      return order[String(item.name)] ?? 99;
+                    }}
+                    contentStyle={{ borderRadius: "8px", fontSize: "12px", padding: "8px 12px" }}
+                    itemStyle={{ padding: "2px 0" }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: "11px" }} iconType="rect" />
+                  <ReferenceLine yAxisId="r" y={0} stroke="#666" strokeDasharray="3 3" />
+                  <Bar yAxisId="l" dataKey="ventas" fill="#16A34A" name="Ventas del día" radius={[2, 2, 0, 0]} />
+                  <Bar yAxisId="l" dataKey="gastos" fill="#DC2626" name="Gastos del día (costo + operativos)" radius={[2, 2, 0, 0]} />
+                  <Line yAxisId="r" type="monotone" dataKey="ganancia" stroke="#2563EB" strokeWidth={1.5} strokeDasharray="4 2" dot={false} name="Ganancia neta del día" />
+                  <Line yAxisId="r" type="monotone" dataKey="acumulado" stroke="#000" strokeWidth={2.5} dot={false} name="Balance acumulado" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+        </>
+      )}
 
-      {/* Tabla detalle */}
-      <Card header={<h2 className="font-semibold text-text-primary">Detalle diario</h2>}>
+      {/* Table: aggregated or daily */}
+      <Card header={<h2 className="font-semibold text-text-primary">{displayLevel === "day" ? "Detalle diario" : `${levelLabel[displayLevel]}s del período`}</h2>}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
-                <th className="py-2 pr-2">Día</th>
+                <th className="py-2 pr-2">{levelLabel[displayLevel]}</th>
                 <th className="px-2 text-right">Ventas</th>
                 <th className="px-2 text-right">Costo mercancía</th>
                 <th className="px-2 text-right">Gastos op.</th>
                 <th className="px-2 text-right">Ganancia bruta</th>
                 <th className="px-2 text-right">Ganancia neta</th>
                 <th className="px-2 text-right">Balance acum.</th>
+                {displayLevel !== "day" && <th className="px-2 text-right">Días</th>}
               </tr>
             </thead>
             <tbody>
-              {data.items.slice().reverse().map((it) => (
-                <tr key={it.date} className="border-b border-border/60">
-                  <td className="py-2 pr-2 font-medium text-text-primary">{it.date}</td>
-                  <td className="px-2 text-right tabular-nums">{formatMoneyFull(it.ventas)}</td>
-                  <td className="px-2 text-right tabular-nums text-text-muted">{formatMoneyFull(it.costo_mercancia)}</td>
-                  <td className="px-2 text-right tabular-nums text-text-muted">{formatMoneyFull(it.gastos_operativos)}</td>
-                  <td className="px-2 text-right tabular-nums text-green-700">{formatMoneyFull(it.ganancia_bruta)}</td>
-                  <td className={`px-2 text-right tabular-nums font-semibold ${it.ganancia_neta >= 0 ? "text-green-700" : "text-red-600"}`}>{formatMoneyFull(it.ganancia_neta)}</td>
-                  <td className={`px-2 text-right tabular-nums font-semibold ${it.balance_acumulado >= 0 ? "text-text-primary" : "text-red-600"}`}>{formatMoneyFull(it.balance_acumulado)}</td>
+              {rows.slice().reverse().map((r) => (
+                <tr
+                  key={r.key}
+                  onClick={displayLevel !== "day" ? () => drillDown(r.key) : undefined}
+                  className={`border-b border-border/60 ${displayLevel !== "day" ? "cursor-pointer hover:bg-surface-alt/60" : ""}`}
+                >
+                  <td className={`py-2 pr-2 font-medium ${displayLevel !== "day" ? "text-accent" : "text-text-primary"}`}>
+                    {r.label}
+                    {displayLevel !== "day" && <span className="ml-1 text-[0.65rem] text-text-muted">→</span>}
+                  </td>
+                  <td className="px-2 text-right tabular-nums">{formatMoneyFull(r.ventas)}</td>
+                  <td className="px-2 text-right tabular-nums text-text-muted">{formatMoneyFull(r.costo_mercancia)}</td>
+                  <td className="px-2 text-right tabular-nums text-text-muted">{formatMoneyFull(r.gastos_operativos)}</td>
+                  <td className="px-2 text-right tabular-nums text-green-700">{formatMoneyFull(r.ganancia_bruta)}</td>
+                  <td className={`px-2 text-right tabular-nums font-semibold ${r.ganancia_neta >= 0 ? "text-green-700" : "text-red-600"}`}>{formatMoneyFull(r.ganancia_neta)}</td>
+                  <td className={`px-2 text-right tabular-nums font-semibold ${r.balance_acumulado >= 0 ? "text-text-primary" : "text-red-600"}`}>{formatMoneyFull(r.balance_acumulado)}</td>
+                  {displayLevel !== "day" && <td className="px-2 text-right text-text-muted tabular-nums">{r.numDays}</td>}
                 </tr>
               ))}
             </tbody>
@@ -231,7 +443,7 @@ function HorasPicoTab({ ini, fin }: { ini: string; fin: string }): JSX.Element {
 
   if (isLoading && !data) return <Skeleton className="h-96 rounded-xl" />;
   if (error) return <Card><p className="py-8 text-center text-sm text-error">Error cargando horas pico.</p></Card>;
-  if (!data) return <Card><p className="py-12 text-center text-sm text-text-muted">Sin datos.</p></Card>;
+  if (!data) return <Card><Skeleton className="h-48 rounded-lg" /></Card>;
 
   const sinDatos = data.items.every((i) => i.num_facturas === 0);
 
@@ -725,7 +937,7 @@ export default function AnalisisPage(): JSX.Element {
         ))}
       </div>
 
-      {tab === "balance" && <BalanceTab ini={ini} fin={fin} />}
+      {tab === "balance" && <BalanceTab ini={ini} fin={fin} shortcut={shortcut} />}
       {tab === "productos" && <ProductosTopTab ini={ini} fin={fin} />}
       {tab === "proveedores" && <ProveedoresTab ini={ini} fin={fin} />}
       {tab === "horas" && <HorasPicoTab ini={ini} fin={fin} />}

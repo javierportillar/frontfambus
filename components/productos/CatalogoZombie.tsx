@@ -22,7 +22,7 @@ export function CatalogoZombie(): JSX.Element {
   const { data, isLoading } = useProductosZombie(1, pageSize);
 
   if (isLoading && !data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
-  if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos.</p></Card>;
+  if (!data) return <Card><Skeleton className="h-32 rounded-lg" /></Card>;
 
   if (data.total === 0) {
     return (

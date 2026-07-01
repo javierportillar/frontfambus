@@ -196,7 +196,9 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
       {/* Matriz Stock×Rotación + Top 5 alertas (vienen del ResumenTab operativo) */}
       <div className="border-t border-border pt-4">
         <h2 className="mb-2 text-base font-semibold text-text-primary">📊 Vista operativa — qué hacer ahora</h2>
-        <ResumenTab onGoToTab={onGoToTab} />
+        {/* Adaptador: ResumenTab en HEAD tiene una firma más restrictiva; el
+            estado extra que exportamos hacia el padre se descarta al bajar. */}
+        <ResumenTab onGoToTab={(t) => onGoToTab(t as "comprar" | "optimizar" | "catalogo")} />
       </div>
     </div>
   );

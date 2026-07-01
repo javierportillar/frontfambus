@@ -28,7 +28,7 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
   const [sortBy, setSortBy] = useState<SortBy>("compras");
 
   if (isLoading && !data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
-  if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos.</p></Card>;
+  if (!data) return <Card><Skeleton className="h-32 rounded-lg" /></Card>;
   if (data.total_proveedores === 0) {
     return <Card><p className="py-12 text-center text-sm text-text-muted">Sin compras en el período seleccionado.</p></Card>;
   }

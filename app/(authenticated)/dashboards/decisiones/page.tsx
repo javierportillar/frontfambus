@@ -130,10 +130,11 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
 // ── TAB 1: Mensual (proyección financiera) ──────────────────────────────
 
 function MensualTab(): JSX.Element {
-  const { data, isLoading } = useSalesForecastMonthly();
+  const { data } = useSalesForecastMonthly();
 
-  if (isLoading && !data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
-  if (!data) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin datos de proyección.</p></Card>;
+  // V1.26: skeleton mientras no hay data (loading o revalidando sin data en cache)
+  // en vez de mostrar "Sin datos" prematuramente.
+  if (!data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
 
   const cm = data.current_month;
   const nm = data.next_month;

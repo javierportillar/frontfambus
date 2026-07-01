@@ -60,7 +60,7 @@ export function useProducts(query: string, page = 1, limit = 20) {
     {
       revalidateOnFocus: false,
       dedupingInterval: 30_000,
-      keepPreviousData: false,
+      keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
   );
 }
@@ -76,7 +76,7 @@ export function useStock(sku: string | null) {
     {
       revalidateOnFocus: false,
       dedupingInterval: 10_000,
-      keepPreviousData: false,
+      keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
   );
 }
@@ -192,7 +192,7 @@ function useMetrics<T>(key: string | null): {
     revalidateOnReconnect: true,
     dedupingInterval: DEDUP_METRICS,
     refreshInterval: 60_000, // refresh cada 60s (F7-PERF-1)
-    keepPreviousData: false, // al cambiar tenant, NO mostrar datos viejos del anterior
+    keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     // RESILIENCIA COLD START (2026-06-16): Render Free duerme el servidor;
     // la 1ra request tras inactividad tarda 30-60s y puede fallar. Antes el
     // usuario veia error y tenia que recargar a mano. Ahora SWR reintenta
@@ -1001,7 +1001,7 @@ export function useForecast(sku: string | null, horizon: number) {
     revalidateOnFocus: false,
     dedupingInterval: FORECAST_DEDUP,
     refreshInterval: 5 * 60_000,
-    keepPreviousData: false,
+    keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
   });
 }
 
@@ -1052,7 +1052,7 @@ export function useAlerts(urgency?: string) {
       revalidateOnFocus: false,
       dedupingInterval: FORECAST_DEDUP,
       refreshInterval: 5 * 60_000,
-      keepPreviousData: false,
+      keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
   );
 }
@@ -1084,7 +1084,7 @@ export function useForecastNarrative() {
       revalidateOnFocus: false,
       dedupingInterval: 60 * 60 * 1000, // 1h cache cliente
       refreshInterval: 0, // no auto-refresh
-      keepPreviousData: false,
+      keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
   );
 }
@@ -1353,7 +1353,7 @@ export function useProductMovements(sku: string | null) {
     {
       revalidateOnFocus: false,
       dedupingInterval: 60_000,
-      keepPreviousData: false,
+      keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
   );
 }
