@@ -532,8 +532,20 @@ export function VentasView(): JSX.Element {
 
       {tab === "anual" && (
         <>
-          {(trend.isLoading || trendPrev.isLoading) && !trend.data && !trendPrev.data ? (
-            <Card><Skeleton className="h-96 rounded-lg" /></Card>
+          {(!trend.data || !trendPrev.data || !dm) ? (
+            // Esperar a que TODAS las fuentes que alimentan los KPIs terminen
+            // de cargar, sino los reduce() sobre maps vacíos daban "$ 0" durante
+            // los primeros segundos (bug visible sobre todo en mobile con red lenta).
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Card><Skeleton className="h-16 rounded" /></Card>
+                <Card><Skeleton className="h-16 rounded" /></Card>
+                <Card><Skeleton className="h-16 rounded" /></Card>
+                <Card><Skeleton className="h-16 rounded" /></Card>
+              </div>
+              <Card><Skeleton className="h-72 rounded-lg" /></Card>
+              <Card><Skeleton className="h-48 rounded-lg" /></Card>
+            </div>
           ) : (trendCurr.size === 0 && trendP.size === 0 && monthlyTotal === 0) ? (
             <Card>
               <p className="py-8 text-center text-sm text-text-muted">
