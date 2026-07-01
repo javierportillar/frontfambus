@@ -201,9 +201,9 @@ export function ResumenTab({ onGoToTab }: Props): JSX.Element {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>
           <Stat
-            label="Valor inventario"
+            label="Valor inventario (todos)"
             value={formatMoneyFull(data.valor_total_inventario)}
-            subtitle={`${data.total_skus.toLocaleString("es-CO")} SKUs en catálogo`}
+            subtitle={`${data.total_skus.toLocaleString("es-CO")} SKUs registrados (con y sin stock)`}
           />
         </Card>
         <Card>

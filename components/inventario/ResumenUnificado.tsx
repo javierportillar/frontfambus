@@ -61,7 +61,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
         <>
           {/* KPIs gerenciales */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Card><Stat label="Valor del inventario" value={formatMoneyFull(data.kpis.valor_inventario_total)} subtitle={`${data.kpis.skus_con_stock.toLocaleString("es-CO")} productos con stock`} /></Card>
+            <Card><Stat label="Valor del inventario" value={formatMoneyFull(data.kpis.valor_inventario_total)} subtitle={`${data.kpis.skus_con_stock.toLocaleString("es-CO")} con stock · valuados a costo`} /></Card>
             <Card><Stat label="Productos activos" value={data.kpis.skus_activos.toLocaleString("es-CO")} subtitle={`vendieron en ${window} días`} /></Card>
             <Card><Stat label="Rotación promedio" value={`${data.kpis.rotacion_promedio}×`} subtitle="veces al año" /></Card>
             <Card><Stat label="Margen del período" value={formatMoneyFull(data.kpis.margen_total_win)} subtitle={data.kpis.revenue_total_win > 0 ? `${(data.kpis.margen_total_win / data.kpis.revenue_total_win * 100).toFixed(0)}% sobre ventas` : ""} /></Card>
