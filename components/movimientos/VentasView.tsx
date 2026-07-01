@@ -237,6 +237,7 @@ export function VentasView(): JSX.Element {
                   productos={monthly.data.productos_top}
                   abcMap={abcMap.data}
                   initialLimit={10}
+                  totalAvailable={monthly.data.total_productos}
                   isFullDataset={monthlyExpanded}
                   loadingAll={monthlyExpanded && monthly.isLoading}
                   onLoadAll={() => setMonthlyExpanded(true)}

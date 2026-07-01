@@ -540,6 +540,8 @@ export interface SalesMonthlyForResponse {
   total_facturas: number;
   delta_porcentaje: number | null;
   productos_top: TopSkuItem[];
+  // V1.33: total de SKUs distintos vendidos en el mes (para "Ver todos")
+  total_productos?: number;
 }
 
 /**
