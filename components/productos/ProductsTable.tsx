@@ -19,6 +19,16 @@ const ESTADO_FILTERS: { value: string; label: string }[] = [
   { value: "sin_movimiento", label: "Sin movimiento" },
 ];
 
+// V1.30: presets del "universo del catálogo" para responder al usuario:
+// ¿cuántos puedo vender? → botón verde. ¿qué está agotado? → rojo.
+const VENDIBLES_ESTADOS = "saludable,quiebre,sobrestock,dormido,sin_movimiento";
+const AGOTADOS_ESTADOS = "agotado";
+const UNIVERSO_PRESETS: { key: string; value: string; label: string; accent: string; hint: string }[] = [
+  { key: "todos", value: "", label: "🌐 Todo el catálogo", accent: "#4B5563", hint: "todos los SKUs (con y sin stock)" },
+  { key: "vendibles", value: VENDIBLES_ESTADOS, label: "🟢 Vendibles hoy", accent: "#15803D", hint: "con stock físico, listos para vender" },
+  { key: "agotados", value: AGOTADOS_ESTADOS, label: "🔴 Sin stock", accent: "#B91C1C", hint: "productos agotados" },
+];
+
 const SORTS: { value: string; label: string }[] = [
   { value: "revenue_win", label: "Más vendidos ($)" },
   { value: "unidades_win", label: "Más vendidos (u)" },
@@ -61,17 +71,50 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "" }: P
     setPage(1);
   }
 
+  const hasFilter = Boolean(q || estado || abc);
+  const scopeNote = hasFilter
+    ? "resultado del filtro aplicado"
+    : "TODOS los SKUs del catálogo (con y sin stock, incluye servicios y descatalogados)";
+
   return (
     <Card
       header={
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-text-primary">Todos los productos</h2>
-          <span className="text-xs text-text-muted">{data ? `${data.total.toLocaleString("es-CO")} productos` : ""}</span>
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="font-semibold text-text-primary">Catálogo completo</h2>
+            <p className="text-[0.65rem] text-text-muted">{scopeNote}</p>
+          </div>
+          <span className="text-xs text-text-muted">
+            {data ? `${data.total.toLocaleString("es-CO")} SKUs` : ""}
+          </span>
         </div>
       }
     >
       {/* Controles */}
       <div className="mb-3 flex flex-col gap-2">
+        {/* Presets de "universo" — aclaran cuántos hay en cada corte */}
+        <div className="flex flex-wrap gap-2">
+          {UNIVERSO_PRESETS.map((p) => {
+            const active = estado === p.value;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => { setEstado(p.value); setPage(1); }}
+                title={p.hint}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                  active
+                    ? "text-text-inverse"
+                    : "border border-border bg-surface text-text-secondary hover:bg-surface-alt"
+                }`}
+                style={active ? { background: p.accent } : {}}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+
         <input
           type="search"
           value={q}
