@@ -21,10 +21,11 @@ const WINDOWS = [
 ];
 
 interface Props {
-  // V1.24: agregado 'estado' — cuando target='catalogo' se puede filtrar por estado
-  // (soporta lista separada por coma, p.ej. 'quiebre,agotado' para "Por agotarse").
+  // V1.24: agregado 'estado' — cuando target='catalogo' se puede filtrar por estado.
+  // V1.29: agregado 'from' — identificador del origen (por-agotarse, etc.) para
+  // que Decisiones muestre banner de contexto y botón "Volver a Inventario".
   /* eslint-disable no-unused-vars */
-  onGoToTab: (target: "comprar" | "optimizar" | "catalogo", estado?: string) => void;
+  onGoToTab: (target: "comprar" | "optimizar" | "catalogo", estadoOrFrom?: string) => void;
   /* eslint-enable no-unused-vars */
 }
 
@@ -163,7 +164,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.quiebre_inminente}
               accent="#B91C1C"
               primaryLabel="Ver plan de compras"
-              onPrimary={() => onGoToTab("comprar")}
+              onPrimary={() => onGoToTab("comprar", "por-agotarse")}
               secondaryLabel="en catálogo"
               onSecondary={() => onGoToTab("catalogo", "quiebre,agotado")}
             />
@@ -173,7 +174,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.importantes_sin_recompra}
               accent="#C2410C"
               primaryLabel="Ver plan de compras"
-              onPrimary={() => onGoToTab("comprar")}
+              onPrimary={() => onGoToTab("comprar", "importantes-sin-recompra")}
             />
             <DecisionCard
               title="💸 Capital atrapado"
@@ -182,7 +183,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               accent="#C2410C"
               showValor
               primaryLabel="Ver plan de liquidación"
-              onPrimary={() => onGoToTab("optimizar")}
+              onPrimary={() => onGoToTab("optimizar", "capital-atrapado")}
               secondaryLabel="en catálogo"
               onSecondary={() => onGoToTab("catalogo", "sobrestock")}
             />
@@ -193,7 +194,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               accent="#6B7280"
               showValor
               primaryLabel="Ver plan de liquidación"
-              onPrimary={() => onGoToTab("optimizar")}
+              onPrimary={() => onGoToTab("optimizar", "dormidos-con-valor")}
               secondaryLabel="en catálogo"
               onSecondary={() => onGoToTab("catalogo", "dormido")}
             />

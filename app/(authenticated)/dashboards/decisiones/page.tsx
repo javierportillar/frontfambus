@@ -57,9 +57,33 @@ function monthLabel(yyyymm: string): string {
   return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
 }
 
+// V1.29: mapa de "origen" (card del Resumen de Inventario) a explicación del
+// criterio, para que el usuario entienda por qué el N del card puede diferir
+// del N que ve en el plan de acción.
+const ORIGEN_CTX: Record<string, { title: string; note: string }> = {
+  "por-agotarse": {
+    title: "🔴 Por agotarse",
+    note: "El card cuenta por ESTADO (agotado + quiebre). El plan de abajo usa criterio operativo (stock 0 con rotación real). La diferencia son agotados sin ventas recientes — están en catálogo pero no vale la pena reponerlos ahora.",
+  },
+  "importantes-sin-recompra": {
+    title: "❤️ Importantes sin reabastecer",
+    note: "El card cuenta productos A/B sin compra hace 45+ días. El plan de abajo lista los que URGEN reponer por demanda actual. La intersección son los A/B con demanda activa.",
+  },
+  "capital-atrapado": {
+    title: "💸 Capital atrapado",
+    note: "El card cuenta productos en sobrestock (más de 6 meses de cobertura). El plan de abajo tiene el sub-tab 'Sobrestock' con los mismos.",
+  },
+  "dormidos-con-valor": {
+    title: "😴 Dormidos con valor",
+    note: "El card cuenta productos con stock y sin venta hace 90+ días. El plan de abajo distingue 'Liquidar' (vendía y frenó) de 'Zombie con stock' (nunca vendió).",
+  },
+};
+
 function DecisionesContent(): JSX.Element {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as DecisionTab | null;
+  const from = searchParams.get("from") ?? "";
+  const back = searchParams.get("back") ?? "";
   const [tab, setTab] = useState<DecisionTab>(
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : "comprar",
   );
@@ -72,10 +96,16 @@ function DecisionesContent(): JSX.Element {
     }
   }, [tab]);
 
+  const backHref = back === "inventario"
+    ? "/dashboards/inventario?tab=resumen"
+    : "/";
+  const backLabel = back === "inventario" ? "← Volver a Inventario" : "← Volver a inicio";
+  const origen = from && ORIGEN_CTX[from] ? ORIGEN_CTX[from] : null;
+
   return (
     <div className="space-y-4">
-      <Link href="/" className="text-sm text-accent hover:underline">
-        ← Volver a inicio
+      <Link href={backHref} className="text-sm text-accent hover:underline">
+        {backLabel}
       </Link>
 
       <div>
@@ -86,6 +116,24 @@ function DecisionesContent(): JSX.Element {
       </div>
 
       <StaleDataBanner />
+
+      {origen && (
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                Origen: Inventario · Resumen
+              </div>
+              <div className="mt-1 text-sm font-semibold text-text-primary">
+                {origen.title}
+              </div>
+              <p className="mt-2 text-xs text-text-secondary">
+                {origen.note}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
         <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">

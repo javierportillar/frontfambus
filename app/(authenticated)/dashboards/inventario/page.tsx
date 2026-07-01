@@ -78,21 +78,26 @@ function InventarioInner(): JSX.Element {
 
       {tab === "resumen" && (
         <ResumenUnificado
-          onGoToTab={(target, estado) => {
-            // V1.24:
-            //   comprar/optimizar → /decisiones (contexto de acción)
-            //   catalogo (con estado opcional) → tab local Catálogo filtrado
+          onGoToTab={(target, estadoOrFrom) => {
+            // V1.29:
+            //   comprar/optimizar → /decisiones con ?from=<origen>&back=inventario
+            //     para que Decisiones muestre banner de contexto y "Volver a Inventario"
+            //   catalogo (con estado) → tab local Catálogo filtrado
             if (target === "comprar") {
-              router.push("/dashboards/decisiones?tab=comprar");
+              const params = new URLSearchParams({ tab: "comprar", back: "inventario" });
+              if (estadoOrFrom) params.set("from", estadoOrFrom);
+              router.push(`/dashboards/decisiones?${params.toString()}`);
             } else if (target === "optimizar") {
-              router.push("/dashboards/decisiones?tab=vender");
+              const params = new URLSearchParams({ tab: "vender", back: "inventario" });
+              if (estadoOrFrom) params.set("from", estadoOrFrom);
+              router.push(`/dashboards/decisiones?${params.toString()}`);
             } else {
               // target === "catalogo"
-              setCatalogoEstado(estado ?? "");
+              setCatalogoEstado(estadoOrFrom ?? "");
               setTab("catalogo");
               const url = new URL(window.location.href);
               url.searchParams.set("tab", "catalogo");
-              if (estado) url.searchParams.set("estado", estado);
+              if (estadoOrFrom) url.searchParams.set("estado", estadoOrFrom);
               else url.searchParams.delete("estado");
               window.history.replaceState({}, "", url);
             }
