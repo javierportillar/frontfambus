@@ -789,6 +789,8 @@ export interface ProductAnalyticsParams {
   estado?: string;
   sort?: string;
   order?: "asc" | "desc";
+  // V1.31: preset scopea al criterio EXACTO de una decision card
+  preset?: "por_agotarse" | "capital_atrapado" | "importantes" | "dormidos";
 }
 
 export function useProductAnalytics(p: ProductAnalyticsParams = {}) {
@@ -799,6 +801,7 @@ export function useProductAnalytics(p: ProductAnalyticsParams = {}) {
   if (p.q) qs.set("q", p.q);
   if (p.abc) qs.set("abc", p.abc);
   if (p.estado) qs.set("estado", p.estado);
+  if (p.preset) qs.set("preset", p.preset);
   qs.set("sort", p.sort ?? "revenue_win");
   qs.set("order", p.order ?? "desc");
   return useMetrics<ProductAnalyticsResponse>(`/api/metrics/product-analytics?${qs.toString()}`);

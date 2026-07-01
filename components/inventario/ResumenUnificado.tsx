@@ -164,7 +164,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.quiebre_inminente}
               accent="#B91C1C"
               primaryLabel="Ver plan de compras"
-              onPrimary={() => onGoToTab("comprar", "por-agotarse")}
+              onPrimary={() => onGoToTab("comprar", "por_agotarse")}
               secondaryLabel="en catálogo"
               onSecondary={() => onGoToTab("catalogo", "quiebre,agotado")}
             />
@@ -174,7 +174,7 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.importantes_sin_recompra}
               accent="#C2410C"
               primaryLabel="Ver plan de compras"
-              onPrimary={() => onGoToTab("comprar", "importantes-sin-recompra")}
+              onPrimary={() => onGoToTab("comprar", "importantes")}
             />
             <DecisionCard
               title="💸 Capital atrapado"
@@ -182,8 +182,8 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.capital_atrapado}
               accent="#C2410C"
               showValor
-              primaryLabel="Ver plan de liquidación"
-              onPrimary={() => onGoToTab("optimizar", "capital-atrapado")}
+              primaryLabel="Ver plan de ventas"
+              onPrimary={() => onGoToTab("optimizar", "capital_atrapado")}
               secondaryLabel="en catálogo"
               onSecondary={() => onGoToTab("catalogo", "sobrestock")}
             />
@@ -193,8 +193,8 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.dormidos_premium}
               accent="#6B7280"
               showValor
-              primaryLabel="Ver plan de liquidación"
-              onPrimary={() => onGoToTab("optimizar", "dormidos-con-valor")}
+              primaryLabel="Ver plan de ventas"
+              onPrimary={() => onGoToTab("optimizar", "dormidos")}
               secondaryLabel="en catálogo"
               onSecondary={() => onGoToTab("catalogo", "dormido")}
             />

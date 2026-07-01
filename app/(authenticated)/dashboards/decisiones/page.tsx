@@ -23,6 +23,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { ComprarTab } from "@/components/inventario/ComprarTab";
 import { OptimizarTab } from "@/components/inventario/OptimizarTab";
+import { PlanScopeado } from "@/components/decisiones/PlanScopeado";
 import {
   Line,
   BarChart,
@@ -57,36 +58,59 @@ function monthLabel(yyyymm: string): string {
   return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
 }
 
-// V1.29: mapa de "origen" (card del Resumen de Inventario) a explicación del
-// criterio, para que el usuario entienda por qué el N del card puede diferir
-// del N que ve en el plan de acción.
-const ORIGEN_CTX: Record<string, { title: string; note: string }> = {
-  "por-agotarse": {
+// V1.31: config de "scope" — cuando llegás desde una card del Resumen de
+// Inventario, el plan se filtra al criterio EXACTO de esa card (via preset del
+// backend) y muestra el mismo count. Cada scope define su preset, modo, tab y
+// texto. El link "ver recomendación del sistema" vuelve al plan global.
+type ScopePreset = "por_agotarse" | "capital_atrapado" | "importantes" | "dormidos";
+const SCOPE_CFG: Record<ScopePreset, {
+  title: string;
+  modo: "compra" | "venta";
+  tab: DecisionTab;
+  accent: string;
+  note: string;
+}> = {
+  por_agotarse: {
     title: "🔴 Por agotarse",
-    note: "El card cuenta por ESTADO (agotado + quiebre). El plan de abajo usa criterio operativo (stock 0 con rotación real). La diferencia son agotados sin ventas recientes — están en catálogo pero no vale la pena reponerlos ahora.",
+    modo: "compra",
+    tab: "comprar",
+    accent: "#B91C1C",
+    note: "Productos sin stock o cerca de agotarse que se venden bien. Sugerido de compra por producto según su velocidad de venta.",
   },
-  "importantes-sin-recompra": {
+  importantes: {
     title: "❤️ Importantes sin reabastecer",
-    note: "El card cuenta productos A/B sin compra hace 45+ días. El plan de abajo lista los que URGEN reponer por demanda actual. La intersección son los A/B con demanda activa.",
+    modo: "compra",
+    tab: "comprar",
+    accent: "#C2410C",
+    note: "Categoría A/B que vendés pero no comprás hace 45+ días. Ojo con quedarte sin ellos.",
   },
-  "capital-atrapado": {
+  capital_atrapado: {
     title: "💸 Capital atrapado",
-    note: "El card cuenta productos en sobrestock (más de 6 meses de cobertura). El plan de abajo tiene el sub-tab 'Sobrestock' con los mismos.",
+    modo: "venta",
+    tab: "vender",
+    accent: "#C2410C",
+    note: "Sobrestock: más de 6 meses de cobertura. Plata parada que conviene liberar.",
   },
-  "dormidos-con-valor": {
+  dormidos: {
     title: "😴 Dormidos con valor",
-    note: "El card cuenta productos con stock y sin venta hace 90+ días. El plan de abajo distingue 'Liquidar' (vendía y frenó) de 'Zombie con stock' (nunca vendió).",
+    modo: "venta",
+    tab: "vender",
+    accent: "#6B7280",
+    note: "Con stock y sin venta hace 90+ días. Candidatos a descuento, promoción o devolución.",
   },
 };
 
 function DecisionesContent(): JSX.Element {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as DecisionTab | null;
-  const from = searchParams.get("from") ?? "";
+  const scopeParam = searchParams.get("scope") ?? "";
   const back = searchParams.get("back") ?? "";
+  const scope = (scopeParam in SCOPE_CFG ? scopeParam : "") as ScopePreset | "";
   const [tab, setTab] = useState<DecisionTab>(
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : "comprar",
   );
+  // Cuando el usuario cambia de tab manualmente, salimos del modo scopeado.
+  const [scopeActivo, setScopeActivo] = useState<ScopePreset | "">(scope);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -96,11 +120,20 @@ function DecisionesContent(): JSX.Element {
     }
   }, [tab]);
 
+  function selectTab(t: DecisionTab): void {
+    setScopeActivo(""); // cambiar de tab → volver al plan global
+    setTab(t);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("scope");
+    url.searchParams.set("tab", t);
+    window.history.replaceState({}, "", url);
+  }
+
   const backHref = back === "inventario"
     ? "/dashboards/inventario?tab=resumen"
     : "/";
   const backLabel = back === "inventario" ? "← Volver a Inventario" : "← Volver a inicio";
-  const origen = from && ORIGEN_CTX[from] ? ORIGEN_CTX[from] : null;
+  const cfg = scopeActivo ? SCOPE_CFG[scopeActivo] : null;
 
   return (
     <div className="space-y-4">
@@ -117,34 +150,47 @@ function DecisionesContent(): JSX.Element {
 
       <StaleDataBanner />
 
-      {origen && (
-        <Card>
-          <div className="flex items-start gap-3">
-            <div className="flex-1">
-              <div className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-                Origen: Inventario · Resumen
-              </div>
-              <div className="mt-1 text-sm font-semibold text-text-primary">
-                {origen.title}
-              </div>
-              <p className="mt-2 text-xs text-text-secondary">
-                {origen.note}
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
-
       <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
         <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
           {VALID_TABS.map((t) => (
-            <TabButton key={t} active={tab === t} onClick={() => setTab(t)} label={TAB_LABELS[t]} />
+            <TabButton key={t} active={tab === t} onClick={() => selectTab(t)} label={TAB_LABELS[t]} />
           ))}
         </div>
       </div>
 
-      {tab === "comprar" && <ComprarTab />}
-      {tab === "vender" && <OptimizarTab />}
+      {/* Banner de scope: cuando venís desde una card de Inventario, mostramos
+          el plan filtrado a ESA card + link para volver al plan global. */}
+      {cfg && (tab === "comprar" || tab === "vender") && (
+        <Card>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                Origen: Inventario · Resumen
+              </div>
+              <div className="mt-0.5 text-sm font-semibold text-text-primary">{cfg.title}</div>
+              <p className="mt-1 text-xs text-text-secondary">{cfg.note}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => selectTab(cfg.tab)}
+              className="shrink-0 self-start rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-alt md:self-center"
+            >
+              Ver recomendación del sistema →
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {tab === "comprar" && (
+        cfg && cfg.modo === "compra"
+          ? <PlanScopeado modo="compra" preset={scopeActivo as ScopePreset} titulo={cfg.title} accent={cfg.accent} />
+          : <ComprarTab />
+      )}
+      {tab === "vender" && (
+        cfg && cfg.modo === "venta"
+          ? <PlanScopeado modo="venta" preset={scopeActivo as ScopePreset} titulo={cfg.title} accent={cfg.accent} />
+          : <OptimizarTab />
+      )}
       {tab === "mensual" && <MensualTab />}
       {tab === "demanda" && <DemandaTab />}
     </div>
