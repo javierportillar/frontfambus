@@ -30,6 +30,7 @@ interface Props {
 }
 
 export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
+  const router = useRouter();
   const [window, setWindow] = useState(180);
   const { data, isLoading } = useInventoryOverview(window);
 
@@ -236,9 +237,25 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
       {/* Matriz Stock×Rotación + Top 5 alertas (vienen del ResumenTab operativo) */}
       <div className="border-t border-border pt-4">
         <h2 className="mb-2 text-base font-semibold text-text-primary">📊 Vista operativa — qué hacer ahora</h2>
-        {/* Adaptador: ResumenTab en HEAD tiene una firma más restrictiva; el
-            estado extra que exportamos hacia el padre se descarta al bajar. */}
-        <ResumenTab onGoToTab={(t) => onGoToTab(t as "comprar" | "optimizar" | "catalogo")} />
+        {/* V1.32: la Matriz Stock×Rotación de ResumenTab navega al plan GLOBAL
+            (Comprar/Vender) filtrado por la celda clickeada (mstock/mrot en URL).
+            Sin filtro de celda (o target catálogo) → delega al padre. */}
+        <ResumenTab
+          onGoToTab={(target, filter) => {
+            if (filter && (target === "comprar" || target === "optimizar")) {
+              const tab = target === "comprar" ? "comprar" : "vender";
+              const params = new URLSearchParams({
+                tab,
+                mstock: filter.stock,
+                mrot: filter.rot,
+                back: "inventario",
+              });
+              router.push(`/dashboards/decisiones?${params.toString()}`);
+            } else {
+              onGoToTab(target);
+            }
+          }}
+        />
       </div>
     </div>
   );

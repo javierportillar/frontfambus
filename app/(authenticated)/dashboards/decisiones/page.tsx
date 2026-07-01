@@ -24,6 +24,7 @@ import { StaleDataBanner } from "@/components/StaleDataBanner";
 import { ComprarTab } from "@/components/inventario/ComprarTab";
 import { OptimizarTab } from "@/components/inventario/OptimizarTab";
 import { PlanScopeado } from "@/components/decisiones/PlanScopeado";
+import type { MatrizFilter, StockBucket, RotBucket } from "@/components/inventario/ResumenTab";
 import {
   Line,
   BarChart,
@@ -100,12 +101,25 @@ const SCOPE_CFG: Record<ScopePreset, {
   },
 };
 
+// V1.32: valores válidos del filtro Matriz Stock×Rotación (deben coincidir con
+// los tipos exportados por ResumenTab).
+const STOCK_BUCKETS: StockBucket[] = ["sin_stock", "bajo", "normal", "sobrestock"];
+const ROT_BUCKETS: RotBucket[] = ["sin_rot", "baja", "alta"];
+
 function DecisionesContent(): JSX.Element {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab") as DecisionTab | null;
   const scopeParam = searchParams.get("scope") ?? "";
   const back = searchParams.get("back") ?? "";
   const scope = (scopeParam in SCOPE_CFG ? scopeParam : "") as ScopePreset | "";
+  // Filtro de matriz (viene del click en una celda de la Matriz Stock×Rotación)
+  const mstock = searchParams.get("mstock");
+  const mrot = searchParams.get("mrot");
+  const matrizFilterInicial: MatrizFilter | null =
+    mstock && mrot && STOCK_BUCKETS.includes(mstock as StockBucket) && ROT_BUCKETS.includes(mrot as RotBucket)
+      ? { stock: mstock as StockBucket, rot: mrot as RotBucket }
+      : null;
+  const [matrizFilter, setMatrizFilter] = useState<MatrizFilter | null>(matrizFilterInicial);
   const [tab, setTab] = useState<DecisionTab>(
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : "comprar",
   );
@@ -121,11 +135,22 @@ function DecisionesContent(): JSX.Element {
   }, [tab]);
 
   function selectTab(t: DecisionTab): void {
-    setScopeActivo(""); // cambiar de tab → volver al plan global
+    setScopeActivo("");     // cambiar de tab → volver al plan global
+    setMatrizFilter(null);  // y salir del filtro de matriz
     setTab(t);
     const url = new URL(window.location.href);
     url.searchParams.delete("scope");
+    url.searchParams.delete("mstock");
+    url.searchParams.delete("mrot");
     url.searchParams.set("tab", t);
+    window.history.replaceState({}, "", url);
+  }
+
+  function clearMatrizFilter(): void {
+    setMatrizFilter(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mstock");
+    url.searchParams.delete("mrot");
     window.history.replaceState({}, "", url);
   }
 
@@ -184,12 +209,12 @@ function DecisionesContent(): JSX.Element {
       {tab === "comprar" && (
         cfg && cfg.modo === "compra"
           ? <PlanScopeado modo="compra" preset={scopeActivo as ScopePreset} titulo={cfg.title} accent={cfg.accent} />
-          : <ComprarTab />
+          : <ComprarTab matrizFilter={matrizFilter} onClearFilter={clearMatrizFilter} />
       )}
       {tab === "vender" && (
         cfg && cfg.modo === "venta"
           ? <PlanScopeado modo="venta" preset={scopeActivo as ScopePreset} titulo={cfg.title} accent={cfg.accent} />
-          : <OptimizarTab />
+          : <OptimizarTab matrizFilter={matrizFilter} onClearFilter={clearMatrizFilter} />
       )}
       {tab === "mensual" && <MensualTab />}
       {tab === "demanda" && <DemandaTab />}
