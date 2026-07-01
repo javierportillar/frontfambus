@@ -47,9 +47,12 @@ export async function apiFetch(
 
     const ok = await refreshPromise;
     if (!ok) {
-      // Clear stale auth state before redirecting to login
+      // FIX: guardar la URL actual ANTES de limpiar el store para que
+      // la página de login pueda redirigir de vuelta después de loguearse.
+      const currentPath = typeof window !== "undefined" ? window.location.href : null;
       try {
         const { useAuthStore } = await import("@/lib/auth/store");
+        if (currentPath) useAuthStore.getState().setReturnUrl(currentPath);
         useAuthStore.getState().logout();
       } catch {
         // Zustand might not be available in SSR context, ignore

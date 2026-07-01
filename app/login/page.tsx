@@ -1,13 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/lib/auth/store";
 import { fetchMe } from "@/lib/api/hooks";
 import { Button } from "@/lib/ui/Button";
 import { Input } from "@/lib/ui/Input";
 import { useToast } from "@/lib/ui/Toast";
 
-export default function LoginPage(): JSX.Element {
+/**
+ * Devuelve la URL sólo si es una ruta interna segura. Bloquea open-redirect:
+ * rechaza URLs absolutas (http://…) y protocol-relative (//host). En esos casos
+ * cae a "/". Aceptamos únicamente rutas que empiezan con "/" y NO con "//".
+ */
+function safeInternalPath(url: string | null | undefined): string {
+  if (!url) return "/";
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  return "/";
+}
+
+function LoginForm(): JSX.Element {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -15,7 +27,17 @@ export default function LoginPage(): JSX.Element {
   const setUser = useAuthStore((s) => s.setUser);
   const setAvailableTenants = useAuthStore((s) => s.setAvailableTenants);
   const setTenant = useAuthStore((s) => s.setTenant);
+  const setReturnUrl = useAuthStore((s) => s.setReturnUrl);
+  const returnUrl = useAuthStore((s) => s.returnUrl);
   const { addToast } = useToast();
+
+  // FIX: leer ?from= del middleware para volver a la página original
+  // Si ya hay un returnUrl en el store (ej. refresh fallido en medio de la sesión),
+  // mantener ese. Si no, usar el searchParam.
+  // SEGURIDAD: sanitizar contra open-redirect — solo rutas internas.
+  const searchParams = useSearchParams();
+  const fromParam = searchParams.get("from");
+  const redirectTo = safeInternalPath(returnUrl || fromParam);
 
   // NOTA: NO hacer auto-redirect a "/" si isAuthenticated viene en true desde
   // localStorage. Cuando la cookie httponly expira pero el store sigue
@@ -65,12 +87,14 @@ export default function LoginPage(): JSX.Element {
 
       const [onlyTenant] = me.tenants_allowed;
       if (me.tenants_allowed.length === 1 && onlyTenant) {
-        // Un solo tenant — setearlo directamente y redirigir al home
+        // Un solo tenant — setearlo directamente y redirigir a donde estaba
         setTenant(onlyTenant, me.enabled_features);
+        setReturnUrl(null); // limpiar para próximos logins
         addToast("Bienvenido", "success");
-        window.location.assign("/");
+        window.location.assign(redirectTo);
       } else {
-        // Múltiples tenants — ir al picker
+        // Múltiples tenants — ir al picker, preservando la URL original
+        setReturnUrl(redirectTo);
         addToast("Seleccioná un negocio", "success");
         window.location.assign("/select-tenant");
       }
@@ -134,5 +158,15 @@ export default function LoginPage(): JSX.Element {
         </form>
       </div>
     </main>
+  );
+}
+
+// useSearchParams() requiere un límite de Suspense en rutas estáticas (Next 14.2),
+// sino falla el build. Envolvemos el formulario.
+export default function LoginPage(): JSX.Element {
+  return (
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center px-4" />}>
+      <LoginForm />
+    </Suspense>
   );
 }

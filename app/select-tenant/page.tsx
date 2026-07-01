@@ -63,6 +63,8 @@ export default function SelectTenantPage(): JSX.Element {
   const { addToast } = useToast();
   const availableTenants = useAuthStore((s) => s.availableTenants);
   const setTenant = useAuthStore((s) => s.setTenant);
+  const returnUrl = useAuthStore((s) => s.returnUrl);
+  const setReturnUrl = useAuthStore((s) => s.setReturnUrl);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [loadingSlug, setLoadingSlug] = useState<string | null>(null);
@@ -95,8 +97,9 @@ export default function SelectTenantPage(): JSX.Element {
       setTenantCookie(slug);
       const me = await fetchMe();
       setTenant(slug, me.enabled_features);
+      setReturnUrl(null); // limpiar
       addToast(`Bienvenido a ${getTenantDisplay(slug)?.name ?? slug}`, "success");
-      router.push("/");
+      router.push(returnUrl || "/");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error al seleccionar negocio";
       setError(msg);

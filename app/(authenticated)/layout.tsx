@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Navigation, gerenteNavItems, vendedorNavItems, type NavItem } from "@/components/ui/Navigation";
@@ -34,6 +34,19 @@ export default function AuthenticatedLayout({
     const all = role === "vendedor" ? vendedorNavItems() : gerenteNavItems();
     return filterNavItems(all, enabledFeatures);
   }, [role, enabledFeatures]);
+
+  // FIX: refresh proactivo cada 10 min para que el access token no expire
+  // mientras el usuario está activo. Si falla silenciosamente, el flujo
+  // normal de 401 en apiFetch se encarga del redirect con ?from=.
+  useEffect(() => {
+    if (!currentTenant) return; // no correr si no hay tenant activo
+    const interval = setInterval(() => {
+      fetch("/api/auth/refresh", { method: "POST" }).catch(() => {
+        // fallo silencioso — el próximo 401 normal se encarga
+      });
+    }, 10 * 60 * 1000); // cada 10 minutos
+    return () => clearInterval(interval);
+  }, [currentTenant]);
 
   // M2: si el store ya hidrató pero no hay tenant → redirect al picker
   // (caso borde: el middleware no atajó porque la cookie se perdió)

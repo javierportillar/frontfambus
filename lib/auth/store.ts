@@ -13,6 +13,10 @@ interface AuthState {
   logout: () => void;
   setHasHydrated: (v: boolean) => void;
 
+  // ---- Session ----
+  returnUrl: string | null;           // URL a la que volver tras login
+  setReturnUrl: (url: string | null) => void;
+
   // ---- Multi-tenant (M2) ----
   currentTenant: string | null;
   availableTenants: string[];
@@ -33,6 +37,8 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       hasHydrated: false,
       setUser: (u, r) => set({ user: u, role: r, isAuthenticated: true }),
+      returnUrl: null,
+      setReturnUrl: (url) => set({ returnUrl: url }),
       logout: () => {
         clearTenantCookie();
         set({
@@ -41,6 +47,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           currentTenant: null,
           enabledFeatures: [],
+          returnUrl: null,
         });
       },
       setHasHydrated: (v) => set({ hasHydrated: v }),
@@ -69,6 +76,7 @@ export const useAuthStore = create<AuthState>()(
         currentTenant: state.currentTenant,
         availableTenants: state.availableTenants,
         enabledFeatures: state.enabledFeatures,
+        returnUrl: state.returnUrl,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
