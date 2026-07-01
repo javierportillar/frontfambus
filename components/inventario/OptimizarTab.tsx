@@ -8,21 +8,61 @@ import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { AbcLegend } from "@/components/productos/AbcLegend";
+import {
+  type MatrizFilter,
+  getStockBucket,
+  getRotBucket,
+  computeRotationThresholds,
+} from "@/components/inventario/ResumenTab";
 
 type Grupo = "liquidar" | "sobrestock" | "zombie";
 
-export function OptimizarTab(): JSX.Element {
+const STOCK_LABELS: Record<string, string> = {
+  sin_stock: "Sin stock",
+  bajo: "Bajo (<7d)",
+  normal: "Normal",
+  sobrestock: "Sobrestock (>180d)",
+};
+
+const ROT_LABELS: Record<string, string> = {
+  sin_rot: "Sin rotación",
+  baja: "Rotación baja/media",
+  alta: "Rotación alta",
+};
+
+interface Props {
+  matrizFilter?: MatrizFilter | null;
+  onClearFilter?: () => void;
+}
+
+export function OptimizarTab({ matrizFilter, onClearFilter }: Props): JSX.Element {
   const { data, isLoading } = useInventarioOverview();
   const [grupo, setGrupo] = useState<Grupo>("liquidar");
   const [filter, setFilter] = useState("");
 
+  // Rotation thresholds for matriz filter
+  const thresholds = useMemo(() => {
+    if (!data) return null;
+    return computeRotationThresholds(data.items);
+  }, [data]);
+
   const grupos = useMemo(() => {
     if (!data) return null;
-    const liquidar = data.items.filter((i) => i.accion === "liquidar");
-    const sobrestock = data.items.filter((i) => i.accion === "sobrestock");
-    const zombie = data.items.filter((i) => i.accion === "zombie_con_stock");
+    let liquidar = data.items.filter((i) => i.accion === "liquidar");
+    let sobrestock = data.items.filter((i) => i.accion === "sobrestock");
+    let zombie = data.items.filter((i) => i.accion === "zombie_con_stock");
+
+    if (matrizFilter && thresholds) {
+      const { stock, rot } = matrizFilter;
+      const match = (it: InventarioItem) =>
+        getStockBucket(it) === stock && getRotBucket(it, thresholds.p33, thresholds.p67) === rot;
+      liquidar = liquidar.filter(match);
+      sobrestock = sobrestock.filter(match);
+      zombie = zombie.filter(match);
+    }
+
     return { liquidar, sobrestock, zombie };
-  }, [data]);
+  }, [data, matrizFilter, thresholds]);
 
   const matchesFilter = (it: InventarioItem) => {
     if (!filter) return true;
@@ -66,6 +106,22 @@ export function OptimizarTab(): JSX.Element {
           y está atrapando capital. Cada bucket sugiere una acción distinta.
         </p>
       </div>
+
+      {/* Badge de filtro activo desde la matriz */}
+      {matrizFilter && (
+        <div className="flex items-center justify-between rounded-lg border border-accent/30 bg-accent/5 px-4 py-2 text-sm">
+          <span className="text-text-primary">
+            <strong>Filtrando por matriz:</strong> {STOCK_LABELS[matrizFilter.stock]} × {ROT_LABELS[matrizFilter.rot]}
+          </span>
+          <button
+            type="button"
+            onClick={() => onClearFilter?.()}
+            className="ml-3 shrink-0 rounded-md bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-surface-alt"
+          >
+            Limpiar filtro ✕
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Card>

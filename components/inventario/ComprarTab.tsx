@@ -8,10 +8,34 @@ import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { AbcLegend } from "@/components/productos/AbcLegend";
+import {
+  type MatrizFilter,
+  getStockBucket,
+  getRotBucket,
+  computeRotationThresholds,
+} from "@/components/inventario/ResumenTab";
 
 type SortKey = "ingreso" | "rotacion" | "sugerido" | "cobertura";
 
-export function ComprarTab(): JSX.Element {
+const STOCK_LABELS: Record<string, string> = {
+  sin_stock: "Sin stock",
+  bajo: "Bajo (<7d)",
+  normal: "Normal",
+  sobrestock: "Sobrestock (>180d)",
+};
+
+const ROT_LABELS: Record<string, string> = {
+  sin_rot: "Sin rotación",
+  baja: "Rotación baja/media",
+  alta: "Rotación alta",
+};
+
+interface ComprarTabProps {
+  matrizFilter?: MatrizFilter | null;
+  onClearFilter?: () => void;
+}
+
+export function ComprarTab({ matrizFilter, onClearFilter }: ComprarTabProps): JSX.Element {
   const [leadTime, setLeadTime] = useState(7);
   const [colchon, setColchon] = useState(14);
   const { data, isLoading } = useInventarioOverview(leadTime, colchon);
@@ -19,12 +43,28 @@ export function ComprarTab(): JSX.Element {
   const [filter, setFilter] = useState("");
   const [vista, setVista] = useState<"todos" | "proveedor">("todos");
 
+  // Rotation thresholds for matriz filter
+  const thresholds = useMemo(() => {
+    if (!data) return null;
+    return computeRotationThresholds(data.items);
+  }, [data]);
+
   const buckets = useMemo(() => {
     if (!data) return null;
-    const compYa = data.items.filter((i) => i.accion === "comprar_ya");
-    const compPronto = data.items.filter((i) => i.accion === "comprar_pronto");
+    let compYa = data.items.filter((i) => i.accion === "comprar_ya");
+    let compPronto = data.items.filter((i) => i.accion === "comprar_pronto");
+
+    // Aplicar filtro de matriz si está activo
+    if (matrizFilter && thresholds) {
+      const { stock, rot } = matrizFilter;
+      const match = (it: InventarioItem) =>
+        getStockBucket(it) === stock && getRotBucket(it, thresholds.p33, thresholds.p67) === rot;
+      compYa = compYa.filter(match);
+      compPronto = compPronto.filter(match);
+    }
+
     return { compYa, compPronto };
-  }, [data]);
+  }, [data, matrizFilter, thresholds]);
 
   const sortFn = (a: InventarioItem, b: InventarioItem): number => {
     if (sortKey === "ingreso") return b.ingreso_perdido_estimado - a.ingreso_perdido_estimado;
@@ -62,6 +102,22 @@ export function ComprarTab(): JSX.Element {
           rotación de los últimos 90 días × (lead time + colchón).
         </p>
       </div>
+
+      {/* Badge de filtro activo desde la matriz */}
+      {matrizFilter && (
+        <div className="flex items-center justify-between rounded-lg border border-accent/30 bg-accent/5 px-4 py-2 text-sm">
+          <span className="text-text-primary">
+            <strong>Filtrando por matriz:</strong> {STOCK_LABELS[matrizFilter.stock]} × {ROT_LABELS[matrizFilter.rot]}
+          </span>
+          <button
+            type="button"
+            onClick={() => onClearFilter?.()}
+            className="ml-3 shrink-0 rounded-md bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-surface-alt"
+          >
+            Limpiar filtro ✕
+          </button>
+        </div>
+      )}
 
       {/* KPIs + controles */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
