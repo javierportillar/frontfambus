@@ -39,18 +39,18 @@ function MovimientosInner(): JSX.Element {
           </p>
         </div>
 
-        {/* Toggle Ventas | Compras */}
+        {/* Toggle Ventas | Compras — full width en mobile para tap fácil */}
         <div
           role="tablist"
           aria-label="Modo de movimiento"
-          className="inline-flex rounded-xl border border-border bg-surface-alt p-1 shadow-sm"
+          className="grid grid-cols-2 rounded-xl border border-border bg-surface-alt p-1 shadow-sm md:inline-flex"
         >
           <button
             type="button"
             role="tab"
             aria-selected={modo === "ventas"}
             onClick={() => setModo("ventas")}
-            className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
               modo === "ventas"
                 ? "bg-primary text-primary-fg shadow"
                 : "text-text-secondary hover:text-text-primary"
@@ -63,7 +63,7 @@ function MovimientosInner(): JSX.Element {
             role="tab"
             aria-selected={modo === "compras"}
             onClick={() => setModo("compras")}
-            className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
               modo === "compras"
                 ? "bg-accent text-text-inverse shadow"
                 : "text-text-secondary hover:text-text-primary"

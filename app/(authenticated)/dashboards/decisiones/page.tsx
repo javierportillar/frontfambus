@@ -87,10 +87,12 @@ function DecisionesContent(): JSX.Element {
 
       <StaleDataBanner />
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {VALID_TABS.map((t) => (
-          <TabButton key={t} active={tab === t} onClick={() => setTab(t)} label={TAB_LABELS[t]} />
-        ))}
+      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
+        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+          {VALID_TABS.map((t) => (
+            <TabButton key={t} active={tab === t} onClick={() => setTab(t)} label={TAB_LABELS[t]} />
+          ))}
+        </div>
       </div>
 
       {tab === "comprar" && <ComprarTab />}
@@ -314,18 +316,18 @@ function DemandaTab(): JSX.Element {
         {top30.length === 0 ? (
           <p className="py-6 text-center text-sm text-text-muted">Sin datos suficientes.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="-mx-4 overflow-x-auto md:mx-0">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
-                  <th className="py-2 pr-2">#</th>
+                  <th className="py-2 pl-4 pr-2 md:pl-2">#</th>
                   <th className="py-2 px-2">Producto</th>
                   <th className="py-2 px-2 text-right">Stock</th>
                   <th className="py-2 px-2 text-right">Demanda 30d</th>
                   <th className="py-2 px-2 text-right">Faltante</th>
                   <th className="py-2 px-2 text-right">Cobertura</th>
                   <th className="py-2 px-2 text-right">$ esperado</th>
-                  <th className="py-2 pl-2">Estado</th>
+                  <th className="py-2 pl-2 pr-4 md:pr-2">Estado</th>
                 </tr>
               </thead>
               <tbody>

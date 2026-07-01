@@ -72,10 +72,12 @@ export function ComprasView(): JSX.Element {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        <TabPill active={tab === "mensual"} onClick={() => setTab("mensual")} label="📅 Mensual" />
-        <TabPill active={tab === "proveedor"} onClick={() => setTab("proveedor")} label="🏷 Por proveedor" />
-        <TabPill active={tab === "historico"} onClick={() => setTab("historico")} label="📈 Histórica" />
+      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
+        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+          <TabPill active={tab === "mensual"} onClick={() => setTab("mensual")} label="📅 Mensual" />
+          <TabPill active={tab === "proveedor"} onClick={() => setTab("proveedor")} label="🏷 Por proveedor" />
+          <TabPill active={tab === "historico"} onClick={() => setTab("historico")} label="📈 Histórica" />
+        </div>
       </div>
 
       {tab === "mensual" && <MensualTab mes={mes} />}

@@ -209,7 +209,11 @@ export function VentasView(): JSX.Element {
         </label>
       </div>
 
-      <div className="flex gap-2 flex-wrap">{tabs.map(v=>(<button key={v} onClick={()=>setTab(v)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab===v?"bg-surface-dark text-text-inverse":"bg-surface-alt text-text-secondary"}`}>{labels[v]}</button>))}</div>
+      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0 md:border-b-0 md:pb-0">
+        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+          {tabs.map(v=>(<button key={v} onClick={()=>setTab(v)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab===v?"bg-surface-dark text-text-inverse":"bg-surface-alt text-text-secondary"}`}>{labels[v]}</button>))}
+        </div>
+      </div>
 
       {tab === "mensual" && (
         <>
@@ -619,8 +623,8 @@ export function VentasView(): JSX.Element {
 
           {/* Tabla mes a mes con delta */}
           <Card header={<h2 className="font-semibold text-text-primary">Comparativa mes a mes</h2>}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="-mx-4 overflow-x-auto md:mx-0">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
                     <th className="py-2 pr-2">Mes</th>

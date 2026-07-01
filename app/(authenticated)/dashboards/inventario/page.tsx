@@ -57,21 +57,23 @@ function InventarioInner(): JSX.Element {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              tab === t.key
-                ? "bg-surface-dark text-text-inverse"
-                : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"
-            }`}
-          >
-            <span className="mr-1">{t.emoji}</span> {t.label}
-          </button>
-        ))}
+      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
+        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                tab === t.key
+                  ? "bg-surface-dark text-text-inverse"
+                  : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"
+              }`}
+            >
+              <span className="mr-1">{t.emoji}</span> {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === "resumen" && (

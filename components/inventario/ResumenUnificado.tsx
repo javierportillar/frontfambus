@@ -111,23 +111,27 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
             </div>
           </Card>
 
-          {/* 4 decision cards — V1.24: cada card lleva al Catálogo filtrado
-              con el estado que ella cuenta, para que "Ver los N" muestre
-              exactamente los mismos N productos. */}
+          {/* 4 decision cards — V1.25: cada card tiene dos accesos:
+              - Primario: llevar a la ACCIÓN (Decisiones/Comprar o Vender)
+              - Secundario: ver la LISTA COMPLETA filtrada en Catálogo */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <DecisionCard
               title="🔴 Por agotarse"
               subtitle="Se acaban pronto o ya se agotaron y se venden bien"
               list={data.listas.quiebre_inminente}
               accent="#B91C1C"
-              onVerTodos={() => onGoToTab("catalogo", "quiebre,agotado")}
+              primaryLabel="Ver plan de compras"
+              onPrimary={() => onGoToTab("comprar")}
+              secondaryLabel="en catálogo"
+              onSecondary={() => onGoToTab("catalogo", "quiebre,agotado")}
             />
             <DecisionCard
               title="❤️ Importantes sin reabastecer"
               subtitle="Categoría A/B sin compra hace 45+ días"
               list={data.listas.importantes_sin_recompra}
               accent="#C2410C"
-              onVerTodos={() => onGoToTab("comprar")}
+              primaryLabel="Ver plan de compras"
+              onPrimary={() => onGoToTab("comprar")}
             />
             <DecisionCard
               title="💸 Capital atrapado"
@@ -135,7 +139,10 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.capital_atrapado}
               accent="#C2410C"
               showValor
-              onVerTodos={() => onGoToTab("catalogo", "sobrestock")}
+              primaryLabel="Ver plan de liquidación"
+              onPrimary={() => onGoToTab("optimizar")}
+              secondaryLabel="en catálogo"
+              onSecondary={() => onGoToTab("catalogo", "sobrestock")}
             />
             <DecisionCard
               title="😴 Dormidos con valor"
@@ -143,7 +150,10 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
               list={data.listas.dormidos_premium}
               accent="#6B7280"
               showValor
-              onVerTodos={() => onGoToTab("catalogo", "dormido")}
+              primaryLabel="Ver plan de liquidación"
+              onPrimary={() => onGoToTab("optimizar")}
+              secondaryLabel="en catálogo"
+              onSecondary={() => onGoToTab("catalogo", "dormido")}
             />
           </div>
 
@@ -190,24 +200,28 @@ export function ResumenUnificado({ onGoToTab }: Props): JSX.Element {
 }
 
 function DecisionCard({
-  title, subtitle, list, accent, showValor, onVerTodos,
+  title, subtitle, list, accent, showValor,
+  primaryLabel, onPrimary, secondaryLabel, onSecondary,
 }: {
   title: string;
   subtitle: string;
   list: DecisionList;
   accent: string;
   showValor?: boolean;
-  onVerTodos?: () => void;
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 }): JSX.Element {
   const router = useRouter();
   return (
     <Card>
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0 flex-1">
           <h3 className="text-sm font-bold text-text-primary">{title}</h3>
           <p className="text-xs text-text-muted">{subtitle}</p>
         </div>
-        <div className="text-right">
+        <div className="text-right shrink-0">
           <div className="text-2xl font-bold tabular-nums" style={{ color: accent }}>{list.total}</div>
           {showValor && <div className="text-[0.65rem] text-text-muted">{formatMoneyFull(list.valor)}</div>}
         </div>
@@ -235,10 +249,28 @@ function DecisionCard({
       ) : (
         <p className="mt-3 py-3 text-center text-xs text-text-muted">Nada por acá. 👌</p>
       )}
-      {onVerTodos && list.total > 0 && (
-        <button type="button" onClick={onVerTodos} className="mt-2 text-xs font-semibold" style={{ color: accent }}>
-          Ver los {list.total} →
-        </button>
+      {list.total > 0 && (onPrimary || onSecondary) && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {onPrimary && primaryLabel && (
+            <button
+              type="button"
+              onClick={onPrimary}
+              className="text-xs font-semibold"
+              style={{ color: accent }}
+            >
+              {primaryLabel} →
+            </button>
+          )}
+          {onSecondary && secondaryLabel && (
+            <button
+              type="button"
+              onClick={onSecondary}
+              className="text-[0.65rem] text-text-muted hover:text-text-secondary underline underline-offset-2"
+            >
+              {secondaryLabel} ({list.total}) →
+            </button>
+          )}
+        </div>
       )}
     </Card>
   );
