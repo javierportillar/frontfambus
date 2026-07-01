@@ -277,18 +277,27 @@ interface SalesForecastMonth {
   confidence: string;
 }
 
+interface SalesForecastHistoryItem {
+  month: string;
+  actual_amount: number;
+  projected_amount: number;
+  error_pct: number | null;
+  days_total: number;
+}
+
 interface SalesForecastMonthly {
   current_month: SalesForecastMonth;
   next_month: SalesForecastMonth;
   model_version: string;
   drivers: string[];
-  // V1.23: nuevos campos para forecast estable (rolling 90d)
   rate_basis?: "rolling_90d_complete" | "previous_month_complete" | "current_month_run_rate";
   rate_window?: {
     start: string;
     end: string;
     days_with_sales: number;
   } | null;
+  // V1.27: backtest de los últimos 6 meses cerrados para ver precisión del modelo
+  history?: SalesForecastHistoryItem[];
 }
 
 export function useSalesForecastMonthly() {

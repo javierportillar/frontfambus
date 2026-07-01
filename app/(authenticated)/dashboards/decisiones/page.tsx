@@ -212,6 +212,69 @@ function MensualTab(): JSX.Element {
         </div>
       </Card>
 
+      {/* V1.27: Backtest — proyectado vs real de los últimos 6 meses cerrados.
+          Le permite al usuario ver cuánto se desvía el modelo en la práctica
+          y calibrar su confianza en el número del mes en curso. */}
+      {data.history && data.history.length > 0 && (
+        <Card header={
+          <div>
+            <h2 className="font-semibold text-text-primary">Precisión histórica del modelo</h2>
+            <p className="text-xs text-text-muted">
+              Qué habría proyectado la misma fórmula para meses ya cerrados vs. lo que realmente vendió.
+            </p>
+          </div>
+        }>
+          <div className="-mx-4 overflow-x-auto md:mx-0">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
+                  <th className="py-2 pl-4 pr-2 md:pl-2">Mes</th>
+                  <th className="py-2 px-2 text-right">Proyectado</th>
+                  <th className="py-2 px-2 text-right">Real</th>
+                  <th className="py-2 px-2 text-right">Diferencia</th>
+                  <th className="py-2 pl-2 pr-4 md:pr-2 text-right">Error %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.history.map((h) => {
+                  const delta = h.actual_amount - h.projected_amount;
+                  const sign = delta >= 0 ? "+" : "−";
+                  const errAbs = h.error_pct !== null ? Math.abs(h.error_pct) : null;
+                  const color =
+                    errAbs === null ? "text-text-muted"
+                    : errAbs <= 10 ? "text-green-700"
+                    : errAbs <= 25 ? "text-amber-700"
+                    : "text-red-700";
+                  return (
+                    <tr key={h.month} className="border-b border-border/60">
+                      <td className="py-2 pl-4 pr-2 md:pl-2 font-medium text-text-primary">
+                        {monthLabel(h.month)}
+                      </td>
+                      <td className="py-2 px-2 text-right tabular-nums text-text-muted">
+                        {formatMoneyFull(h.projected_amount)}
+                      </td>
+                      <td className="py-2 px-2 text-right tabular-nums font-semibold">
+                        {formatMoneyFull(h.actual_amount)}
+                      </td>
+                      <td className={`py-2 px-2 text-right tabular-nums ${delta >= 0 ? "text-green-700" : "text-red-700"}`}>
+                        {sign}{formatMoneyFull(Math.abs(delta))}
+                      </td>
+                      <td className={`py-2 pl-2 pr-4 md:pr-2 text-right tabular-nums font-semibold ${color}`}>
+                        {h.error_pct !== null ? `${h.error_pct >= 0 ? "+" : ""}${h.error_pct.toFixed(1)}%` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-[0.65rem] text-text-muted">
+            Error % = (real − proyectado) / real. Positivo = vendiste MÁS de lo que proyectó el modelo.
+            Verde ≤10%, amarillo ≤25%, rojo &gt;25%.
+          </p>
+        </Card>
+      )}
+
       <Card>
         <div className="text-xs text-text-muted">
           <strong className="text-text-primary">Modelo:</strong> {data.model_version}
