@@ -8,7 +8,7 @@ import type { ProductEstado, ProductAccion, ProductAbc } from "@/lib/api/hooks";
 
 export const ESTADO_CONFIG: Record<ProductEstado, { label: string; color: string; bg: string; desc: string }> = {
   saludable:      { label: "Saludable",      color: "#15803D", bg: "#DCFCE7", desc: "Rota bien, stock sano" },
-  quiebre:        { label: "Por agotarse",   color: "#B91C1C", bg: "#FEE2E2", desc: "Se acaba en menos de 15 días" },
+  quiebre:        { label: "Por agotarse",   color: "#B91C1C", bg: "#FEE2E2", desc: "No cubre lead time + colchón" },
   agotado:        { label: "Agotado",        color: "#B91C1C", bg: "#FEE2E2", desc: "Sin stock pero se vende" },
   sobrestock:     { label: "Sobrestock",     color: "#C2410C", bg: "#FFEDD5", desc: "Más de 6 meses de stock" },
   dormido:        { label: "Dormido",        color: "#6B7280", bg: "#F3F4F6", desc: "Sin venta hace 90+ días" },
