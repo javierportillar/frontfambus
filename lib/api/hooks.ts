@@ -840,6 +840,58 @@ export function useProductDetail(sku: string | null, window = 180) {
   );
 }
 
+// ── MasVital: caducidad por lote (registro manual) ───────────────────────
+
+/**
+ * A lot is deliberately independent from the Hermes stock snapshot.  Its
+ * remaining quantity is only changed by a privileged, audited adjustment;
+ * this prevents the UI from pretending that it can infer FEFO allocations.
+ */
+export interface ExpiryLot {
+  id: string;
+  tenant: "masvital";
+  product_sku: string;
+  /** Catalog name when the backend can resolve it; legacy lots may not have one. */
+  product_name?: string | null;
+  purchase_order_ref: string;
+  lot_code: string;
+  expires_on: string;
+  received_on: string;
+  received_quantity: number;
+  remaining_quantity: number;
+  supplier: string | null;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExpiryLotsResponse {
+  items: ExpiryLot[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Fetches the MasVital-only manual lot register. MotoShop never calls it. */
+export function useExpiryLots() {
+  const tenant = useAuthStore((s) => s.currentTenant);
+  const swrKey: readonly [string, string] | null = tenant === "masvital"
+    ? [tenant, "/api/expiry/lots?limit=200"]
+    : null;
+
+  return useSWR<ExpiryLotsResponse>(
+    swrKey,
+    (key: readonly [string, string]) => apiFetchJson<ExpiryLotsResponse>(key[1]),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      dedupingInterval: 15_000,
+      keepPreviousData: true,
+    },
+  );
+}
+
 // ── V1.10.1 — Mapa ABC + historico extendido ─────────────────────────────
 
 export interface AbcMapEntry {
