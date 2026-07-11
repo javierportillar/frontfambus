@@ -5,14 +5,16 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ResumenUnificado } from "@/components/inventario/ResumenUnificado";
+import { ExpiryLotsTab } from "@/components/inventario/ExpiryLotsTab";
 import { ProductsTable } from "@/components/productos/ProductsTable";
+import { useAuthStore } from "@/lib/auth/store";
 
 // ── V1.24: Inventario reducido a 2 tabs ──
 // Los tabs Comprar y Optimizar migraron a /dashboards/decisiones?tab=comprar|vender.
 // Inventario ahora se enfoca en panorama (Resumen) y exploración del catálogo (Catálogo).
 // El drilldown de las Decision Cards en Resumen navega al Catálogo con filtro por estado.
 
-type InvTab = "resumen" | "catalogo";
+type InvTab = "resumen" | "catalogo" | "caducidad";
 
 const TABS: { key: InvTab; label: string; emoji: string }[] = [
   { key: "resumen", label: "Resumen", emoji: "📊" },
@@ -22,6 +24,11 @@ const TABS: { key: InvTab; label: string; emoji: string }[] = [
 function InventarioInner(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const isMasVital = currentTenant === "masvital";
+  const tabs = isMasVital
+    ? [...TABS, { key: "caducidad" as const, label: "Caducidad", emoji: "⏳" }]
+    : TABS;
   const tabParam = (searchParams.get("tab") as InvTab) || "resumen";
   const estadoParam = searchParams.get("estado") ?? "";
 
@@ -37,6 +44,13 @@ function InventarioInner(): JSX.Element {
       window.history.replaceState({}, "", url);
     }
   }, [tab]);
+
+  // The tenant is hydrated client-side. Keep this URL-only view unavailable
+  // for MotoShop even if someone manually changes the query parameter.
+  useEffect(() => {
+    if (tab === "caducidad" && !isMasVital) setTab("resumen");
+    if (tabParam === "caducidad" && isMasVital) setTab("caducidad");
+  }, [isMasVital, tab, tabParam]);
 
   // Si cambia el ?estado en URL (por navegación desde otra vista), sincronizar
   useEffect(() => {
@@ -59,7 +73,7 @@ function InventarioInner(): JSX.Element {
 
       <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
         <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               type="button"
@@ -107,6 +121,7 @@ function InventarioInner(): JSX.Element {
       {tab === "catalogo" && (
         <ProductsTable key={catalogoEstado} window={180} initialEstado={catalogoEstado} />
       )}
+      {tab === "caducidad" && isMasVital && <ExpiryLotsTab />}
     </div>
   );
 }
