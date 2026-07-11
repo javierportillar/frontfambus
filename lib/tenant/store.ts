@@ -13,12 +13,18 @@ const COOKIE_PATH = "/";
 // 30 días en segundos
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
 
+function secureCookieAttribute(): string {
+  return typeof location !== "undefined" && location.protocol === "https:"
+    ? "; secure"
+    : "";
+}
+
 export function setTenantCookie(tenant: string): void {
   if (typeof document === "undefined") return;
-  document.cookie = `${TENANT_COOKIE}=${encodeURIComponent(tenant)}; path=${COOKIE_PATH}; max-age=${COOKIE_MAX_AGE}; SameSite=Lax; secure`;
+  document.cookie = `${TENANT_COOKIE}=${encodeURIComponent(tenant)}; path=${COOKIE_PATH}; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secureCookieAttribute()}`;
 }
 
 export function clearTenantCookie(): void {
   if (typeof document === "undefined") return;
-  document.cookie = `${TENANT_COOKIE}=; path=${COOKIE_PATH}; max-age=0; SameSite=Lax; secure`;
+  document.cookie = `${TENANT_COOKIE}=; path=${COOKIE_PATH}; max-age=0; SameSite=Lax${secureCookieAttribute()}`;
 }
