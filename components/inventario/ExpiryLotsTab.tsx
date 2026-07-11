@@ -3,11 +3,22 @@
 import { type FormEvent, useMemo, useRef, useState } from "react";
 import { apiFetchJson } from "@/lib/api/client";
 import { IdempotentMutation } from "@/lib/api/idempotentMutation";
-import { type ExpiryLot, useExpiryLots } from "@/lib/api/hooks";
+import {
+  type ExpiryLot,
+  useExpiryLots,
+  useComprasPorProveedor,
+  useComprasProveedorDetalle,
+} from "@/lib/api/hooks";
 import { daysUntilExpiry, formatExpiryDate, getExpiryBand } from "@/lib/inventory/expiry";
 import { useAuthStore } from "@/lib/auth/store";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
+
+// Rango para poblar proveedores/facturas desde las compras reales de MasVital.
+// Últimos 12 meses: cubre las compras recientes sin traer histórico completo.
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
 
 type ReceiptForm = {
   product_sku: string;
@@ -62,6 +73,48 @@ export function ExpiryLotsTab(): JSX.Element {
   const receiptMutationHandler = receiptMutation.current ?? (receiptMutation.current = new IdempotentMutation(newIdempotencyKey));
   const adjustmentMutationHandler = adjustmentMutation.current ?? (adjustmentMutation.current = new IdempotentMutation(newIdempotencyKey));
 
+  // ── Cascade proveedor → factura → producto (compras reales de MasVital) ──
+  const rangoIni = useMemo(() => isoDaysAgo(365), []);
+  const rangoFin = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [manualMode, setManualMode] = useState(false);
+  const [selNit, setSelNit] = useState("");
+  const [selDoc, setSelDoc] = useState("");
+  const proveedores = useComprasPorProveedor(manualMode ? "" : rangoIni, manualMode ? "" : rangoFin);
+  const detalle = useComprasProveedorDetalle(!manualMode && selNit ? selNit : null, rangoIni, rangoFin);
+  const provList = useMemo(
+    () => (proveedores.data?.proveedores ?? []).filter((p) => !!p.nit),
+    [proveedores.data],
+  );
+  const docList = useMemo(() => detalle.data?.documentos ?? [], [detalle.data]);
+  const docItems = useMemo(
+    () => (selDoc ? docList.find((d) => d.num_documento === selDoc)?.items ?? [] : []),
+    [docList, selDoc],
+  );
+
+  function pickProveedor(nit: string): void {
+    setSelNit(nit);
+    setSelDoc("");
+    const prov = provList.find((p) => p.nit === nit);
+    setReceipt((r) => ({ ...r, supplier: prov?.nombre ?? "", purchase_order_ref: "", product_sku: "" }));
+  }
+  function pickDoc(num: string): void {
+    setSelDoc(num);
+    setReceipt((r) => ({ ...r, purchase_order_ref: num, product_sku: "" }));
+  }
+  function pickProducto(cod: string): void {
+    const it = docItems.find((i) => i.cod_producto === cod);
+    setReceipt((r) => ({
+      ...r,
+      product_sku: cod,
+      // Prefill cantidad comprada como sugerencia (editable) sólo si está vacía.
+      received_quantity: it && !r.received_quantity ? String(it.cantidad) : r.received_quantity,
+    }));
+  }
+  function resetCascade(): void {
+    setSelNit("");
+    setSelDoc("");
+  }
+
   const orderedLots = useMemo(
     () => [...(data?.items ?? [])].sort((a, b) => a.expires_on.localeCompare(b.expires_on)),
     [data?.items],
@@ -89,6 +142,7 @@ export function ExpiryLotsTab(): JSX.Element {
         refresh: () => mutate(),
       });
       setReceipt(EMPTY_RECEIPT);
+      resetCascade();
       setReceiptOpen(false);
       setMessage({ type: "success", text: "Recepción registrada. El lote ya aparece en el control de caducidad." });
     } catch (submitError) {
@@ -174,14 +228,100 @@ export function ExpiryLotsTab(): JSX.Element {
       {canManage && receiptOpen && (
         <Card header={<h3 className="text-sm font-semibold text-text-primary">Nueva recepción con lote</h3>}>
           <form onSubmit={submitReceipt} className="grid gap-3 md:grid-cols-2">
-            <FormField label="SKU del producto" required>
-              <input required value={receipt.product_sku} onChange={(e) => setReceipt({ ...receipt, product_sku: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={128} />
-            </FormField>
-            <FormField label="Orden o documento de compra" required>
-              <input required value={receipt.purchase_order_ref} onChange={(e) => setReceipt({ ...receipt, purchase_order_ref: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={128} />
-            </FormField>
+            {/* Toggle: elegir desde compras reales (cascada) o escribir a mano */}
+            <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt/60 px-3 py-2">
+              <span className="text-xs text-text-secondary">
+                {manualMode
+                  ? "Modo manual: escribí proveedor, documento y SKU."
+                  : "Elegí proveedor → factura → producto de las compras reales (últimos 12 meses)."}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setManualMode((m) => !m); resetCascade(); }}
+                className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface-alt"
+              >
+                {manualMode ? "Elegir de compras" : "Escribir a mano"}
+              </button>
+            </div>
+
+            {!manualMode ? (
+              <>
+                {/* Proveedor (dropdown) */}
+                <FormField label="Proveedor" required>
+                  <select
+                    required
+                    value={selNit}
+                    onChange={(e) => pickProveedor(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="">
+                      {proveedores.isLoading ? "Cargando proveedores…" : `Seleccioná (${provList.length})`}
+                    </option>
+                    {provList.map((p) => (
+                      <option key={p.nit ?? p.nombre} value={p.nit ?? ""}>
+                        {p.nombre} · {p.num_documentos} doc
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+
+                {/* Factura / documento (filtrada por proveedor) */}
+                <FormField label="Factura / documento" required>
+                  <select
+                    required
+                    value={selDoc}
+                    onChange={(e) => pickDoc(e.target.value)}
+                    disabled={!selNit || detalle.isLoading}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                  >
+                    <option value="">
+                      {!selNit ? "Elegí un proveedor primero" : detalle.isLoading ? "Cargando facturas…" : `Seleccioná (${docList.length})`}
+                    </option>
+                    {docList.map((d) => (
+                      <option key={d.num_documento} value={d.num_documento}>
+                        {d.num_documento}{d.fecha ? ` · ${d.fecha}` : ""} · {d.num_items} ítems
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+
+                {/* Producto / SKU (filtrado por factura) */}
+                <FormField label="Producto (SKU)" required>
+                  <select
+                    required
+                    value={receipt.product_sku}
+                    onChange={(e) => pickProducto(e.target.value)}
+                    disabled={!selDoc}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                  >
+                    <option value="">
+                      {!selDoc ? "Elegí una factura primero" : `Seleccioná (${docItems.length})`}
+                    </option>
+                    {docItems.map((it) => (
+                      <option key={it.cod_producto} value={it.cod_producto}>
+                        {it.cod_producto} · {it.nom_producto} · {it.cantidad} {it.unidad_medida ?? "u"}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              </>
+            ) : (
+              <>
+                <FormField label="Proveedor">
+                  <input value={receipt.supplier} onChange={(e) => setReceipt({ ...receipt, supplier: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={255} />
+                </FormField>
+                <FormField label="Orden o documento de compra" required>
+                  <input required value={receipt.purchase_order_ref} onChange={(e) => setReceipt({ ...receipt, purchase_order_ref: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={128} />
+                </FormField>
+                <FormField label="SKU del producto" required>
+                  <input required value={receipt.product_sku} onChange={(e) => setReceipt({ ...receipt, product_sku: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={128} />
+                </FormField>
+              </>
+            )}
+
+            {/* Lote: nunca viene de Hermes, siempre manual */}
             <FormField label="Lote" required>
-              <input required value={receipt.lot_code} onChange={(e) => setReceipt({ ...receipt, lot_code: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={128} />
+              <input required value={receipt.lot_code} onChange={(e) => setReceipt({ ...receipt, lot_code: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={128} placeholder="Código impreso en el empaque" />
             </FormField>
             <FormField label="Cantidad recibida" required>
               <input required type="number" min="0.001" step="0.001" value={receipt.received_quantity} onChange={(e) => setReceipt({ ...receipt, received_quantity: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
@@ -191,9 +331,6 @@ export function ExpiryLotsTab(): JSX.Element {
             </FormField>
             <FormField label="Fecha de recepción">
               <input type="date" value={receipt.received_on} onChange={(e) => setReceipt({ ...receipt, received_on: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-            </FormField>
-            <FormField label="Proveedor">
-              <input value={receipt.supplier} onChange={(e) => setReceipt({ ...receipt, supplier: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={255} />
             </FormField>
             <FormField label="Notas">
               <input value={receipt.notes} onChange={(e) => setReceipt({ ...receipt, notes: e.target.value })} className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" maxLength={2000} />
