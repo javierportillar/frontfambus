@@ -44,6 +44,16 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     headers.set("Accept", accept);
   }
 
+  // BUG-FIX 2026-07-11: el proxy no reenviaba Idempotency-Key. Los endpoints de
+  // caducidad (POST /api/expiry/receipts y /lots/{id}/adjustments) lo requieren
+  // como header (Header(alias="Idempotency-Key")); sin él FastAPI devolvía 422
+  // "field required" y la recepción/ajuste fallaba desde el navegador (directo
+  // al backend sí funcionaba). Fix: reenviar el header tal cual.
+  const idempotencyKey = req.headers.get("idempotency-key");
+  if (idempotencyKey) {
+    headers.set("Idempotency-Key", idempotencyKey);
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers,
