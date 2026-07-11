@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/auth/store";
 import { OfflineQueueBadge } from "@/components/OfflineQueueBadge";
 import { QueueScheduler } from "@/components/QueueScheduler";
 import { TenantTheme } from "@/components/TenantTheme";
+import { ServerLoadingBanner } from "@/components/ServerLoadingBanner";
 
 function filterNavItems(items: NavItem[], enabledFeatures: string[]): NavItem[] {
   return items.filter((item) => {
@@ -63,6 +64,7 @@ export default function AuthenticatedLayout({
   return (
     <>
       <TenantTheme />
+      <ServerLoadingBanner />
       <Navigation items={items} role={(role as "vendedor" | "admin" | "gerente") ?? "gerente"} onLogout={handleLogout} />
       <main className="mx-auto w-full max-w-[1800px] px-4 pb-20 pt-4 transition-all duration-200 lg:pb-8 lg:ml-16">
         {children}
