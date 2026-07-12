@@ -97,6 +97,7 @@ export default function SelectTenantPage(): JSX.Element {
       setTenantCookie(slug);
       const me = await fetchMe();
       setTenant(slug, me.enabled_features);
+      useAuthStore.getState().setAllowedModules(me.allowed_modules);
       setReturnUrl(null); // limpiar
       addToast(`Bienvenido a ${getTenantDisplay(slug)?.name ?? slug}`, "success");
       router.push(returnUrl || "/");

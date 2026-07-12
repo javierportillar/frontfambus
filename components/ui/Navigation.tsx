@@ -17,6 +17,8 @@ export interface NavItem {
   icon: ReactNode;
   /** Feature slug que habilita esta ruta (M2). undefined = siempre visible */
   feature?: string;
+  /** Sólo visible para admin (gestión). No depende de feature/tenant. */
+  adminOnly?: boolean;
 }
 
 interface NavigationProps {
@@ -569,14 +571,15 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Inicio", href: "/", icon: Icons.home },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
-    { label: "Decisiones", href: "/dashboards/decisiones", icon: Icons.acciones },
-    { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast },
+    { label: "Decisiones", href: "/dashboards/decisiones", icon: Icons.acciones, feature: "decisiones" },
+    { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast, feature: "analisis" },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
     { label: "Cohortes", href: "/cohortes", icon: Icons.home, feature: "cohortes" },
     { label: "Vendedores", href: "/vendedores", icon: Icons.home, feature: "vendedores" },
     { label: "Drift", href: "/drift", icon: Icons.alerts, feature: "drift" },
     { label: "Pipeline", href: "/admin/pipeline", icon: Icons.home, feature: "pipeline-observability" },
     { label: "Catálogo de datos", href: "/admin/data-catalog", icon: Icons.home, feature: "data-catalog" },
+    { label: "Usuarios", href: "/admin/usuarios", icon: Icons.home, adminOnly: true },
   ];
 }
 

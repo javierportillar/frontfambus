@@ -27,6 +27,7 @@ function LoginForm(): JSX.Element {
   const setUser = useAuthStore((s) => s.setUser);
   const setAvailableTenants = useAuthStore((s) => s.setAvailableTenants);
   const setTenant = useAuthStore((s) => s.setTenant);
+  const setAllowedModules = useAuthStore((s) => s.setAllowedModules);
   const setReturnUrl = useAuthStore((s) => s.setReturnUrl);
   const returnUrl = useAuthStore((s) => s.returnUrl);
   const { addToast } = useToast();
@@ -84,6 +85,7 @@ function LoginForm(): JSX.Element {
       // Multi-tenant (M2): obtener contexto completo con tenants y features
       const me = await fetchMe();
       setAvailableTenants(me.tenants_allowed);
+      setAllowedModules(me.allowed_modules);
 
       const [onlyTenant] = me.tenants_allowed;
       if (me.tenants_allowed.length === 1 && onlyTenant) {

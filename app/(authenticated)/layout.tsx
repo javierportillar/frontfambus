@@ -3,19 +3,31 @@
 import { useMemo, useEffect } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Navigation, gerenteNavItems, vendedorNavItems, type NavItem } from "@/components/ui/Navigation";
+import { Navigation, gerenteNavItems, type NavItem } from "@/components/ui/Navigation";
 import { useAuthStore } from "@/lib/auth/store";
 import { OfflineQueueBadge } from "@/components/OfflineQueueBadge";
 import { QueueScheduler } from "@/components/QueueScheduler";
 import { TenantTheme } from "@/components/TenantTheme";
 import { ServerLoadingBanner } from "@/components/ServerLoadingBanner";
 
-function filterNavItems(items: NavItem[], enabledFeatures: string[]): NavItem[] {
+function filterNavItems(
+  items: NavItem[],
+  enabledFeatures: string[],
+  role: string | null,
+  allowedModules: string[] | null,
+): NavItem[] {
+  const isAdmin = role === "admin";
   return items.filter((item) => {
+    // Rutas de gestión: sólo admin
+    if (item.adminOnly) return isAdmin;
     // Inicio y rutas sin feature son siempre visibles
     if (!item.feature) return true;
-    // Solo visible si la feature está habilitada
-    return enabledFeatures.includes(item.feature);
+    // Debe estar habilitada por el tenant
+    if (!enabledFeatures.includes(item.feature)) return false;
+    // admin o usuario sin restricción de módulos (heredado) → ve todo lo del tenant
+    if (isAdmin || allowedModules === null) return true;
+    // Usuario restringido → sólo sus módulos permitidos
+    return allowedModules.includes(item.feature);
   });
 }
 
@@ -28,13 +40,16 @@ export default function AuthenticatedLayout({
   const role = useAuthStore((s) => s.role);
   const logout = useAuthStore((s) => s.logout);
   const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
+  const allowedModules = useAuthStore((s) => s.allowedModules);
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
 
   const items = useMemo(() => {
-    const all = role === "vendedor" ? vendedorNavItems() : gerenteNavItems();
-    return filterNavItems(all, enabledFeatures);
-  }, [role, enabledFeatures]);
+    // Todos los no-admin usan el mismo menú completo; los módulos del usuario
+    // deciden qué ve (gerencia y empleado). El item "Usuarios" es adminOnly.
+    const all = gerenteNavItems();
+    return filterNavItems(all, enabledFeatures, role, allowedModules);
+  }, [role, enabledFeatures, allowedModules]);
 
   // FIX: refresh proactivo cada 10 min para que el access token no expire
   // mientras el usuario está activo. Si falla silenciosamente, el flujo

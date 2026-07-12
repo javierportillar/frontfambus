@@ -24,6 +24,11 @@ interface AuthState {
   setTenant: (tenant: string, features: string[]) => void;
   setAvailableTenants: (tenants: string[]) => void;
   clearTenant: () => void;
+
+  // ---- RBAC per-user modules ----
+  // null = sin restricción (admin / usuario heredado). Lista = restringe la nav.
+  allowedModules: string[] | null;
+  setAllowedModules: (modules: string[] | null) => void;
 }
 
 // F7-FIX1 bug 5.1: persistir auth en localStorage para que el refresh no rompa el home
@@ -47,6 +52,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           currentTenant: null,
           enabledFeatures: [],
+          allowedModules: null,
           returnUrl: null,
         });
       },
@@ -65,6 +71,10 @@ export const useAuthStore = create<AuthState>()(
         clearTenantCookie();
         set({ currentTenant: null, enabledFeatures: [] });
       },
+
+      // ---- RBAC per-user modules ----
+      allowedModules: null,
+      setAllowedModules: (modules) => set({ allowedModules: modules }),
     }),
     {
       name: "motoshop_auth",
