@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSWRConfig } from "swr";
 import {
   CATEGORIA_LABELS,
+  copiarGastos,
   createGasto,
   deleteGasto,
   updateGasto,
@@ -534,6 +535,13 @@ function thisMonthISO(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
+function prevMonthISO(): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return d.toISOString().slice(0, 7);
+}
+
 function GastosTab(): JSX.Element {
   const [filterMes, setFilterMes] = useState<string>(""); // vacío = todos los meses
   const { data, isLoading, error } = useGastos(filterMes || undefined);
@@ -550,6 +558,20 @@ function GastosTab(): JSX.Element {
   const [formDescripcion, setFormDescripcion] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState<string>("");
+
+  // ── Copiar gastos del mes anterior (con selección) ──────────────────────
+  const [showCopy, setShowCopy] = useState(false);
+  const [copyOrigen, setCopyOrigen] = useState<string>(prevMonthISO());
+  const [copyDestino, setCopyDestino] = useState<string>(thisMonthISO());
+  const [copySel, setCopySel] = useState<Set<number>>(new Set());
+  const [copying, setCopying] = useState(false);
+  const [copyMsg, setCopyMsg] = useState<string>("");
+  const origenReq = useGastos(copyOrigen);
+  const origenItems = useMemo(() => origenReq.data?.items ?? [], [origenReq.data]);
+  // Al abrir el panel o cambiar el mes origen, tildar todos por defecto.
+  useEffect(() => {
+    if (showCopy) setCopySel(new Set(origenItems.map((g) => g.id)));
+  }, [showCopy, origenItems]);
 
   const totalMes = useMemo(() => {
     if (!data) return new Map<string, number>();
@@ -635,6 +657,50 @@ function GastosTab(): JSX.Element {
     }
   };
 
+  const toggleCopySel = (id: number) => {
+    setCopySel((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleCopy = async () => {
+    setCopyMsg("");
+    if (copyOrigen === copyDestino) {
+      setCopyMsg("El mes origen y destino no pueden ser iguales.");
+      return;
+    }
+    const ids = [...copySel];
+    if (ids.length === 0) {
+      setCopyMsg("Seleccioná al menos un gasto para copiar.");
+      return;
+    }
+    setCopying(true);
+    try {
+      const res = await copiarGastos({ mes_origen: copyOrigen, mes_destino: copyDestino, ids });
+      await mutate(
+        (key) => Array.isArray(key) && typeof key[1] === "string" &&
+          (key[1].startsWith("/api/gastos") || key[1].startsWith("/api/metrics/analisis-balance")),
+        undefined,
+        { revalidate: true },
+      );
+      const omitidos = ids.length - res.total;
+      setShowCopy(false);
+      setCopyMsg("");
+      setErrMsg("");
+      alert(
+        `Se copiaron ${res.total} gasto(s) a ${copyDestino}` +
+          (omitidos > 0 ? `. Se omitieron ${omitidos} que ya existían en el mes destino.` : "."),
+      );
+    } catch (e2) {
+      setCopyMsg(e2 instanceof Error ? e2.message.replace(/^.*\d{3}\s/, "") : "No se pudo copiar.");
+    } finally {
+      setCopying(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Banner */}
@@ -668,13 +734,22 @@ function GastosTab(): JSX.Element {
             )}
           </label>
           {canEdit && (
-            <button
-              type="button"
-              onClick={() => { resetForm(); setShowForm((v) => !v); }}
-              className="rounded-lg bg-surface-dark px-3 py-1.5 text-xs font-medium text-text-inverse hover:opacity-90"
-            >
-              {showForm ? "Cancelar" : "+ Nuevo gasto"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowCopy((v) => !v); setCopyMsg(""); }}
+                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-alt"
+              >
+                {showCopy ? "Cerrar copia" : "Copiar del mes anterior"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { resetForm(); setShowForm((v) => !v); }}
+                className="rounded-lg bg-surface-dark px-3 py-1.5 text-xs font-medium text-text-inverse hover:opacity-90"
+              >
+                {showForm ? "Cancelar" : "+ Nuevo gasto"}
+              </button>
+            </div>
           )}
         </div>
 
@@ -682,6 +757,88 @@ function GastosTab(): JSX.Element {
           <p className="mt-2 text-xs text-text-muted">
             Solo admin/gerente puede crear, editar o eliminar gastos.
           </p>
+        )}
+
+        {/* Panel: copiar gastos del mes anterior con selección */}
+        {canEdit && showCopy && (
+          <div className="mt-4 rounded-lg border border-border bg-surface-alt/30 p-3">
+            <p className="text-sm font-medium text-text-primary">Copiar gastos de un mes a otro</p>
+            <p className="mt-0.5 text-xs text-text-muted">
+              Elegí el mes origen y destino, y tildá cuáles gastos querés copiar. Los que ya existan
+              en el mes destino se omiten (no se duplican).
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-xs text-text-muted">
+                Origen
+                <input
+                  type="month"
+                  value={copyOrigen}
+                  onChange={(e) => setCopyOrigen(e.target.value)}
+                  className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-text-primary outline-none focus:border-primary"
+                />
+              </label>
+              <span className="text-text-muted">→</span>
+              <label className="flex items-center gap-2 text-xs text-text-muted">
+                Destino
+                <input
+                  type="month"
+                  value={copyDestino}
+                  onChange={(e) => setCopyDestino(e.target.value)}
+                  className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-text-primary outline-none focus:border-primary"
+                />
+              </label>
+            </div>
+
+            <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface">
+              {origenReq.isLoading ? (
+                <p className="px-3 py-4 text-sm text-text-muted">Cargando gastos de {copyOrigen}…</p>
+              ) : origenItems.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-text-muted">No hay gastos en {copyOrigen}.</p>
+              ) : (
+                <ul className="divide-y divide-border/70">
+                  {origenItems.map((g) => (
+                    <li key={g.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={copySel.has(g.id)}
+                        onChange={() => toggleCopySel(g.id)}
+                      />
+                      <span className="flex-1 text-text-primary">{CATEGORIA_LABELS[g.categoria]}</span>
+                      <span className="text-text-muted">{g.descripcion || "—"}</span>
+                      <span className="tabular-nums font-medium text-text-primary">{formatMoneyFull(g.monto)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {copyMsg && <p className="mt-2 text-xs text-red-700">{copyMsg}</p>}
+
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                disabled={copying || origenItems.length === 0}
+                onClick={handleCopy}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
+              >
+                {copying ? "Copiando…" : `Copiar ${copySel.size} gasto(s)`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCopySel(new Set(origenItems.map((g) => g.id)))}
+                className="text-xs text-accent hover:underline"
+              >
+                Tildar todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setCopySel(new Set())}
+                className="text-xs text-accent hover:underline"
+              >
+                Destildar todos
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Formulario */}

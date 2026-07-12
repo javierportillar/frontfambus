@@ -1513,6 +1513,21 @@ export async function deleteGasto(id: number): Promise<void> {
   await apiFetch(`/api/gastos/${id}`, { method: "DELETE" });
 }
 
+export interface CopiarGastosPayload {
+  mes_origen: string;
+  mes_destino: string;
+  ids?: number[] | null;
+}
+
+/** Copia gastos de un mes a otro (omite duplicados). Devuelve los creados. */
+export async function copiarGastos(payload: CopiarGastosPayload): Promise<GastosListResponse> {
+  return apiFetchJson<GastosListResponse>("/api/gastos/copiar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 
 // ── Análisis financiero (V1.11) ──────────────────────────────────────────
 
@@ -1961,6 +1976,10 @@ export interface MeResponse {
   tenants_allowed: string[];
   current_tenant: string;
   enabled_features: string[];
+  // null = sin restricción de módulos (admin / usuario heredado). Lista = restringe.
+  allowed_modules: string[] | null;
+  // enabled_features ∩ allowed_modules (admin ve todo). El front lo usa de referencia.
+  effective_modules: string[];
 }
 
 /**
@@ -1972,4 +1991,85 @@ export interface MeResponse {
  */
 export async function fetchMe(): Promise<MeResponse> {
   return apiFetchJson<MeResponse>("/api/auth/me");
+}
+
+
+// ── Gestión de usuarios (RBAC, admin-only) ───────────────────────────────
+
+export type UserRole = "admin" | "gerente" | "vendedor";
+
+export interface AdminUser {
+  username: string;
+  email: string;
+  role: UserRole;
+  tenants_allowed: string[];
+  allowed_modules: string[];
+  active: boolean;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AdminUsersResponse {
+  items: AdminUser[];
+  total: number;
+}
+
+export interface ModuleItem {
+  key: string;
+  label: string;
+}
+
+export interface ModulesResponse {
+  modules: ModuleItem[];
+  roles: UserRole[];
+}
+
+export interface UserCreatePayload {
+  username: string;
+  password: string;
+  email?: string;
+  role: UserRole;
+  tenants_allowed: string[];
+  allowed_modules: string[];
+}
+
+export interface UserUpdatePayload {
+  password?: string;
+  email?: string;
+  role?: UserRole;
+  tenants_allowed?: string[];
+  allowed_modules?: string[];
+  active?: boolean;
+}
+
+export function useAdminUsers() {
+  return useMetrics<AdminUsersResponse>("/api/admin/users");
+}
+
+export function useAssignableModules() {
+  return useMetrics<ModulesResponse>("/api/admin/users/modules");
+}
+
+export async function createUser(payload: UserCreatePayload): Promise<AdminUser> {
+  return apiFetchJson<AdminUser>("/api/admin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUser(username: string, payload: UserUpdatePayload): Promise<AdminUser> {
+  return apiFetchJson<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Soft delete: desactiva el usuario (reversible). */
+export async function deactivateUser(username: string): Promise<AdminUser> {
+  return apiFetchJson<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+  });
 }
