@@ -34,15 +34,16 @@ const CACHE_TTL_CATALOG = 60 * 60 * 1000; // 1 hour
 const CACHE_TTL_STOCK = 5 * 60 * 1000; // 5 min
 
 async function fetchWithOfflineFallback<T>(
+  tenant: string,
   url: string,
   ttlMs: number,
 ): Promise<T> {
   try {
     const data = await apiFetchJson<T>(url);
-    await setCache(url, data, ttlMs);
+    await setCache(tenant, url, data, ttlMs);
     return data;
   } catch {
-    const cached = await getCached<T>(url);
+    const cached = await getCached<T>(tenant, url);
     if (cached) return cached;
     throw new Error("Sin conexión y sin datos cacheados");
   }
@@ -56,7 +57,7 @@ export function useProducts(query: string, page = 1, limit = 20) {
 
   return useSWR<ProductsResponse>(
     swrKey,
-    (k: readonly [string, string]) => fetchWithOfflineFallback<ProductsResponse>(k[1], CACHE_TTL_CATALOG),
+    (k: readonly [string, string]) => fetchWithOfflineFallback<ProductsResponse>(k[0], k[1], CACHE_TTL_CATALOG),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30_000,
@@ -72,7 +73,7 @@ export function useStock(sku: string | null) {
 
   return useSWR<StockResponse>(
     swrKey,
-    (k: readonly [string, string]) => fetchWithOfflineFallback<StockResponse>(k[1], CACHE_TTL_STOCK),
+    (k: readonly [string, string]) => fetchWithOfflineFallback<StockResponse>(k[0], k[1], CACHE_TTL_STOCK),
     {
       revalidateOnFocus: false,
       dedupingInterval: 10_000,

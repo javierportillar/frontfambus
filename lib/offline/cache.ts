@@ -9,12 +9,24 @@ interface CacheEntry<T> {
   ttl: number;
 }
 
-export async function getCached<T>(key: string): Promise<T | null> {
+function cacheKey(tenant: string, key: string): string {
+  return `${PREFIX}${encodeURIComponent(tenant)}:${key}`;
+}
+
+/**
+ * Reads an offline entry belonging to one tenant only.
+ *
+ * Tenant is deliberately the first argument: callers must make the data
+ * boundary explicit instead of accidentally sharing a URL cache entry between
+ * businesses.
+ */
+export async function getCached<T>(tenant: string, key: string): Promise<T | null> {
+  const entryKey = cacheKey(tenant, key);
   try {
-    const entry = await get<CacheEntry<T>>(PREFIX + key);
+    const entry = await get<CacheEntry<T>>(entryKey);
     if (!entry) return null;
     if (Date.now() - entry.timestamp > entry.ttl) {
-      await del(PREFIX + key);
+      await del(entryKey);
       return null;
     }
     return entry.data;
@@ -24,20 +36,21 @@ export async function getCached<T>(key: string): Promise<T | null> {
 }
 
 export async function setCache<T>(
+  tenant: string,
   key: string,
   data: T,
   ttlMs: number = DEFAULT_TTL_MS,
 ): Promise<void> {
   try {
-    await set(PREFIX + key, { data, timestamp: Date.now(), ttl: ttlMs });
+    await set(cacheKey(tenant, key), { data, timestamp: Date.now(), ttl: ttlMs });
   } catch {
     // IndexedDB full or unavailable — silent fail
   }
 }
 
-export async function removeCache(key: string): Promise<void> {
+export async function removeCache(tenant: string, key: string): Promise<void> {
   try {
-    await del(PREFIX + key);
+    await del(cacheKey(tenant, key));
   } catch {
     // ignore
   }
@@ -54,5 +67,4 @@ export async function clearAllCache(): Promise<void> {
     // ignore
   }
 }
-
 
