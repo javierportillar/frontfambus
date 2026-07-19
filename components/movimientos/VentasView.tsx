@@ -263,6 +263,7 @@ export function VentasView(): JSX.Element {
               <Skeleton className="h-80 rounded-lg" />
             ) : selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) ? (
               <Calendar
+                mode="sales"
                 month={selectedMonth}
                 days={(dm?.days ?? [])
                   .map((d) => ({
@@ -310,7 +311,6 @@ export function VentasView(): JSX.Element {
                 <YAxis tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e3).toFixed(0)}K`} />
                 <Tooltip formatter={(value, name) => [formatCurrencyFull(Number(value)), name === "curr" ? `${selectedYear}` : `${selectedYear-1}`]} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
                 <Line type="linear" dataKey="curr" stroke="#7B1818" strokeWidth={2} dot={{r:3,fill:"#7B1818"}} activeDot={{r:6}} name="curr" connectNulls={false} />
-                mode="sales"
                 <Line type="linear" dataKey="prev" stroke="#4B5563" strokeWidth={1.5} strokeDasharray="5 5" dot={{r:3,fill:"#4B5563"}} activeDot={{r:5}} name="prev" connectNulls={false} />
               </LineChart>
             </ResponsiveContainer>
