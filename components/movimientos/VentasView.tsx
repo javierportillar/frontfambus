@@ -23,6 +23,8 @@ import {
 import { formatMoneyFull } from "@/lib/format/currency";
 import { businessMonthISO, shiftDateISO } from "@/lib/date/business";
 import {
+  buildAnnualSalesSeries,
+  forecastKindLabel,
   selectSalesDate,
   selectSalesMonth,
   syncSalesSelection,
@@ -195,6 +197,15 @@ export function VentasView(): JSX.Element {
     !daily.isLoading &&
     !dm?.days.some((item) => item.date === d.max_sales_date),
   );
+
+  const annualSeries = buildAnnualSalesSeries({
+    selectedMonth,
+    businessMonth: d?.business_month,
+    currentYearTotals: trendCurr,
+    previousYearTotals: trendP,
+    currentMonthActual: monthlyTotal,
+    forecast: df,
+  });
 
   if (!d) return <div className="p-4"><Skeleton className="h-60 rounded-xl" /></div>;
 
@@ -651,20 +662,19 @@ export function VentasView(): JSX.Element {
 
           <Card header={<h2 className="font-semibold text-text-primary">Año actual vs anterior</h2>}>
             <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={MONTHS.map((lbl,i)=>{
-                const m=i+1;
-                const currentMonthNumber=Number(selectedMonth.slice(5));
-                return {
-                  label:lbl,
-                  prev:trendP.get(m)??null,
-                  curr:m<currentMonthNumber?(trendCurr.get(m)??null):m===currentMonthNumber?monthlyTotal:null,
-                  proj:selectedMonth === d.business_month && m>=currentMonthNumber?(df?m===currentMonthNumber?df.current_month.projected_amount:m===currentMonthNumber+1?df.next_month.projected_amount:null:null):null,
-                };
-              })}>
+              <LineChart data={annualSeries}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
                 <YAxis tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
-                <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
+                <Tooltip
+                  formatter={(value, name, item) => {
+                    if (item.dataKey === "proj") {
+                      return [formatCurrencyFull(Number(value)), forecastKindLabel(item.payload.forecastKind)];
+                    }
+                    return [formatCurrencyFull(Number(value)), String(name)];
+                  }}
+                  contentStyle={{borderRadius:"8px",fontSize:"12px"}}
+                />
                 <Line type="monotone" dataKey="prev" stroke="#94A3B8" strokeDasharray="5 5" dot={{r:2}} name={`${selectedYear-1}`} />
                 <Line type="monotone" dataKey="curr" stroke="#7B1818" strokeWidth={2} dot={{r:3,fill:"#7B1818"}} name={`${selectedYear}`} connectNulls={false} />
                 <Line type="monotone" dataKey="proj" stroke="#FCD34D" strokeWidth={2} strokeDasharray="6 3" dot={{r:3,fill:"#FCD34D"}} name="Proyección" connectNulls={false} />
@@ -678,9 +688,10 @@ export function VentasView(): JSX.Element {
                 <span className="h-2 w-4 rounded" style={{background:"#94A3B8"}} /> {selectedYear-1} (real)
               </span>
               <span className="flex items-center gap-1">
-                <span className="h-2 w-4 rounded" style={{background:"#FCD34D"}} /> Proyección
+                <span className="h-2 w-4 rounded" style={{background:"#FCD34D"}} /> Forecast
               </span>
-              <span>Proyección viene del forecast estable rolling 90d.</span>
+              <span>mes cerrado (backtest) → cierre actual → próximo mes</span>
+              <span className="basis-full">El tooltip identifica qué tipo de proyección representa cada punto.</span>
             </div>
           </Card>
 
