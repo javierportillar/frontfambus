@@ -21,6 +21,16 @@ import {
   type TopSkuItem,
 } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { businessMonthISO, shiftDateISO } from "@/lib/date/business";
+import {
+  buildAnnualSalesSeries,
+  forecastKindLabel,
+  selectSalesDate,
+  selectSalesMonth,
+  syncSalesSelection,
+  type SalesSelectionState,
+} from "@/lib/sales/movimientos";
+import { useAuthStore } from "@/lib/auth/store";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -51,11 +61,6 @@ type DailyPoint = {
   avg_ticket: number;
   accumulated: number;
 };
-
-function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
 
 function monthLabel(month: string): string {
   const [year, rawMonth] = month.split("-");
@@ -89,12 +94,6 @@ function dayFromDate(date: string | undefined): number {
   return Number(date.slice(8, 10)) || 0;
 }
 
-function shiftDay(date: string, delta: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
 const formatCurrencyFull = formatMoneyFull;
 
 function pctDelta(current: number, previous: number): string {
@@ -123,8 +122,15 @@ function fillDailySeries(days: DailyPoint[] | undefined, month: string, visibleD
 
 export function VentasView(): JSX.Element {
   const [tab, setTab] = useState<Tab>("diaria");
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const currentTenant = useAuthStore((state) => state.currentTenant);
+  const [selection, setSelection] = useState<SalesSelectionState>(() => ({
+    scopeKey: null,
+    selectedDate: "",
+    selectedMonth: businessMonthISO(),
+    followLatest: true,
+    followBusinessMonth: true,
+  }));
+  const { selectedDate, selectedMonth } = selection;
 
   const selectedYear = Number(selectedMonth.slice(0, 4));
   const prevYearMonth = previousYearMonth(selectedMonth);
@@ -134,10 +140,14 @@ export function VentasView(): JSX.Element {
 
   useEffect(() => {
     const maxDate = sales.data?.max_sales_date;
-    if (maxDate) {
-      setSelectedDate((prev) => prev || maxDate);
-    }
-  }, [sales.data?.max_sales_date]);
+    const businessMonth = sales.data?.business_month;
+    if (!maxDate || !businessMonth) return;
+    setSelection((current) => syncSalesSelection(current, {
+      scopeKey: `${currentTenant ?? "_no_tenant"}:${businessMonth}`,
+      maxDate,
+      businessMonth,
+    }));
+  }, [currentTenant, sales.data?.business_month, sales.data?.max_sales_date]);
   const daily = useSalesDailyMonth(selectedMonth);
   const dailyPrevYear = useSalesDailyMonth(prevYearMonth);
   const dailyPrevMonth = useSalesDailyMonth(prevMonth);
@@ -180,6 +190,23 @@ export function VentasView(): JSX.Element {
   const trendCurr = new Map((trend.data?.items??[]).filter(i=>i.year===selectedYear).map(i=>[i.month,i.total_ventas]));
   const trendP = new Map((trendPrev.data?.items??[]).map(i=>[i.month,i.total_ventas]));
 
+  const dailyMatchesSelectedMonth = dm?.month === selectedMonth;
+  const summaryDateMissingFromDaily = Boolean(
+    d?.max_sales_date?.startsWith(`${selectedMonth}-`) &&
+    dailyMatchesSelectedMonth &&
+    !daily.isLoading &&
+    !dm?.days.some((item) => item.date === d.max_sales_date),
+  );
+
+  const annualSeries = buildAnnualSalesSeries({
+    selectedMonth,
+    businessMonth: d?.business_month,
+    currentYearTotals: trendCurr,
+    previousYearTotals: trendP,
+    currentMonthActual: monthlyTotal,
+    forecast: df,
+  });
+
   if (!d) return <div className="p-4"><Skeleton className="h-60 rounded-xl" /></div>;
 
   const tabs: Tab[] = ["diaria","mensual","anual","historica","caja"];
@@ -203,11 +230,32 @@ export function VentasView(): JSX.Element {
           <input
             type="month"
             value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
+            onChange={(event) => setSelection((current) => selectSalesMonth(
+              current,
+              event.target.value,
+              d.business_month,
+            ))}
             className="mt-1 block rounded-xl border border-border bg-surface px-3 py-2 text-sm font-normal normal-case tracking-normal text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
         </label>
       </div>
+
+      {summaryDateMissingFromDaily && (
+        <div role="alert" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-text-secondary">
+          <p className="font-semibold text-text-primary">Los datos diarios todavía no coinciden con el resumen.</p>
+          <p className="mt-0.5 text-xs text-text-muted">
+            El resumen llega hasta {d.max_sales_date}, pero ese día aún no aparece en el calendario de {monthLabel(selectedMonth)}.
+            Estamos mostrando ambos estados sin ocultar la diferencia; reintentá en unos instantes.
+          </p>
+          <button
+            type="button"
+            onClick={() => void daily.mutate()}
+            className="mt-2 rounded-lg border border-warning/40 bg-surface px-3 py-1.5 text-xs font-semibold text-text-primary transition-colors hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning"
+          >
+            Actualizar calendario
+          </button>
+        </div>
+      )}
 
       <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0 md:border-b-0 md:pb-0">
         <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
@@ -261,11 +309,11 @@ export function VentasView(): JSX.Element {
           >
             {daily.isLoading && !dm ? (
               <Skeleton className="h-80 rounded-lg" />
-            ) : selectedDays.some((d) => d.sales > 0 || d.invoices > 0) ? (
+            ) : selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) ? (
               <Calendar
+                mode="sales"
                 month={selectedMonth}
-                days={selectedDays
-                  .filter((d) => d.sales > 0 || d.invoices > 0)
+                days={(dm?.days ?? [])
                   .map((d) => ({
                     date: d.date,
                     day: d.day,
@@ -274,9 +322,10 @@ export function VentasView(): JSX.Element {
                     avgTicket: d.avg_ticket,
                   }))}
                 onDayClick={(date) => {
-                  setSelectedDate(date);
+                  setSelection((current) => selectSalesDate(current, date, d.max_sales_date));
                   setTab("diaria");
                 }}
+                selectedDate={selectedDate}
               />
             ) : (
               <p className="py-12 text-center text-sm text-text-muted">Sin ventas registradas en {monthLabel(selectedMonth)}.</p>
@@ -286,7 +335,7 @@ export function VentasView(): JSX.Element {
           <Card header={<h2 className="font-semibold text-text-primary">Evolución diaria — {monthLabel(selectedMonth)}</h2>}>
             {daily.isLoading && !dm ? (
               <Skeleton className="h-56 rounded-lg" />
-            ) : !selectedDays.some((d) => d.sales > 0) ? (
+            ) : !selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) ? (
               <p className="py-12 text-center text-sm text-text-muted">Sin datos diarios para {monthLabel(selectedMonth)}.</p>
             ) : (
             <ResponsiveContainer width="100%" height={230}>
@@ -480,7 +529,11 @@ export function VentasView(): JSX.Element {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => setSelectedDate(shiftDay(selectedDate, -1))}
+                onClick={() => setSelection((current) => selectSalesDate(
+                  current,
+                  shiftDateISO(selectedDate, -1),
+                  d.max_sales_date,
+                ))}
                 disabled={!selectedDate}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-sm transition hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Día anterior"
@@ -490,13 +543,21 @@ export function VentasView(): JSX.Element {
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => setSelection((current) => selectSalesDate(
+                  current,
+                  e.target.value,
+                  d.max_sales_date,
+                ))}
                 max={d?.max_sales_date ?? undefined}
                 className="block rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
               />
               <button
                 type="button"
-                onClick={() => setSelectedDate(shiftDay(selectedDate, 1))}
+                onClick={() => setSelection((current) => selectSalesDate(
+                  current,
+                  shiftDateISO(selectedDate, 1),
+                  d.max_sales_date,
+                ))}
                 disabled={!selectedDate || selectedDate >= (d?.max_sales_date ?? "")}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-sm transition hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Día siguiente"
@@ -601,20 +662,19 @@ export function VentasView(): JSX.Element {
 
           <Card header={<h2 className="font-semibold text-text-primary">Año actual vs anterior</h2>}>
             <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={MONTHS.map((lbl,i)=>{
-                const m=i+1;
-                const currentMonthNumber=Number(selectedMonth.slice(5));
-                return {
-                  label:lbl,
-                  prev:trendP.get(m)??null,
-                  curr:m<currentMonthNumber?(trendCurr.get(m)??null):m===currentMonthNumber?monthlyTotal:null,
-                  proj:selectedMonth === d.business_month && m>=currentMonthNumber?(df?m===currentMonthNumber?df.current_month.projected_amount:m===currentMonthNumber+1?df.next_month.projected_amount:null:null):null,
-                };
-              })}>
+              <LineChart data={annualSeries}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
                 <YAxis tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
-                <Tooltip formatter={(value) => formatCurrencyFull(Number(value))} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
+                <Tooltip
+                  formatter={(value, name, item) => {
+                    if (item.dataKey === "proj") {
+                      return [formatCurrencyFull(Number(value)), forecastKindLabel(item.payload.forecastKind)];
+                    }
+                    return [formatCurrencyFull(Number(value)), String(name)];
+                  }}
+                  contentStyle={{borderRadius:"8px",fontSize:"12px"}}
+                />
                 <Line type="monotone" dataKey="prev" stroke="#94A3B8" strokeDasharray="5 5" dot={{r:2}} name={`${selectedYear-1}`} />
                 <Line type="monotone" dataKey="curr" stroke="#7B1818" strokeWidth={2} dot={{r:3,fill:"#7B1818"}} name={`${selectedYear}`} connectNulls={false} />
                 <Line type="monotone" dataKey="proj" stroke="#FCD34D" strokeWidth={2} strokeDasharray="6 3" dot={{r:3,fill:"#FCD34D"}} name="Proyección" connectNulls={false} />
@@ -628,9 +688,10 @@ export function VentasView(): JSX.Element {
                 <span className="h-2 w-4 rounded" style={{background:"#94A3B8"}} /> {selectedYear-1} (real)
               </span>
               <span className="flex items-center gap-1">
-                <span className="h-2 w-4 rounded" style={{background:"#FCD34D"}} /> Proyección
+                <span className="h-2 w-4 rounded" style={{background:"#FCD34D"}} /> Forecast
               </span>
-              <span>Proyección viene del forecast estable rolling 90d.</span>
+              <span>mes cerrado (backtest) → cierre actual → próximo mes</span>
+              <span className="basis-full">El tooltip identifica qué tipo de proyección representa cada punto.</span>
             </div>
           </Card>
 
