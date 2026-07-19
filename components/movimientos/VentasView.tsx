@@ -261,11 +261,10 @@ export function VentasView(): JSX.Element {
           >
             {daily.isLoading && !dm ? (
               <Skeleton className="h-80 rounded-lg" />
-            ) : selectedDays.some((d) => d.sales > 0 || d.invoices > 0) ? (
+            ) : selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) ? (
               <Calendar
                 month={selectedMonth}
-                days={selectedDays
-                  .filter((d) => d.sales > 0 || d.invoices > 0)
+                days={(dm?.days ?? [])
                   .map((d) => ({
                     date: d.date,
                     day: d.day,
@@ -286,7 +285,7 @@ export function VentasView(): JSX.Element {
           <Card header={<h2 className="font-semibold text-text-primary">Evolución diaria — {monthLabel(selectedMonth)}</h2>}>
             {daily.isLoading && !dm ? (
               <Skeleton className="h-56 rounded-lg" />
-            ) : !selectedDays.some((d) => d.sales > 0) ? (
+            ) : !selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) ? (
               <p className="py-12 text-center text-sm text-text-muted">Sin datos diarios para {monthLabel(selectedMonth)}.</p>
             ) : (
             <ResponsiveContainer width="100%" height={230}>
@@ -311,6 +310,7 @@ export function VentasView(): JSX.Element {
                 <YAxis tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e3).toFixed(0)}K`} />
                 <Tooltip formatter={(value, name) => [formatCurrencyFull(Number(value)), name === "curr" ? `${selectedYear}` : `${selectedYear-1}`]} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
                 <Line type="linear" dataKey="curr" stroke="#7B1818" strokeWidth={2} dot={{r:3,fill:"#7B1818"}} activeDot={{r:6}} name="curr" connectNulls={false} />
+                mode="sales"
                 <Line type="linear" dataKey="prev" stroke="#4B5563" strokeWidth={1.5} strokeDasharray="5 5" dot={{r:3,fill:"#4B5563"}} activeDot={{r:5}} name="prev" connectNulls={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -325,6 +325,7 @@ export function VentasView(): JSX.Element {
 
           {monthDetail.data && (
             <>
+                selectedDate={selectedDate}
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <Card>
                   <Stat

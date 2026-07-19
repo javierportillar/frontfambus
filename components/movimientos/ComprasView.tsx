@@ -160,6 +160,7 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
           <p className="py-12 text-center text-sm text-text-muted">Sin compras registradas en {mesLabel(mes)}.</p>
         ) : (
           <Calendar
+            mode="purchases"
             month={mes}
             days={data.dias.map((d) => ({
               date: d.date,
