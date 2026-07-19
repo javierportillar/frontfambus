@@ -27,8 +27,6 @@ import { PlanScopeado } from "@/components/decisiones/PlanScopeado";
 import type { MatrizFilter, StockBucket, RotBucket } from "@/components/inventario/ResumenTab";
 import {
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -42,22 +40,15 @@ const HORIZON_OPTIONS = [7, 14, 30] as const;
 
 // V1.24: dashboard "Decisiones" — absorbe el viejo /forecast + los tabs
 // Comprar/Optimizar que vivían dentro de Inventario.
-type DecisionTab = "comprar" | "vender" | "mensual" | "demanda";
+type DecisionTab = "comprar" | "vender" | "demanda";
 
 const TAB_LABELS: Record<DecisionTab, string> = {
   comprar: "🛒 Comprar",
   vender: "🏷 Vender",
-  mensual: "💰 Proyección $",
   demanda: "📈 Demanda 30d",
 };
 
-const VALID_TABS: DecisionTab[] = ["comprar", "vender", "mensual", "demanda"];
-
-const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-function monthLabel(yyyymm: string): string {
-  const [y, m] = yyyymm.split("-");
-  return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
-}
+const VALID_TABS: DecisionTab[] = ["comprar", "vender", "demanda"];
 
 // V1.31: config de "scope" — cuando llegás desde una card del Resumen de
 // Inventario, el plan se filtra al criterio EXACTO de esa card (via preset del
@@ -107,8 +98,11 @@ const STOCK_BUCKETS: StockBucket[] = ["sin_stock", "bajo", "normal", "sobrestock
 const ROT_BUCKETS: RotBucket[] = ["sin_rot", "baja", "alta"];
 
 function DecisionesContent(): JSX.Element {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab") as DecisionTab | null;
+  const rawTabParam = searchParams.get("tab");
+  const tabParam = rawTabParam as DecisionTab | null;
+  const isLegacyProjectionLink = rawTabParam === "mensual";
   const scopeParam = searchParams.get("scope") ?? "";
   const back = searchParams.get("back") ?? "";
   const scope = (scopeParam in SCOPE_CFG ? scopeParam : "") as ScopePreset | "";
@@ -127,12 +121,19 @@ function DecisionesContent(): JSX.Element {
   const [scopeActivo, setScopeActivo] = useState<ScopePreset | "">(scope);
 
   useEffect(() => {
+    if (isLegacyProjectionLink) return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("tab") !== tab) {
       url.searchParams.set("tab", tab);
       window.history.replaceState({}, "", url);
     }
-  }, [tab]);
+  }, [isLegacyProjectionLink, tab]);
+
+  useEffect(() => {
+    if (isLegacyProjectionLink) {
+      router.replace("/dashboards/analisis?tab=proyeccion");
+    }
+  }, [isLegacyProjectionLink, router]);
 
   function selectTab(t: DecisionTab): void {
     setScopeActivo("");     // cambiar de tab → volver al plan global
@@ -159,6 +160,10 @@ function DecisionesContent(): JSX.Element {
     : "/";
   const backLabel = back === "inventario" ? "← Volver a Inventario" : "← Volver a inicio";
   const cfg = scopeActivo ? SCOPE_CFG[scopeActivo] : null;
+
+  if (isLegacyProjectionLink) {
+    return <Skeleton className="h-96 rounded-xl" />;
+  }
 
   return (
     <div className="space-y-4">
@@ -216,7 +221,6 @@ function DecisionesContent(): JSX.Element {
           ? <PlanScopeado modo="venta" preset={scopeActivo as ScopePreset} titulo={cfg.title} accent={cfg.accent} />
           : <OptimizarTab matrizFilter={matrizFilter} onClearFilter={clearMatrizFilter} />
       )}
-      {tab === "mensual" && <MensualTab />}
       {tab === "demanda" && <DemandaTab />}
     </div>
   );
@@ -246,165 +250,7 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
   );
 }
 
-// ── TAB 1: Mensual (proyección financiera) ──────────────────────────────
-
-function MensualTab(): JSX.Element {
-  const { data } = useSalesForecastMonthly();
-
-  // V1.26: skeleton mientras no hay data (loading o revalidando sin data en cache)
-  // en vez de mostrar "Sin datos" prematuramente.
-  if (!data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
-
-  const cm = data.current_month;
-  const nm = data.next_month;
-  const observed = cm.observed_amount ?? 0;
-  const pendingCurrent = Math.max(0, cm.projected_amount - observed);
-
-  const barData = [
-    { label: monthLabel(cm.month), real: observed, proy: pendingCurrent },
-    { label: monthLabel(nm.month), real: 0, proy: nm.projected_amount },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <div className="space-y-2 text-xs text-text-muted">
-          <p>
-            <strong className="text-text-primary">Cómo se calcula:</strong>{" "}
-            el ritmo de venta diario se toma de los <strong>últimos 90 días completos</strong>{" "}
-            (excluyendo el mes en curso) y se proyecta a los días restantes del mes actual y a todo el mes siguiente.
-          </p>
-          <p>
-            <strong className="text-text-primary">Por qué no cambia día a día:</strong>{" "}
-            el rate se &ldquo;congela&rdquo; sobre datos cerrados, así el número proyectado del mes en curso
-            sólo se mueve por lo que vas vendiendo (parte real), no por re-cálculos del rate.
-            Al cerrar el mes, el rate se actualiza naturalmente con el mes recién terminado.
-          </p>
-          {data.rate_basis && data.rate_basis !== "rolling_90d_complete" && (
-            <p className="text-amber-700">
-              ⚠️ Forecast usando fallback: <strong>{data.rate_basis}</strong> (no hay 90d completos de datos).
-            </p>
-          )}
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Card>
-          <Stat
-            label={`Mes en curso — ${monthLabel(cm.month)}`}
-            value={formatMoneyFull(cm.projected_amount)}
-            subtitle={`Real hasta hoy: ${formatMoneyFull(observed)} · proyectado: ${formatMoneyFull(pendingCurrent)} · confianza ${cm.confidence}`}
-          />
-        </Card>
-        <Card>
-          <Stat
-            label={`Próximo mes — ${monthLabel(nm.month)}`}
-            value={formatMoneyFull(nm.projected_amount)}
-            subtitle={`${nm.days_total} días · confianza ${nm.confidence}${
-              nm.last_year_same_month ? ` · año pasado mismo mes: ${formatMoneyFull(nm.last_year_same_month)}` : ""
-            }`}
-          />
-        </Card>
-      </div>
-
-      <Card header={<h2 className="font-semibold text-text-primary">Mes actual y siguiente</h2>}>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={barData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="#a3a3a3" />
-            <YAxis tick={{ fontSize: 10 }} stroke="#a3a3a3" tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
-            <Tooltip
-              formatter={(value, name) => [formatMoneyFull(Number(value)), name === "real" ? "Real" : "Proyectado"]}
-              contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
-            />
-            <Bar dataKey="real" fill="#7B1818" stackId="a" radius={[0, 0, 0, 0]} name="real" />
-            <Bar dataKey="proy" fill="#FCD34D" stackId="a" radius={[4, 4, 0, 0]} name="proy" />
-          </BarChart>
-        </ResponsiveContainer>
-        <div className="mt-2 flex items-center gap-4 text-xs text-text-muted">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded" style={{ background: "#7B1818" }} /> Real (ya vendido)
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded" style={{ background: "#FCD34D" }} /> Proyectado
-          </span>
-        </div>
-      </Card>
-
-      {/* V1.27: Backtest — proyectado vs real de los últimos 6 meses cerrados.
-          Le permite al usuario ver cuánto se desvía el modelo en la práctica
-          y calibrar su confianza en el número del mes en curso. */}
-      {data.history && data.history.length > 0 && (
-        <Card header={
-          <div>
-            <h2 className="font-semibold text-text-primary">Precisión histórica del modelo</h2>
-            <p className="text-xs text-text-muted">
-              Qué habría proyectado la misma fórmula para meses ya cerrados vs. lo que realmente vendió.
-            </p>
-          </div>
-        }>
-          <div className="-mx-4 overflow-x-auto md:mx-0">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
-                  <th className="py-2 pl-4 pr-2 md:pl-2">Mes</th>
-                  <th className="py-2 px-2 text-right">Proyectado</th>
-                  <th className="py-2 px-2 text-right">Real</th>
-                  <th className="py-2 px-2 text-right">Diferencia</th>
-                  <th className="py-2 pl-2 pr-4 md:pr-2 text-right">Error %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.history.map((h) => {
-                  const delta = h.actual_amount - h.projected_amount;
-                  const sign = delta >= 0 ? "+" : "−";
-                  const errAbs = h.error_pct !== null ? Math.abs(h.error_pct) : null;
-                  const color =
-                    errAbs === null ? "text-text-muted"
-                    : errAbs <= 10 ? "text-green-700"
-                    : errAbs <= 25 ? "text-amber-700"
-                    : "text-red-700";
-                  return (
-                    <tr key={h.month} className="border-b border-border/60">
-                      <td className="py-2 pl-4 pr-2 md:pl-2 font-medium text-text-primary">
-                        {monthLabel(h.month)}
-                      </td>
-                      <td className="py-2 px-2 text-right tabular-nums text-text-muted">
-                        {formatMoneyFull(h.projected_amount)}
-                      </td>
-                      <td className="py-2 px-2 text-right tabular-nums font-semibold">
-                        {formatMoneyFull(h.actual_amount)}
-                      </td>
-                      <td className={`py-2 px-2 text-right tabular-nums ${delta >= 0 ? "text-green-700" : "text-red-700"}`}>
-                        {sign}{formatMoneyFull(Math.abs(delta))}
-                      </td>
-                      <td className={`py-2 pl-2 pr-4 md:pr-2 text-right tabular-nums font-semibold ${color}`}>
-                        {h.error_pct !== null ? `${h.error_pct >= 0 ? "+" : ""}${h.error_pct.toFixed(1)}%` : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 text-[0.65rem] text-text-muted">
-            Error % = (real − proyectado) / real. Positivo = vendiste MÁS de lo que proyectó el modelo.
-            Verde ≤10%, amarillo ≤25%, rojo &gt;25%.
-          </p>
-        </Card>
-      )}
-
-      <Card>
-        <div className="text-xs text-text-muted">
-          <strong className="text-text-primary">Modelo:</strong> {data.model_version}
-          {data.rate_window && (
-            <> · <strong className="text-text-primary">Ventana base:</strong> {data.rate_window.start} → {data.rate_window.end} ({data.rate_window.days_with_sales} días con venta)</>
-          )}
-        </div>
-      </Card>
-    </div>
-  );
-}
+// ── Proyección financiera vive en Análisis; Demanda conserva este forecast. ──
 
 // ── TAB 2: Por demanda — vista de decisiones ────────────────────────────
 
@@ -869,4 +715,3 @@ function SeccionTecnica(): JSX.Element {
     </div>
   );
 }
-

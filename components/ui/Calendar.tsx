@@ -2,6 +2,13 @@
 
 import { useMemo } from "react";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { businessDateISO } from "@/lib/date/business";
+import {
+  calendarCopy,
+  calendarDayAriaLabel,
+  calendarMetricTitle,
+  type CalendarMode,
+} from "@/lib/movimientos/calendar";
 
 export interface CalendarDayData {
   /** YYYY-MM-DD */
@@ -13,6 +20,8 @@ export interface CalendarDayData {
 }
 
 interface CalendarProps {
+  /** Define la terminología accesible y visual del movimiento. */
+  mode: CalendarMode;
   /** YYYY-MM del mes a renderizar. */
   month: string;
   /** Datos por día (alineados con day del mes). Días ausentes se renderizan en blanco. */
@@ -37,11 +46,11 @@ function weekdayMonStart(year: number, monthIdx0: number, day: number): number {
 
 /**
  * Calendario de un mes con celdas clickeables. Cada celda muestra el día,
- * las ventas como número grande, y debajo facturas + ticket promedio.
+ * el total como número grande, y debajo cantidad de documentos + promedio.
  * La intensidad de un mini-bar al pie refleja qué tan fuerte fue el día
  * comparado con el mejor del mes (para identificar visualmente los picos).
  */
-export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProps): JSX.Element {
+export function Calendar({ mode, month, days, onDayClick, selectedDate }: CalendarProps): JSX.Element {
   const [yearStr = "2026", monthStr = "01"] = month.split("-");
   const year = Number(yearStr);
   const monthIdx0 = Number(monthStr) - 1;
@@ -58,7 +67,7 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
   const maxSales = useMemo(() => {
     let max = 0;
     days.forEach((d) => {
-      if (d.sales > max) max = d.sales;
+      if (Math.abs(d.sales) > max) max = Math.abs(d.sales);
     });
     return max;
   }, [days]);
@@ -67,7 +76,8 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
   for (let i = 0; i < firstWeekday; i++) cells.push(null);
   for (let d = 1; d <= totalDays; d++) cells.push({ day: d, data: byDay.get(d) });
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = businessDateISO();
+  const copy = calendarCopy(mode);
 
   return (
     <div className="space-y-2">
@@ -90,27 +100,42 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
           const isSelected = isoDate === selectedDate;
           const isWeekend = (i % 7) >= 5;
           const data = cell.data;
-          const hasData = data && data.sales > 0;
-          const intensity = hasData && maxSales > 0 ? data.sales / maxSales : 0;
+          const hasRecord = data !== undefined;
+          const hasMovement = Boolean(data && (data.invoices > 0 || data.sales !== 0));
+          // A net-zero day can still contain invoices/returns and must remain inspectable.
+          const isSelectable = Boolean(data && data.invoices > 0) || Boolean(data && data.sales !== 0);
+          const intensity = hasMovement && maxSales > 0 ? Math.abs(data?.sales ?? 0) / maxSales : 0;
 
           return (
             <button
               key={isoDate}
               type="button"
-              onClick={() => hasData && onDayClick(isoDate)}
-              disabled={!hasData}
+              onClick={() => isSelectable && onDayClick(isoDate)}
+              disabled={!isSelectable}
               className={[
-                "relative flex flex-col rounded-xl border p-2 text-left transition-all",
+                "relative flex flex-col rounded-xl border p-2 text-left transition-[transform,border-color,box-shadow,background-color] motion-reduce:transition-none",
                 "min-h-[90px]",
                 isSelected
-                  ? "border-primary-light bg-primary/5 ring-2 ring-primary/30"
-                  : "border-border bg-white",
-                hasData
-                  ? "cursor-pointer hover:border-primary hover:shadow-md hover:-translate-y-0.5"
-                  : "cursor-default opacity-50",
-                isWeekend && !hasData && "bg-surface-alt",
+                  ? "border-primary-light bg-primary/10 ring-2 ring-primary/30"
+                  : hasRecord
+                    ? "border-border bg-surface"
+                    : "border-dashed border-border/80 bg-surface-alt/30",
+                isSelectable
+                  ? "cursor-pointer hover:-translate-y-0.5 hover:border-primary hover:shadow-md motion-reduce:hover:translate-y-0"
+                  : "cursor-default",
+                isWeekend && !hasRecord && "bg-surface-alt/60",
               ].filter(Boolean).join(" ")}
-              aria-label={`${cell.day} de ${monthStr}: ${formatMoneyFull(data?.sales ?? 0)} en ventas`}
+              aria-label={
+                hasRecord
+                  ? calendarDayAriaLabel(
+                      mode,
+                      cell.day,
+                      monthStr,
+                      formatMoneyFull(data.sales),
+                      data.invoices,
+                    )
+                  : `${cell.day} de ${monthStr}: datos diarios no disponibles`
+              }
             >
               {/* Día número */}
               <div className="flex items-center justify-between">
@@ -128,29 +153,41 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
               </div>
 
               {/* Métricas */}
-              {hasData ? (
+              {hasMovement && data ? (
                 <div className="mt-auto">
                   <div
                     className="text-xs font-bold text-text-primary leading-tight tabular-nums"
-                    title={`${formatMoneyFull(data.sales)} · ${data.invoices} facturas · ticket ${formatMoneyFull(data.avgTicket)}`}
+                    title={calendarMetricTitle(
+                      mode,
+                      formatMoneyFull(data.sales),
+                      data.invoices,
+                      formatMoneyFull(data.avgTicket),
+                    )}
                   >
                     {formatMoneyFull(data.sales)}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
-                    <span>{data.invoices} fac</span>
+                    <span>{data.invoices} {copy.countShort}</span>
                     <span>·</span>
                     <span className="tabular-nums">{formatMoneyFull(data.avgTicket)}</span>
                   </div>
                   {/* Mini-bar de intensidad */}
                   <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-alt">
                     <div
-                      className="h-full rounded-full bg-primary transition-all"
+                      className="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none"
                       style={{ width: `${Math.max(8, intensity * 100)}%` }}
                     />
                   </div>
+                  {data.sales === 0 && data.invoices > 0 && (
+                    <span className="mt-1 inline-flex rounded-full bg-warning/10 px-1.5 py-0.5 text-[9px] font-semibold text-warning">
+                      {copy.zeroBadge}
+                    </span>
+                  )}
                 </div>
+              ) : hasRecord ? (
+                <div className="mt-auto text-[10px] font-medium text-text-muted">Sin movimiento</div>
               ) : (
-                <div className="mt-auto text-[10px] text-text-muted">Sin ventas</div>
+                <div className="mt-auto text-[10px] text-text-muted/80">No cargado</div>
               )}
             </button>
           );
@@ -158,8 +195,11 @@ export function Calendar({ month, days, onDayClick, selectedDate }: CalendarProp
       </div>
 
       {/* Leyenda */}
-      <div className="flex items-center gap-3 pt-2 text-[11px] text-text-muted">
-        <span>Click en un día para ver el detalle completo.</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-[11px] text-text-muted">
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> Con movimiento</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-warning" /> {copy.zeroLegend}</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border border-dashed border-border-strong" /> No cargado</span>
+        <span className="basis-full">Seleccioná un día con movimiento para ver su detalle.</span>
       </div>
     </div>
   );
