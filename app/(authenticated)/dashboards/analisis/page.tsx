@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useSWRConfig } from "swr";
 import {
   CATEGORIA_LABELS,
@@ -21,26 +23,32 @@ import { useAuthStore } from "@/lib/auth/store";
 import { HeatmapDiaHora } from "@/components/ventas/HeatmapDiaHora";
 import { ProductosTopTab } from "@/components/analisis/ProductosTopTab";
 import { ProveedoresTab } from "@/components/analisis/ProveedoresTab";
+import { ProyeccionTab } from "@/components/analisis/ProyeccionTab";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
+  allowedAnalysisTabs,
+  resolveAnalysisTab,
+  type AnalysisTab,
+} from "@/lib/auth/analysis";
+import { nextTabIndex } from "@/lib/accessibility/tabs";
+import { businessDateISO, shiftDateISO } from "@/lib/date/business";
+import {
   ComposedChart, Bar, Line, LineChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 
-type Tab = "balance" | "productos" | "proveedores" | "horas" | "gastos";
+type Tab = AnalysisTab;
 type Shortcut = "semana" | "mes" | "3meses" | "anio" | "todo" | "custom";
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return businessDateISO();
 }
 
 function shiftISO(date: string, days: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return shiftDateISO(date, days);
 }
 
 function startOfMonth(date: string): string {
@@ -204,7 +212,7 @@ function BalanceTab({ ini, fin, shortcut }: { ini: string; fin: string; shortcut
     setSelYear(null);
     setSelMonth(null);
     setSelWeek(null);
-  }, [ini, fin, shortcut]);
+  }, [ini, fin, initialLevel]);
 
   // ── ALL useMemo hooks BEFORE early returns ──────────────────────────────
   const filtered = useMemo(() => {
@@ -240,7 +248,6 @@ function BalanceTab({ ini, fin, shortcut }: { ini: string; fin: string; shortcut
   }
 
   // ── Drill logic ──────────────────────────────────────────────────────────
-  const isInitial = selYear == null && selMonth == null && selWeek == null;
   const canGoUp = displayLevel !== initialLevel;
 
   const drillDown = (key: string) => {
@@ -995,12 +1002,48 @@ function GastosTab(): JSX.Element {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-export default function AnalisisPage(): JSX.Element {
+function AnalisisContent(): JSX.Element {
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const role = useAuthStore((state) => state.role);
+  const enabledFeatures = useAuthStore((state) => state.enabledFeatures);
+  const allowedModules = useAuthStore((state) => state.allowedModules);
+  const allowedTabs = useMemo(
+    () => allowedAnalysisTabs({ role, enabledFeatures, allowedModules }),
+    [allowedModules, enabledFeatures, role],
+  );
+  const canSeeAnalysis = allowedTabs.includes("balance");
+  const canSeeProjection = allowedTabs.includes("proyeccion");
   const [shortcut, setShortcut] = useState<Shortcut>("mes");
   const initialRange = rangeFromShortcut("mes");
   const [ini, setIni] = useState<string>(initialRange.ini);
   const [fin, setFin] = useState<string>(initialRange.fin);
-  const [tab, setTab] = useState<Tab>("balance");
+  const [tab, setTab] = useState<Tab>(() => (
+    resolveAnalysisTab(requestedTab, null, allowedTabs) ?? "balance"
+  ));
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  useEffect(() => {
+    setTab((current) => resolveAnalysisTab(requestedTab, current, allowedTabs) ?? "balance");
+  }, [allowedTabs, requestedTab]);
+
+  function selectTab(nextTab: Tab): void {
+    if (!allowedTabs.includes(nextTab)) return;
+    setTab(nextTab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", nextTab);
+    window.history.replaceState({}, "", url);
+  }
+
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void {
+    const nextIndex = nextTabIndex(index, tabs.length, event.key);
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const next = tabs[nextIndex];
+    if (!next) return;
+    selectTab(next.key);
+    tabRefs.current[nextIndex]?.focus();
+  }
 
   const applyShortcut = (sc: Shortcut) => {
     setShortcut(sc);
@@ -1019,13 +1062,15 @@ export default function AnalisisPage(): JSX.Element {
     { key: "todo", label: "Todo" },
   ];
 
-  const tabs: { key: Tab; label: string }[] = [
+  const allTabs: { key: Tab; label: string }[] = [
     { key: "balance", label: "📊 Balance" },
     { key: "productos", label: "🏆 Productos top" },
     { key: "proveedores", label: "🏷 Proveedores" },
     { key: "horas", label: "⏰ Horas pico" },
     { key: "gastos", label: "💸 Gastos operativos" },
+    { key: "proyeccion", label: "◎ Proyección" },
   ];
+  const tabs = allTabs.filter((item) => allowedTabs.includes(item.key));
 
   return (
     <div className="space-y-4">
@@ -1034,12 +1079,12 @@ export default function AnalisisPage(): JSX.Element {
       <div>
         <h1 className="text-xl font-bold text-text-primary">Análisis</h1>
         <p className="text-sm text-text-muted">
-          Balance, productos top, proveedores, horas pico y rentabilidad real del negocio
+          Balance, productos, operación y proyección financiera del negocio
         </p>
       </div>
 
-      {/* Selector de rango */}
-      <Card>
+      {/* La proyección usa su propio horizonte de modelo y no hereda filtros históricos. */}
+      {canSeeAnalysis && tab !== "proyeccion" && <Card>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-2">
             {shortcuts.map((sc) => (
@@ -1078,27 +1123,57 @@ export default function AnalisisPage(): JSX.Element {
             </label>
           </div>
         </div>
-      </Card>
+      </Card>}
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((t) => (
+      <div role="tablist" aria-label="Secciones de análisis" className="flex flex-wrap gap-2 border-b border-border pb-3">
+        {tabs.map((t, index) => (
           <button
             key={t.key}
+            ref={(element) => {
+              tabRefs.current[index] = element;
+            }}
             type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab === t.key ? "bg-surface-dark text-text-inverse" : "bg-surface-alt text-text-secondary"}`}
+            id={`analisis-tab-${t.key}`}
+            role="tab"
+            aria-selected={tab === t.key}
+            aria-controls={`analisis-panel-${t.key}`}
+            tabIndex={tab === t.key ? 0 : -1}
+            onClick={() => selectTab(t.key)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold transition-[background-color,color,transform] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${tab === t.key ? "bg-surface-dark text-text-inverse shadow-sm" : "bg-surface-alt text-text-secondary hover:-translate-y-0.5 hover:text-text-primary motion-reduce:hover:translate-y-0"}`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {tab === "balance" && <BalanceTab ini={ini} fin={fin} shortcut={shortcut} />}
-      {tab === "productos" && <ProductosTopTab ini={ini} fin={fin} />}
-      {tab === "proveedores" && <ProveedoresTab ini={ini} fin={fin} />}
-      {tab === "horas" && <HorasPicoTab ini={ini} fin={fin} />}
-      {tab === "gastos" && <GastosTab />}
+      {tabs.map((item) => (
+        <div
+          key={item.key}
+          role="tabpanel"
+          id={`analisis-panel-${item.key}`}
+          aria-labelledby={`analisis-tab-${item.key}`}
+          hidden={tab !== item.key}
+          tabIndex={tab === item.key ? 0 : undefined}
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
+          {tab === "balance" && item.key === "balance" && <BalanceTab ini={ini} fin={fin} shortcut={shortcut} />}
+          {tab === "productos" && item.key === "productos" && <ProductosTopTab ini={ini} fin={fin} />}
+          {tab === "proveedores" && item.key === "proveedores" && <ProveedoresTab ini={ini} fin={fin} />}
+          {tab === "horas" && item.key === "horas" && <HorasPicoTab ini={ini} fin={fin} />}
+          {tab === "gastos" && item.key === "gastos" && <GastosTab />}
+          {tab === "proyeccion" && item.key === "proyeccion" && canSeeProjection && <ProyeccionTab />}
+        </div>
+      ))}
     </div>
+  );
+}
+
+export default function AnalisisPage(): JSX.Element {
+  return (
+    <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+      <AnalisisContent />
+    </Suspense>
   );
 }
