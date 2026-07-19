@@ -21,6 +21,14 @@ import {
   type TopSkuItem,
 } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { businessMonthISO, shiftDateISO } from "@/lib/date/business";
+import {
+  selectSalesDate,
+  selectSalesMonth,
+  syncSalesSelection,
+  type SalesSelectionState,
+} from "@/lib/sales/movimientos";
+import { useAuthStore } from "@/lib/auth/store";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Table } from "@/components/ui/Table";
@@ -51,11 +59,6 @@ type DailyPoint = {
   avg_ticket: number;
   accumulated: number;
 };
-
-function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
 
 function monthLabel(month: string): string {
   const [year, rawMonth] = month.split("-");
@@ -89,12 +92,6 @@ function dayFromDate(date: string | undefined): number {
   return Number(date.slice(8, 10)) || 0;
 }
 
-function shiftDay(date: string, delta: number): string {
-  const d = new Date(`${date}T12:00:00`);
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
 const formatCurrencyFull = formatMoneyFull;
 
 function pctDelta(current: number, previous: number): string {
@@ -123,8 +120,15 @@ function fillDailySeries(days: DailyPoint[] | undefined, month: string, visibleD
 
 export function VentasView(): JSX.Element {
   const [tab, setTab] = useState<Tab>("diaria");
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const currentTenant = useAuthStore((state) => state.currentTenant);
+  const [selection, setSelection] = useState<SalesSelectionState>(() => ({
+    scopeKey: null,
+    selectedDate: "",
+    selectedMonth: businessMonthISO(),
+    followLatest: true,
+    followBusinessMonth: true,
+  }));
+  const { selectedDate, selectedMonth } = selection;
 
   const selectedYear = Number(selectedMonth.slice(0, 4));
   const prevYearMonth = previousYearMonth(selectedMonth);
@@ -134,10 +138,14 @@ export function VentasView(): JSX.Element {
 
   useEffect(() => {
     const maxDate = sales.data?.max_sales_date;
-    if (maxDate) {
-      setSelectedDate((prev) => prev || maxDate);
-    }
-  }, [sales.data?.max_sales_date]);
+    const businessMonth = sales.data?.business_month;
+    if (!maxDate || !businessMonth) return;
+    setSelection((current) => syncSalesSelection(current, {
+      scopeKey: `${currentTenant ?? "_no_tenant"}:${businessMonth}`,
+      maxDate,
+      businessMonth,
+    }));
+  }, [currentTenant, sales.data?.business_month, sales.data?.max_sales_date]);
   const daily = useSalesDailyMonth(selectedMonth);
   const dailyPrevYear = useSalesDailyMonth(prevYearMonth);
   const dailyPrevMonth = useSalesDailyMonth(prevMonth);
@@ -180,6 +188,14 @@ export function VentasView(): JSX.Element {
   const trendCurr = new Map((trend.data?.items??[]).filter(i=>i.year===selectedYear).map(i=>[i.month,i.total_ventas]));
   const trendP = new Map((trendPrev.data?.items??[]).map(i=>[i.month,i.total_ventas]));
 
+  const dailyMatchesSelectedMonth = dm?.month === selectedMonth;
+  const summaryDateMissingFromDaily = Boolean(
+    d?.max_sales_date?.startsWith(`${selectedMonth}-`) &&
+    dailyMatchesSelectedMonth &&
+    !daily.isLoading &&
+    !dm?.days.some((item) => item.date === d.max_sales_date),
+  );
+
   if (!d) return <div className="p-4"><Skeleton className="h-60 rounded-xl" /></div>;
 
   const tabs: Tab[] = ["diaria","mensual","anual","historica","caja"];
@@ -203,11 +219,32 @@ export function VentasView(): JSX.Element {
           <input
             type="month"
             value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
+            onChange={(event) => setSelection((current) => selectSalesMonth(
+              current,
+              event.target.value,
+              d.business_month,
+            ))}
             className="mt-1 block rounded-xl border border-border bg-surface px-3 py-2 text-sm font-normal normal-case tracking-normal text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
         </label>
       </div>
+
+      {summaryDateMissingFromDaily && (
+        <div role="alert" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-text-secondary">
+          <p className="font-semibold text-text-primary">Los datos diarios todavía no coinciden con el resumen.</p>
+          <p className="mt-0.5 text-xs text-text-muted">
+            El resumen llega hasta {d.max_sales_date}, pero ese día aún no aparece en el calendario de {monthLabel(selectedMonth)}.
+            Estamos mostrando ambos estados sin ocultar la diferencia; reintentá en unos instantes.
+          </p>
+          <button
+            type="button"
+            onClick={() => void daily.mutate()}
+            className="mt-2 rounded-lg border border-warning/40 bg-surface px-3 py-1.5 text-xs font-semibold text-text-primary transition-colors hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning"
+          >
+            Actualizar calendario
+          </button>
+        </div>
+      )}
 
       <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0 md:border-b-0 md:pb-0">
         <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
@@ -274,9 +311,10 @@ export function VentasView(): JSX.Element {
                     avgTicket: d.avg_ticket,
                   }))}
                 onDayClick={(date) => {
-                  setSelectedDate(date);
+                  setSelection((current) => selectSalesDate(current, date, d.max_sales_date));
                   setTab("diaria");
                 }}
+                selectedDate={selectedDate}
               />
             ) : (
               <p className="py-12 text-center text-sm text-text-muted">Sin ventas registradas en {monthLabel(selectedMonth)}.</p>
@@ -325,7 +363,6 @@ export function VentasView(): JSX.Element {
 
           {monthDetail.data && (
             <>
-                selectedDate={selectedDate}
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <Card>
                   <Stat
@@ -481,7 +518,11 @@ export function VentasView(): JSX.Element {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => setSelectedDate(shiftDay(selectedDate, -1))}
+                onClick={() => setSelection((current) => selectSalesDate(
+                  current,
+                  shiftDateISO(selectedDate, -1),
+                  d.max_sales_date,
+                ))}
                 disabled={!selectedDate}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-sm transition hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Día anterior"
@@ -491,13 +532,21 @@ export function VentasView(): JSX.Element {
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => setSelection((current) => selectSalesDate(
+                  current,
+                  e.target.value,
+                  d.max_sales_date,
+                ))}
                 max={d?.max_sales_date ?? undefined}
                 className="block rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
               />
               <button
                 type="button"
-                onClick={() => setSelectedDate(shiftDay(selectedDate, 1))}
+                onClick={() => setSelection((current) => selectSalesDate(
+                  current,
+                  shiftDateISO(selectedDate, 1),
+                  d.max_sales_date,
+                ))}
                 disabled={!selectedDate || selectedDate >= (d?.max_sales_date ?? "")}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-sm transition hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Día siguiente"
