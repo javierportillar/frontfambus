@@ -2006,6 +2006,8 @@ export interface AdminUser {
   tenants_allowed: string[];
   allowed_modules: string[];
   active: boolean;
+  source: "supabase" | "legacy";
+  manageable: boolean;
   created_by?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
