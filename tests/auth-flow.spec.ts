@@ -8,7 +8,8 @@ test.describe("Auth flow", () => {
 
   test("login muestra formulario", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.locator("h1")).toHaveText("MotoShop");
+    await expect(page.locator("h1")).toHaveText("Portal empresarial");
+    await expect(page.getByText("MotoShop + MasVital")).toBeVisible();
     await expect(page.locator('input[placeholder="Tu usuario"]')).toBeVisible();
     await expect(
       page.locator('input[placeholder="Tu contraseña"]'),

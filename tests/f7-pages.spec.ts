@@ -65,7 +65,7 @@ test.describe("Login page", () => {
   test("renderiza en mobile", async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.mobile);
     await page.goto("/login");
-    await expect(page.locator("h1")).toHaveText("MotoShop");
+    await expect(page.locator("h1")).toHaveText("Portal empresarial");
     await expect(page.locator('input[placeholder="Tu usuario"]')).toBeVisible();
     await expect(page.locator('input[placeholder="Tu contraseña"]')).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toBeVisible();
@@ -74,13 +74,13 @@ test.describe("Login page", () => {
   test("renderiza en tablet", async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.tablet);
     await page.goto("/login");
-    await expect(page.locator("h1")).toHaveText("MotoShop");
+    await expect(page.locator("h1")).toHaveText("Portal empresarial");
   });
 
   test("renderiza en desktop", async ({ page }) => {
     await page.setViewportSize(VIEWPORTS.desktop);
     await page.goto("/login");
-    await expect(page.locator("h1")).toHaveText("MotoShop");
+    await expect(page.locator("h1")).toHaveText("Portal empresarial");
   });
 });
 
