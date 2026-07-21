@@ -111,12 +111,15 @@ function LoginForm(): JSX.Element {
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-white shadow-lg">
-            M
+          <div
+            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-xl font-bold tracking-tight text-white shadow-lg"
+            aria-label="MotoShop y MasVital"
+          >
+            M<span className="text-accent">+</span>
           </div>
-          <h1 className="text-2xl font-bold text-secondary-dark">MotoShop</h1>
+          <h1 className="text-2xl font-bold text-secondary-dark">Portal empresarial</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Consulta de catálogo y stock
+            MotoShop + MasVital · Tu acceso define qué empresa podés ver
           </p>
         </div>
 

@@ -18,6 +18,6 @@ test.describe("Dashboards", () => {
   test("login protegido para dashboards", async ({ page }) => {
     await page.goto("/dashboards");
     await expect(page).toHaveURL(/\/login/);
-    await expect(page.locator("h1")).toHaveText("MotoShop");
+    await expect(page.locator("h1")).toHaveText("Portal empresarial");
   });
 });
