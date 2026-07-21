@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useMemo, useRef, useState } from "react";
-import { apiFetchJson } from "@/lib/api/client";
+import { apiFetch, apiFetchJson } from "@/lib/api/client";
 import { IdempotentMutation } from "@/lib/api/idempotentMutation";
 import {
   type ExpiryLot,
@@ -60,13 +60,14 @@ function errorMessage(error: unknown, fallback: string): string {
 
 export function ExpiryLotsTab(): JSX.Element {
   const role = useAuthStore((s) => s.role);
+  const canCreate = role === "admin" || role === "gerente" || role === "vendedor";
   const canManage = role === "admin" || role === "gerente";
   const { data, error, isLoading, mutate } = useExpiryLots();
   const [form, setForm] = useState<CaducidadForm>(EMPTY_FORM);
   const [formOpen, setFormOpen] = useState(false);
-  // Cuando editingLotId != null el formulario edita ese lote (PATCH); si es null, crea (POST).
   const [editingLotId, setEditingLotId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingLotId, setDeletingLotId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const receiptMutation = useRef<IdempotentMutation | null>(null);
   const receiptMutationHandler =
@@ -75,11 +76,10 @@ export function ExpiryLotsTab(): JSX.Element {
   // ── Cascade proveedor → factura → producto (compras reales de MasVital) ──
   const rangoIni = useMemo(() => isoDaysAgo(365), []);
   const rangoFin = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [manualMode, setManualMode] = useState(false);
   const [selNit, setSelNit] = useState("");
   const [selDoc, setSelDoc] = useState("");
-  const proveedores = useComprasPorProveedor(manualMode ? "" : rangoIni, manualMode ? "" : rangoFin);
-  const detalle = useComprasProveedorDetalle(!manualMode && selNit ? selNit : null, rangoIni, rangoFin);
+  const proveedores = useComprasPorProveedor(rangoIni, rangoFin);
+  const detalle = useComprasProveedorDetalle(selNit ? selNit : null, rangoIni, rangoFin);
   const provList = useMemo(
     () => (proveedores.data?.proveedores ?? []).filter((p) => !!p.nit),
     [proveedores.data],
@@ -89,6 +89,7 @@ export function ExpiryLotsTab(): JSX.Element {
     () => (selDoc ? docList.find((d) => d.num_documento === selDoc)?.items ?? [] : []),
     [docList, selDoc],
   );
+  const isEditing = editingLotId !== null;
 
   function pickProveedor(nit: string): void {
     setSelNit(nit);
@@ -96,19 +97,29 @@ export function ExpiryLotsTab(): JSX.Element {
     const prov = provList.find((p) => p.nit === nit);
     setForm((r) => ({ ...r, supplier: prov?.nombre ?? "", purchase_order_ref: "", product_sku: "" }));
   }
+
   function pickDoc(num: string): void {
     setSelDoc(num);
-    setForm((r) => ({ ...r, purchase_order_ref: num, product_sku: "" }));
+    const doc = docList.find((d) => d.num_documento === num);
+    setForm((r) => ({
+      ...r,
+      purchase_order_ref: num,
+      product_sku: "",
+      received_on: doc?.fecha ? doc.fecha.slice(0, 10) : r.received_on,
+      received_quantity: "",
+    }));
   }
+
   function pickProducto(cod: string): void {
     const it = docItems.find((i) => i.cod_producto === cod);
     setForm((r) => ({
       ...r,
       product_sku: cod,
-      // Prefill cantidad comprada como sugerencia (editable) sólo si está vacía.
-      received_quantity: it && !r.received_quantity ? String(it.cantidad) : r.received_quantity,
+      // Prefill cantidad comprada como sugerencia; el lote físico puede ser parcial.
+      received_quantity: it ? String(it.cantidad) : r.received_quantity,
     }));
   }
+
   function resetCascade(): void {
     setSelNit("");
     setSelDoc("");
@@ -117,7 +128,6 @@ export function ExpiryLotsTab(): JSX.Element {
   function startCreate(): void {
     setEditingLotId(null);
     setForm(EMPTY_FORM);
-    setManualMode(false);
     resetCascade();
     setMessage(null);
     setFormOpen(true);
@@ -135,9 +145,6 @@ export function ExpiryLotsTab(): JSX.Element {
       supplier: lot.supplier ?? "",
       notes: lot.notes ?? "",
     });
-    // Editar arranca en modo manual: se ven los valores actuales tal cual. Si el
-    // usuario quiere cambiar el producto por otro, alterna a "Elegir de compras".
-    setManualMode(true);
     resetCascade();
     setMessage(null);
     setFormOpen(true);
@@ -157,20 +164,19 @@ export function ExpiryLotsTab(): JSX.Element {
 
   async function submitForm(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    if (editingLotId && !canManage) {
+      setMessage({ type: "error", text: "No tenés permiso para editar caducidades." });
+      return;
+    }
     setSubmitting(true);
     setMessage(null);
     try {
       if (editingLotId) {
-        // Edición de metadatos: PATCH directo (no lleva clave de idempotencia).
-        // Enviamos supplier/notes vacíos como null para permitir limpiarlos.
         const patch = {
-          product_sku: form.product_sku,
-          purchase_order_ref: form.purchase_order_ref,
           lot_code: form.lot_code,
           expires_on: form.expires_on,
           received_on: form.received_on || undefined,
           received_quantity: Number(form.received_quantity),
-          supplier: form.supplier.trim() ? form.supplier.trim() : null,
           notes: form.notes.trim() ? form.notes.trim() : null,
         };
         await apiFetchJson(`/api/expiry/lots/${encodeURIComponent(editingLotId)}`, {
@@ -217,6 +223,35 @@ export function ExpiryLotsTab(): JSX.Element {
     }
   }
 
+  async function deleteLot(lot: ExpiryLot): Promise<void> {
+    const confirmed = window.confirm(
+      `¿Eliminar la caducidad del lote ${lot.lot_code} (${lot.product_sku})? Esta acción no modifica el inventario del sistema.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingLotId(lot.id);
+    setMessage(null);
+    try {
+      const response = await apiFetch(`/api/expiry/lots/${encodeURIComponent(lot.id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`API error ${response.status} on DELETE /api/expiry/lots: ${body}`);
+      }
+      await mutate();
+      if (editingLotId === lot.id) closeForm();
+      setMessage({ type: "success", text: "Caducidad eliminada." });
+    } catch (deleteError) {
+      setMessage({
+        type: "error",
+        text: errorMessage(deleteError, "No se pudo eliminar la caducidad. Intentá de nuevo."),
+      });
+    } finally {
+      setDeletingLotId(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card
@@ -225,11 +260,11 @@ export function ExpiryLotsTab(): JSX.Element {
             <div>
               <h2 className="text-base font-semibold text-text-primary">Caducidad por lote</h2>
               <p className="mt-1 text-sm text-text-muted">
-                Registro manual de vencimientos de MasVital. Es independiente del stock del sistema:
-                editar un registro no modifica el inventario de los dashboards.
+                Registro de vencimientos de MasVital desde compras reales. Editar o eliminar una caducidad no modifica
+                el inventario de los dashboards.
               </p>
             </div>
-            {canManage && (
+            {canCreate && (
               <button
                 type="button"
                 onClick={() => (formOpen ? closeForm() : startCreate())}
@@ -262,130 +297,91 @@ export function ExpiryLotsTab(): JSX.Element {
         </p>
       )}
 
-      {canManage && formOpen && (
+      {(isEditing ? canManage : canCreate) && formOpen && (
         <Card
           header={
             <h3 className="text-sm font-semibold text-text-primary">
-              {editingLotId ? "Editar caducidad" : "Registrar nueva caducidad"}
+              {isEditing ? "Editar caducidad" : "Registrar nueva caducidad"}
             </h3>
           }
         >
           <form onSubmit={submitForm} className="grid gap-3 md:grid-cols-2">
-            {/* Toggle: elegir desde compras reales (cascada) o escribir a mano */}
-            <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt/60 px-3 py-2">
-              <span className="text-xs text-text-secondary">
-                {manualMode
-                  ? "Modo manual: escribí proveedor, documento y SKU."
-                  : "Elegí proveedor → factura → producto de las compras reales (últimos 12 meses)."}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setManualMode((m) => !m);
-                  resetCascade();
-                }}
-                className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface-alt"
-              >
-                {manualMode ? "Elegir de compras" : "Escribir a mano"}
-              </button>
+            <div className="md:col-span-2 rounded-xl border border-border bg-surface-alt/60 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Origen de compra</p>
+              {isEditing ? (
+                <div className="mt-2 grid gap-2 text-sm text-text-secondary sm:grid-cols-3">
+                  <ReadonlyValue label="Proveedor" value={form.supplier || "Sin proveedor registrado"} />
+                  <ReadonlyValue label="Documento" value={form.purchase_order_ref} />
+                  <ReadonlyValue label="SKU" value={form.product_sku} />
+                  <p className="sm:col-span-3 text-xs text-text-muted">
+                    El origen queda bloqueado para no inventar datos maestros. Si proveedor, documento o SKU están mal,
+                    eliminá este registro y crealo de nuevo desde la compra correcta.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <FormField label="Proveedor" required>
+                    <select
+                      required
+                      value={selNit}
+                      onChange={(e) => pickProveedor(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="">
+                        {proveedores.isLoading ? "Cargando proveedores…" : `Seleccioná (${provList.length})`}
+                      </option>
+                      {provList.map((p) => (
+                        <option key={p.nit ?? p.nombre} value={p.nit ?? ""}>
+                          {p.nombre} · {p.num_documentos} doc
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Factura / documento" required>
+                    <select
+                      required
+                      value={selDoc}
+                      onChange={(e) => pickDoc(e.target.value)}
+                      disabled={!selNit || detalle.isLoading}
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                    >
+                      <option value="">
+                        {!selNit
+                          ? "Elegí proveedor"
+                          : detalle.isLoading
+                            ? "Cargando facturas…"
+                            : `Seleccioná (${docList.length})`}
+                      </option>
+                      {docList.map((d) => (
+                        <option key={d.num_documento} value={d.num_documento}>
+                          {d.num_documento}
+                          {d.fecha ? ` · ${d.fecha}` : ""} · {d.num_items} ítems
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField label="Producto (SKU)" required>
+                    <select
+                      required
+                      value={form.product_sku}
+                      onChange={(e) => pickProducto(e.target.value)}
+                      disabled={!selDoc}
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                    >
+                      <option value="">{!selDoc ? "Elegí factura" : `Seleccioná (${docItems.length})`}</option>
+                      {docItems.map((it) => (
+                        <option key={it.cod_producto} value={it.cod_producto}>
+                          {it.cod_producto} · {it.nom_producto} · {formatQuantity(it.cantidad)} {it.unidad_medida ?? "u"}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+              )}
             </div>
 
-            {!manualMode ? (
-              <>
-                {/* Proveedor (dropdown) */}
-                <FormField label="Proveedor" required>
-                  <select
-                    required
-                    value={selNit}
-                    onChange={(e) => pickProveedor(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="">
-                      {proveedores.isLoading ? "Cargando proveedores…" : `Seleccioná (${provList.length})`}
-                    </option>
-                    {provList.map((p) => (
-                      <option key={p.nit ?? p.nombre} value={p.nit ?? ""}>
-                        {p.nombre} · {p.num_documentos} doc
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                {/* Factura / documento (filtrada por proveedor) */}
-                <FormField label="Factura / documento" required>
-                  <select
-                    required
-                    value={selDoc}
-                    onChange={(e) => pickDoc(e.target.value)}
-                    disabled={!selNit || detalle.isLoading}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
-                  >
-                    <option value="">
-                      {!selNit
-                        ? "Elegí un proveedor primero"
-                        : detalle.isLoading
-                          ? "Cargando facturas…"
-                          : `Seleccioná (${docList.length})`}
-                    </option>
-                    {docList.map((d) => (
-                      <option key={d.num_documento} value={d.num_documento}>
-                        {d.num_documento}
-                        {d.fecha ? ` · ${d.fecha}` : ""} · {d.num_items} ítems
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                {/* Producto / SKU (filtrado por factura) */}
-                <FormField label="Producto (SKU)" required>
-                  <select
-                    required
-                    value={form.product_sku}
-                    onChange={(e) => pickProducto(e.target.value)}
-                    disabled={!selDoc}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
-                  >
-                    <option value="">{!selDoc ? "Elegí una factura primero" : `Seleccioná (${docItems.length})`}</option>
-                    {docItems.map((it) => (
-                      <option key={it.cod_producto} value={it.cod_producto}>
-                        {it.cod_producto} · {it.nom_producto} · {it.cantidad} {it.unidad_medida ?? "u"}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-              </>
-            ) : (
-              <>
-                <FormField label="Proveedor">
-                  <input
-                    value={form.supplier}
-                    onChange={(e) => setForm({ ...form, supplier: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    maxLength={255}
-                  />
-                </FormField>
-                <FormField label="Orden o documento de compra" required>
-                  <input
-                    required
-                    value={form.purchase_order_ref}
-                    onChange={(e) => setForm({ ...form, purchase_order_ref: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    maxLength={128}
-                  />
-                </FormField>
-                <FormField label="SKU del producto" required>
-                  <input
-                    required
-                    value={form.product_sku}
-                    onChange={(e) => setForm({ ...form, product_sku: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    maxLength={128}
-                  />
-                </FormField>
-              </>
-            )}
-
-            {/* Lote: nunca viene de Hermes, siempre manual */}
             <FormField label="Lote" required>
               <input
                 required
@@ -432,12 +428,12 @@ export function ExpiryLotsTab(): JSX.Element {
                 maxLength={2000}
               />
             </FormField>
-            <div className="md:col-span-2 flex items-center gap-3">
+            <div className="md:col-span-2 flex flex-wrap items-center gap-3">
               <button
                 disabled={submitting}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
               >
-                {submitting ? "Guardando…" : editingLotId ? "Guardar cambios" : "Guardar caducidad"}
+                {submitting ? "Guardando…" : isEditing ? "Guardar cambios" : "Guardar caducidad"}
               </button>
               <button
                 type="button"
@@ -446,9 +442,9 @@ export function ExpiryLotsTab(): JSX.Element {
               >
                 Cancelar
               </button>
-              {!editingLotId && (
+              {!isEditing && (
                 <p className="text-xs text-text-muted">
-                  Se guarda con una clave de idempotencia; no duplica un reintento.
+                  Se guarda con clave de idempotencia; no duplica un reintento.
                 </p>
               )}
             </div>
@@ -466,14 +462,14 @@ export function ExpiryLotsTab(): JSX.Element {
         ) : error ? (
           <p className="py-8 text-center text-sm text-text-muted">No se pudo cargar el registro de caducidad. Intentá actualizar la página.</p>
         ) : orderedLots.length === 0 ? (
-          <p className="py-8 text-center text-sm text-text-muted">Todavía no hay caducidades registradas. Se cargan manualmente.</p>
+          <p className="py-8 text-center text-sm text-text-muted">Todavía no hay caducidades registradas. Se cargan desde compras reales.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full text-left text-sm">
+            <table className="min-w-[960px] w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase tracking-wide text-text-muted">
                 <tr>
                   <th className="px-2 py-2 font-medium">Producto</th>
-                  <th className="px-2 py-2 font-medium">Documento</th>
+                  <th className="px-2 py-2 font-medium">Proveedor / documento</th>
                   <th className="px-2 py-2 font-medium">Lote</th>
                   <th className="px-2 py-2 font-medium">Caducidad</th>
                   <th className="px-2 py-2 font-medium text-right">Cantidad</th>
@@ -489,10 +485,12 @@ export function ExpiryLotsTab(): JSX.Element {
                     <tr key={lot.id} className="border-b border-border/70 last:border-0">
                       <td className="px-2 py-3">
                         <div className="font-medium text-text-primary">{lot.product_sku}</div>
-                        {/* Never fabricate a catalog name when a legacy lot cannot resolve one. */}
                         <div className="text-xs text-text-muted">{lot.product_name || "Nombre no disponible en el registro"}</div>
                       </td>
-                      <td className="px-2 py-3 text-text-secondary">{lot.purchase_order_ref}</td>
+                      <td className="px-2 py-3 text-text-secondary">
+                        <div>{lot.supplier || "Sin proveedor"}</div>
+                        <div className="font-mono text-xs text-text-muted">Doc. {lot.purchase_order_ref}</div>
+                      </td>
                       <td className="px-2 py-3 font-mono text-xs text-text-secondary">{lot.lot_code}</td>
                       <td className="px-2 py-3 text-text-secondary">
                         <div>{formatExpiryDate(lot.expires_on)}</div>
@@ -506,13 +504,23 @@ export function ExpiryLotsTab(): JSX.Element {
                       </td>
                       {canManage && (
                         <td className="px-2 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(lot)}
-                            className="text-xs font-semibold text-accent hover:underline"
-                          >
-                            Editar
-                          </button>
+                          <div className="flex justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(lot)}
+                              className="text-xs font-semibold text-accent hover:underline"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deletingLotId === lot.id}
+                              onClick={() => deleteLot(lot)}
+                              className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-60"
+                            >
+                              {deletingLotId === lot.id ? "Eliminando…" : "Eliminar"}
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -529,6 +537,15 @@ export function ExpiryLotsTab(): JSX.Element {
 
 function Legend({ label, className }: { label: string; className: string }): JSX.Element {
   return <span className={`inline-flex w-fit rounded-full px-2 py-1 font-medium ${className}`}>{label}</span>;
+}
+
+function ReadonlyValue({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-2">
+      <div className="text-[11px] uppercase tracking-wide text-text-muted">{label}</div>
+      <div className="mt-1 break-words font-medium text-text-primary">{value}</div>
+    </div>
+  );
 }
 
 function FormField({ label, required = false, children }: { label: string; required?: boolean; children: React.ReactNode }): JSX.Element {
