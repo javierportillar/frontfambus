@@ -10,6 +10,9 @@ describe("module access", () => {
 
   it("maps direct dashboard URLs to their module", () => {
     expect(resolvePathAccess("/dashboards/movimientos")).toEqual({ feature: "ventas-summary" });
+    expect(resolvePathAccess("/dashboards/compras/dia/2026-07-20")).toEqual({
+      feature: "ventas-summary",
+    });
     expect(resolvePathAccess("/dashboards/analisis")).toEqual({
       anyOfFeatures: ["analisis", "forecast"],
     });
@@ -20,6 +23,15 @@ describe("module access", () => {
     expect(canAccessPath("/dashboards/movimientos", restricted)).toBe(false);
     expect(canAccessPath("/dashboards/analisis", restricted)).toBe(true);
     expect(canAccessFeature("forecast", restricted)).toBe(false);
+  });
+
+
+  it("allows compras daily detail with the movimientos module", () => {
+    expect(canAccessPath("/dashboards/compras/dia/2026-07-20", {
+      role: "vendedor",
+      enabledFeatures: ["ventas-summary"],
+      allowedModules: ["ventas-summary"],
+    })).toBe(true);
   });
 
   it("keeps tenant feature gates active for admins", () => {

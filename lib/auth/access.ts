@@ -15,7 +15,7 @@ const PATH_RULES: ReadonlyArray<readonly [string, PathAccessRule]> = [
   ["/admin/data-catalog", { feature: "data-catalog" }],
   ["/dashboards/movimientos", { feature: "ventas-summary" }],
   ["/dashboards/ventas", { feature: "ventas-summary" }],
-  ["/dashboards/compras", { feature: "compras" }],
+  ["/dashboards/compras", { feature: "ventas-summary" }],
   ["/dashboards/inventario", { feature: "inventario" }],
   ["/dashboards/productos", { feature: "inventario" }],
   ["/dashboards/decisiones", { feature: "decisiones" }],
