@@ -875,15 +875,15 @@ export interface ExpiryLotsResponse {
 }
 
 /** Fetches the MasVital-only manual lot register. MotoShop never calls it. */
-export function useExpiryLots() {
+export function useExpiryLots(status: "active" | "depleted" | "all" = "active") {
   const tenant = useAuthStore((s) => s.currentTenant);
-  const swrKey: readonly [string, string] | null = tenant === "masvital"
-    ? [tenant, "/api/expiry/lots?limit=200"]
+  const swrKey: readonly [string, string, string] | null = tenant === "masvital"
+    ? [tenant, status, `/api/expiry/lots?limit=200&status=${status}`]
     : null;
 
   return useSWR<ExpiryLotsResponse>(
     swrKey,
-    (key: readonly [string, string]) => apiFetchJson<ExpiryLotsResponse>(key[1]),
+    (key: readonly [string, string, string]) => apiFetchJson<ExpiryLotsResponse>(key[2]),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,

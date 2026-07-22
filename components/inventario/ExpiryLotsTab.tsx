@@ -62,7 +62,8 @@ export function ExpiryLotsTab(): JSX.Element {
   const role = useAuthStore((s) => s.role);
   const canCreate = role === "admin" || role === "gerente" || role === "vendedor";
   const canManage = role === "admin" || role === "gerente";
-  const { data, error, isLoading, mutate } = useExpiryLots();
+  const activeLots = useExpiryLots("active");
+  const depletedLots = useExpiryLots("depleted");
   const [form, setForm] = useState<CaducidadForm>(EMPTY_FORM);
   const [formOpen, setFormOpen] = useState(false);
   const [editingLotId, setEditingLotId] = useState<string | null>(null);
@@ -158,9 +159,17 @@ export function ExpiryLotsTab(): JSX.Element {
   }
 
   const orderedLots = useMemo(
-    () => [...(data?.items ?? [])].sort((a, b) => a.expires_on.localeCompare(b.expires_on)),
-    [data?.items],
+    () => [...(activeLots.data?.items ?? [])].sort((a, b) => a.expires_on.localeCompare(b.expires_on)),
+    [activeLots.data?.items],
   );
+  const orderedDepletedLots = useMemo(
+    () => [...(depletedLots.data?.items ?? [])].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+    [depletedLots.data?.items],
+  );
+
+  async function refreshLots(): Promise<void> {
+    await Promise.all([activeLots.mutate(), depletedLots.mutate()]);
+  }
 
   async function submitForm(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -184,7 +193,7 @@ export function ExpiryLotsTab(): JSX.Element {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patch),
         });
-        await mutate();
+        await refreshLots();
         closeForm();
         setMessage({ type: "success", text: "Caducidad actualizada." });
       } else {
@@ -203,7 +212,7 @@ export function ExpiryLotsTab(): JSX.Element {
               headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
               body: JSON.stringify(payload),
             }),
-          refresh: () => mutate(),
+          refresh: () => activeLots.mutate(),
         });
         closeForm();
         setMessage({ type: "success", text: "Caducidad registrada. El lote ya aparece en el control." });
@@ -225,7 +234,7 @@ export function ExpiryLotsTab(): JSX.Element {
 
   async function deleteLot(lot: ExpiryLot): Promise<void> {
     const confirmed = window.confirm(
-      `¿Eliminar la caducidad del lote ${lot.lot_code} (${lot.product_sku})? Esta acción no modifica el inventario del sistema.`,
+      `¿Dar de baja el lote ${lot.lot_code} (${lot.product_sku})? Quedará en cantidad 0 y visible en Bajas registradas.`,
     );
     if (!confirmed) return;
 
@@ -239,9 +248,9 @@ export function ExpiryLotsTab(): JSX.Element {
         const body = await response.text().catch(() => "");
         throw new Error(`API error ${response.status} on DELETE /api/expiry/lots: ${body}`);
       }
-      await mutate();
+      await refreshLots();
       if (editingLotId === lot.id) closeForm();
-      setMessage({ type: "success", text: "Caducidad eliminada." });
+      setMessage({ type: "success", text: "Lote dado de baja. Quedó en Bajas registradas." });
     } catch (deleteError) {
       setMessage({
         type: "error",
@@ -260,7 +269,7 @@ export function ExpiryLotsTab(): JSX.Element {
             <div>
               <h2 className="text-base font-semibold text-text-primary">Caducidad por lote</h2>
               <p className="mt-1 text-sm text-text-muted">
-                Registro de vencimientos de MasVital desde compras reales. Editar o eliminar una caducidad no modifica
+                Registro de vencimientos de MasVital desde compras reales. Dar de baja conserva trazabilidad y no altera
                 el inventario de los dashboards.
               </p>
             </div>
@@ -452,17 +461,17 @@ export function ExpiryLotsTab(): JSX.Element {
         </Card>
       )}
 
-      <Card header={<h3 className="text-sm font-semibold text-text-primary">Caducidades registradas {data ? `(${data.total})` : ""}</h3>}>
-        {isLoading && !data ? (
+      <Card header={<h3 className="text-sm font-semibold text-text-primary">Caducidades activas {activeLots.data ? `(${activeLots.data.total})` : ""}</h3>}>
+        {activeLots.isLoading && !activeLots.data ? (
           <div className="space-y-2">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : error ? (
+        ) : activeLots.error ? (
           <p className="py-8 text-center text-sm text-text-muted">No se pudo cargar el registro de caducidad. Intentá actualizar la página.</p>
         ) : orderedLots.length === 0 ? (
-          <p className="py-8 text-center text-sm text-text-muted">Todavía no hay caducidades registradas. Se cargan desde compras reales.</p>
+          <p className="py-8 text-center text-sm text-text-muted">No hay caducidades activas. Si diste de baja lotes, revisá Bajas registradas.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-[960px] w-full text-left text-sm">
@@ -518,11 +527,80 @@ export function ExpiryLotsTab(): JSX.Element {
                               onClick={() => deleteLot(lot)}
                               className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-60"
                             >
-                              {deletingLotId === lot.id ? "Eliminando…" : "Eliminar"}
+                              {deletingLotId === lot.id ? "Dando de baja…" : "Dar de baja"}
                             </button>
                           </div>
                         </td>
                       )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card
+        header={
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">
+              Bajas registradas {depletedLots.data ? `(${depletedLots.data.total})` : ""}
+            </h3>
+            <p className="mt-1 text-xs text-text-muted">
+              Lotes que quedaron en cantidad 0 desde el control de caducidad. Se conservan para auditoría.
+            </p>
+          </div>
+        }
+      >
+        {depletedLots.isLoading && !depletedLots.data ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : depletedLots.error ? (
+          <p className="py-8 text-center text-sm text-text-muted">No se pudieron cargar las bajas registradas.</p>
+        ) : orderedDepletedLots.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">Todavía no hay bajas por caducidad registradas.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-[860px] w-full text-left text-sm">
+              <thead className="border-b border-border text-xs uppercase tracking-wide text-text-muted">
+                <tr>
+                  <th className="px-2 py-2 font-medium">Producto</th>
+                  <th className="px-2 py-2 font-medium">Proveedor / documento</th>
+                  <th className="px-2 py-2 font-medium">Lote</th>
+                  <th className="px-2 py-2 font-medium">Caducidad</th>
+                  <th className="px-2 py-2 font-medium text-right">Cantidad actual</th>
+                  <th className="px-2 py-2 font-medium">Última actualización</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orderedDepletedLots.map((lot) => {
+                  const days = daysUntilExpiry(lot.expires_on);
+                  return (
+                    <tr key={lot.id} className="border-b border-border/70 last:border-0 bg-red-50/30">
+                      <td className="px-2 py-3">
+                        <div className="font-medium text-text-primary">{lot.product_sku}</div>
+                        <div className="text-xs text-text-muted">{lot.product_name || "Nombre no disponible en el registro"}</div>
+                      </td>
+                      <td className="px-2 py-3 text-text-secondary">
+                        <div>{lot.supplier || "Sin proveedor"}</div>
+                        <div className="font-mono text-xs text-text-muted">Doc. {lot.purchase_order_ref}</div>
+                      </td>
+                      <td className="px-2 py-3 font-mono text-xs text-text-secondary">{lot.lot_code}</td>
+                      <td className="px-2 py-3 text-text-secondary">
+                        <div>{formatExpiryDate(lot.expires_on)}</div>
+                        <div className="text-xs text-text-muted">
+                          {days < 0 ? `${Math.abs(days)} días vencido` : days === 0 ? "Venció hoy" : `${days} días restantes al vencimiento`}
+                        </div>
+                      </td>
+                      <td className="px-2 py-3 text-right font-semibold tabular-nums text-red-700">
+                        {formatQuantity(lot.remaining_quantity)}
+                      </td>
+                      <td className="px-2 py-3 text-xs text-text-muted">
+                        {formatExpiryDate(lot.updated_at.slice(0, 10))}
+                      </td>
                     </tr>
                   );
                 })}
