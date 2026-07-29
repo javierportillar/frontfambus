@@ -11,7 +11,8 @@ const runtimeCaching = defaultRuntimeCaching.filter(
 );
 
 runtimeCaching.unshift({
-  urlPattern: ({ url }) => self.origin === url.origin && url.pathname.startsWith("/api/"),
+  urlPattern: ({ url }) =>
+    self.origin === url.origin && url.pathname.startsWith("/api/"),
   handler: "NetworkOnly",
   method: "GET",
 });
@@ -28,6 +29,13 @@ const withPWA = withPWAInit({
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    outputFileTracingIncludes: {
+      "/api/catalogo/masvital/images/[file]": [
+        "./data/catalog/masvital-images/**/*",
+      ],
+    },
+  },
 };
 
 export default withPWA(nextConfig);
