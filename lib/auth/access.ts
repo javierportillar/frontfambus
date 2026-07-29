@@ -2,14 +2,17 @@ export interface AccessContext {
   role: string | null;
   enabledFeatures: readonly string[];
   allowedModules: readonly string[] | null;
+  currentTenant?: string | null;
 }
 
 export type PathAccessRule =
   | { feature: string }
   | { anyOfFeatures: readonly string[] }
+  | { tenantOnly: string }
   | { adminOnly: true };
 
 const PATH_RULES: ReadonlyArray<readonly [string, PathAccessRule]> = [
+  ["/catalogo", { tenantOnly: "masvital" }],
   ["/admin/usuarios", { adminOnly: true }],
   ["/admin/pipeline", { feature: "pipeline-observability" }],
   ["/admin/data-catalog", { feature: "data-catalog" }],
@@ -48,6 +51,7 @@ export function canAccessPath(pathname: string, context: AccessContext): boolean
   const rule = resolvePathAccess(pathname);
   if (!rule) return true;
   if ("adminOnly" in rule) return context.role === "admin";
+  if ("tenantOnly" in rule) return context.currentTenant === rule.tenantOnly;
   if ("anyOfFeatures" in rule) {
     return rule.anyOfFeatures.some((feature) => canAccessFeature(feature, context));
   }

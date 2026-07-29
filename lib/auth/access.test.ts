@@ -17,6 +17,7 @@ describe("module access", () => {
       anyOfFeatures: ["analisis", "forecast"],
     });
     expect(resolvePathAccess("/admin/usuarios")).toEqual({ adminOnly: true });
+    expect(resolvePathAccess("/catalogo")).toEqual({ tenantOnly: "masvital" });
   });
 
   it("blocks a direct restricted URL instead of relying on hidden navigation", () => {
@@ -63,6 +64,22 @@ describe("module access", () => {
       role: "vendedor",
       enabledFeatures: ["analisis", "forecast"],
       allowedModules: ["inventario"],
+    })).toBe(false);
+  });
+
+  it("keeps the catalog exclusive to MasVital on direct URLs", () => {
+    expect(canAccessPath("/catalogo", {
+      role: "admin",
+      enabledFeatures: [],
+      allowedModules: null,
+      currentTenant: "masvital",
+    })).toBe(true);
+
+    expect(canAccessPath("/catalogo", {
+      role: "admin",
+      enabledFeatures: ["data-catalog"],
+      allowedModules: null,
+      currentTenant: "motoshop",
     })).toBe(false);
   });
 });

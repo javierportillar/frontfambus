@@ -1,0 +1,35 @@
+output: reponova-out
+repos:
+  - name: frontfambus
+    path: .
+
+exclude_common: true
+incremental: true
+exclude:
+  - ".claude/**"
+  - ".atl/**"
+  - "reponova-out/**"
+  - "coverage/**"
+
+docs:
+  enabled: true
+
+embeddings:
+  enabled: true
+
+html: true
+
+outlines:
+  enabled: true
+plugins:
+  javascript:
+    enabled: true
+  tsx:
+    enabled: true
+  typescript:
+    enabled: true
+  json:
+    maxGenericKeys: 200
+    enabled: true
+  svg:
+    enabled: true

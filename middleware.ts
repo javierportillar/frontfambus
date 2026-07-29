@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canTenantAccessPath } from "./lib/tenant/access";
 
-const PUBLIC_PATHS = ["/login", "/select-tenant", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/select-tenant",
+  "/api/auth/login",
+  "/api/auth/refresh",
+  "/api/auth/logout",
+];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -26,6 +33,12 @@ export function middleware(req: NextRequest) {
   if (token && !tenant) {
     const selectUrl = new URL("/select-tenant", req.url);
     return NextResponse.redirect(selectUrl);
+  }
+
+  // Fast tenant-routing guard. Protected pages must still validate the
+  // authenticated identity server-side before returning sensitive data.
+  if (!canTenantAccessPath(pathname, tenant ?? null)) {
+    return NextResponse.redirect(new URL("/", req.url));
   }
 
   return NextResponse.next();

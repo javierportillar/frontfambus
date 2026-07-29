@@ -59,6 +59,12 @@ const Icons = {
       <path d="M4 7l8 4 8-4M12 11v10" />
     </svg>
   ),
+  catalogo: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M4 5.5A2.5 2.5 0 016.5 3H20v16H6.5A2.5 2.5 0 014 16.5v-11z" />
+      <path d="M4 16.5A2.5 2.5 0 016.5 14H20M8 7h8M8 10h5" />
+    </svg>
+  ),
   abc: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
       <path d="M12 20V10M18 20V4M6 20v-6" />
@@ -129,6 +135,7 @@ const iconMap: Record<string, ReactNode> = {
   alerts: Icons.alerts,
   acciones: Icons.acciones,
   "plan-compras": Icons.planCompras,
+  catalogo: Icons.catalogo,
 };
 
 // ─── Sidebar Desktop (≥ lg) ─────────────────────────────────────
@@ -569,6 +576,7 @@ export function gerenteNavItems(): NavItem[] {
   //        Las rutas viejas redirigen automáticamente.
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
+    { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
     { label: "Decisiones", href: "/dashboards/decisiones", icon: Icons.acciones, feature: "decisiones" },

@@ -19,15 +19,12 @@ function filterNavItems(
   enabledFeatures: string[],
   role: string | null,
   allowedModules: string[] | null,
+  currentTenant: string | null,
 ): NavItem[] {
-  const context = { role, enabledFeatures, allowedModules };
-  return items.filter((item) => {
-    // Inicio y rutas sin feature son siempre visibles
-    if (!item.feature && !item.adminOnly) return true;
-    // La misma matriz protege navegación y URLs directas. En particular,
-    // Análisis es visible con `analisis` O `forecast`.
-    return canAccessPath(item.href, context);
-  });
+  const context = { role, enabledFeatures, allowedModules, currentTenant };
+  // La misma matriz protege navegación y URLs directas. En particular,
+  // Análisis es visible con `analisis` O `forecast`, y Catálogo sólo para MasVital.
+  return items.filter((item) => canAccessPath(item.href, context));
 }
 
 export default function AuthenticatedLayout({
@@ -52,8 +49,8 @@ export default function AuthenticatedLayout({
     // Todos los no-admin usan el mismo menú completo; los módulos del usuario
     // deciden qué ve (gerencia y empleado). El item "Usuarios" es adminOnly.
     const all = gerenteNavItems();
-    return filterNavItems(all, enabledFeatures, role, allowedModules);
-  }, [role, enabledFeatures, allowedModules]);
+    return filterNavItems(all, enabledFeatures, role, allowedModules, currentTenant);
+  }, [role, enabledFeatures, allowedModules, currentTenant]);
 
   // Revalidates persisted permissions before mounting a protected page. Hiding
   // navigation is not authorization, but it also must not allow a direct URL to
@@ -111,6 +108,7 @@ export default function AuthenticatedLayout({
     role,
     enabledFeatures,
     allowedModules,
+    currentTenant,
   });
 
   let content: ReactNode;
@@ -142,7 +140,9 @@ export default function AuthenticatedLayout({
       ? rule.feature
       : rule && "anyOfFeatures" in rule
         ? rule.anyOfFeatures.join(" o ")
-        : "administración";
+        : rule && "tenantOnly" in rule
+          ? "MasVital"
+          : "administración";
     content = (
       <section className="mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
         <div className="h-1 bg-primary" />

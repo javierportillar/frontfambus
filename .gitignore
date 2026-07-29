@@ -33,3 +33,5 @@ playwright/.cache/
 *.swo
 .idea/
 .vscode/
+
+reponova-out
