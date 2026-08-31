@@ -167,6 +167,7 @@ function useMetrics<T>(key: string | null): {
   data: T | undefined;
   error: Error | undefined;
   isLoading: boolean;
+  isValidating: boolean;
   mutate: KeyedMutator<T>;
 } {
   // BUG-FIX 2026-06-16: la cache key de SWR era solo la URL, sin el tenant.
@@ -206,7 +207,7 @@ function useMetrics<T>(key: string | null): {
   // isLoadingOrRetrying: true mientras carga O reintenta sin data aun.
   // Los componentes lo usan para mostrar "cargando" en vez de vacio/error.
   const isLoadingOrRetrying = (isLoading || (isValidating && data === undefined));
-  return { data, error, isLoading: isLoadingOrRetrying, mutate };
+  return { data, error, isLoading: isLoadingOrRetrying, isValidating, mutate };
 }
 
 export function useSalesSummary() {
@@ -794,6 +795,7 @@ export interface ProductAnalyticsParams {
   order?: "asc" | "desc";
   // V1.31: preset scopea al criterio EXACTO de una decision card
   preset?: "por_agotarse" | "capital_atrapado" | "importantes" | "dormidos";
+  rotacion?: string;
 }
 
 export function useProductAnalytics(p: ProductAnalyticsParams = {}) {
@@ -805,6 +807,7 @@ export function useProductAnalytics(p: ProductAnalyticsParams = {}) {
   if (p.abc) qs.set("abc", p.abc);
   if (p.estado) qs.set("estado", p.estado);
   if (p.preset) qs.set("preset", p.preset);
+  if (p.rotacion) qs.set("rotacion", p.rotacion);
   qs.set("sort", p.sort ?? "revenue_win");
   qs.set("order", p.order ?? "desc");
   return useMetrics<ProductAnalyticsResponse>(`/api/metrics/product-analytics?${qs.toString()}`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProductAnalytics, type ProductMetric } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
@@ -8,6 +8,8 @@ import { diasStockLabel } from "@/lib/productos/display";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EstadoChip, AbcChip, AccionChip } from "@/components/productos/Chips";
+import { useDebouncedValue } from "@/lib/hooks/debounce";
+import { getCatalogViewState, normalizeCatalogQuery } from "@/lib/products/catalogSearch";
 
 const ESTADO_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "Todos" },
@@ -42,12 +44,12 @@ const SORTS: { value: string; label: string }[] = [
 
 interface ProductsTableProps {
   window: number;
-  /** Filtro de estado inicial (lo setean las decision cards). */
   initialEstado?: string;
   initialAbc?: string;
+  rotacion?: string;
 }
 
-export function ProductsTable({ window, initialEstado = "", initialAbc = "" }: ProductsTableProps): JSX.Element {
+export function ProductsTable({ window, initialEstado = "", initialAbc = "", rotacion = "" }: ProductsTableProps): JSX.Element {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [estado, setEstado] = useState(initialEstado);
@@ -56,10 +58,29 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "" }: P
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const pageSize = 50;
+  const normalizedQ = useMemo(() => normalizeCatalogQuery(q), [q]);
+  const debouncedQ = useDebouncedValue(normalizedQ, 300);
 
-  const { data, isLoading } = useProductAnalytics({ window, page, pageSize, q, estado, abc, sort, order });
+  const { data, error, isLoading, isValidating, mutate } = useProductAnalytics({
+    window,
+    page,
+    pageSize,
+    q: debouncedQ,
+    estado,
+    abc,
+    sort,
+    order,
+    rotacion,
+  });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+  const isQueryPending = normalizedQ !== debouncedQ;
+  const viewState = getCatalogViewState({
+    hasData: Boolean(data),
+    isLoading,
+    isQueryPending,
+    hasError: Boolean(error),
+  });
 
   function toggleSort(col: string): void {
     if (sort === col) {
@@ -71,10 +92,17 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "" }: P
     setPage(1);
   }
 
-  const hasFilter = Boolean(q || estado || abc);
+  const hasFilter = Boolean(normalizedQ || estado || abc);
   const scopeNote = hasFilter
     ? "resultado del filtro aplicado"
     : "TODOS los SKUs del catálogo (con y sin stock, incluye servicios y descatalogados)";
+
+  function clearFilters(): void {
+    setQ("");
+    setEstado("");
+    setAbc("");
+    setPage(1);
+  }
 
   return (
     <Card
@@ -155,10 +183,52 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "" }: P
             {order === "desc" ? "↓ Mayor primero" : "↑ Menor primero"}
           </button>
         </div>
+        <div
+          className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted"
+          aria-live="polite"
+        >
+          <span>
+            {normalizedQ ? `Búsqueda: “${normalizedQ}”` : "Sin búsqueda por texto"}
+            {estado ? ` · Estado: ${estado.replaceAll(",", ", ")}` : ""}
+            {abc ? ` · ABC: ${abc}` : ""}
+          </span>
+          {isValidating && viewState === "ready" && <span>Actualizando…</span>}
+          {hasFilter && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="font-medium text-accent hover:underline"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
       </div>
 
-      {isLoading && !data ? (
+      {viewState === "loading" ? (
         <Skeleton className="h-96 rounded-lg" />
+      ) : viewState === "searching" ? (
+        <div
+          className="flex h-48 flex-col items-center justify-center gap-3 rounded-lg border border-border bg-surface-alt/40"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-border border-t-primary" aria-hidden="true" />
+          <p className="text-sm font-medium text-text-secondary">Buscando…</p>
+          <p className="text-xs text-text-muted">La tabla se actualizará con este filtro.</p>
+        </div>
+      ) : viewState === "error" ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center" role="alert">
+          <p className="text-sm font-semibold text-red-800">No pudimos consultar el catálogo.</p>
+          <p className="mt-1 text-xs text-red-700">Tus filtros siguen guardados. Reintentá la consulta.</p>
+          <button
+            type="button"
+            onClick={() => void mutate()}
+            className="mt-3 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800"
+          >
+            Reintentar
+          </button>
+        </div>
       ) : data && data.items.length > 0 ? (
         <>
           <div className="overflow-x-auto">

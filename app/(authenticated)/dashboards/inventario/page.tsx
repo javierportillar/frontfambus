@@ -9,16 +9,19 @@ import { ExpiryLotsTab } from "@/components/inventario/ExpiryLotsTab";
 import { ProductsTable } from "@/components/productos/ProductsTable";
 import { useAuthStore } from "@/lib/auth/store";
 
+import { RotacionTab } from "@/components/inventario/RotacionTab";
+
 // ── V1.24: Inventario reducido a 2 tabs ──
 // Los tabs Comprar y Optimizar migraron a /dashboards/decisiones?tab=comprar|vender.
 // Inventario ahora se enfoca en panorama (Resumen) y exploración del catálogo (Catálogo).
 // El drilldown de las Decision Cards en Resumen navega al Catálogo con filtro por estado.
 
-type InvTab = "resumen" | "catalogo" | "caducidad";
+type InvTab = "resumen" | "catalogo" | "rotacion" | "caducidad";
 
 const TABS: { key: InvTab; label: string; emoji: string }[] = [
   { key: "resumen", label: "Resumen", emoji: "📊" },
   { key: "catalogo", label: "Catálogo", emoji: "📋" },
+  { key: "rotacion", label: "Rotación", emoji: "🔄" },
 ];
 
 function InventarioInner(): JSX.Element {
@@ -121,6 +124,7 @@ function InventarioInner(): JSX.Element {
       {tab === "catalogo" && (
         <ProductsTable key={catalogoEstado} window={180} initialEstado={catalogoEstado} />
       )}
+      {tab === "rotacion" && <RotacionTab window={180} />}
       {tab === "caducidad" && isMasVital && <ExpiryLotsTab />}
     </div>
   );
