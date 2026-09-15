@@ -10,11 +10,16 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   const targetUrl = `${API_BASE}/api/${path}${url.search}`;
 
   const headers = new Headers();
-  const cookieHeader = req.headers.get("cookie");
-  if (cookieHeader) {
-    const tokenMatch = cookieHeader.match(/(?:^|;\s*)motoshop_token=([^;]*)/);
-    if (tokenMatch?.[1]) {
-      headers.set("Authorization", `Bearer ${decodeURIComponent(tokenMatch[1])}`);
+  const authHeader = req.headers.get("authorization");
+  if (authHeader) {
+    headers.set("Authorization", authHeader);
+  } else {
+    const cookieHeader = req.headers.get("cookie");
+    if (cookieHeader) {
+      const tokenMatch = cookieHeader.match(/(?:^|;\s*)motoshop_token=([^;]*)/);
+      if (tokenMatch?.[1]) {
+        headers.set("Authorization", `Bearer ${decodeURIComponent(tokenMatch[1])}`);
+      }
     }
   }
 
