@@ -18,6 +18,10 @@ export interface ReportAttachment {
   filename: string;
   download_url: string;
   file_size_kb?: number;
+  date_from?: string | null;
+  date_to?: string | null;
+  period_label?: string | null;
+  expires_at?: string | null;
 }
 
 export interface ChatMessage {
