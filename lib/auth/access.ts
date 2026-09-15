@@ -31,6 +31,7 @@ const PATH_RULES: ReadonlyArray<readonly [string, PathAccessRule]> = [
   ["/vendedores", { feature: "vendedores" }],
   ["/drift", { feature: "drift" }],
   ["/forecast", { feature: "forecast" }],
+  ["/chat", { feature: "chat-ia" }],
 ];
 
 function matchesPrefix(pathname: string, prefix: string): boolean {

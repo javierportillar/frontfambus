@@ -11,6 +11,7 @@ import { QueueScheduler } from "@/components/QueueScheduler";
 import { TenantTheme } from "@/components/TenantTheme";
 import { ServerLoadingBanner } from "@/components/ServerLoadingBanner";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AssistantLauncher } from "@/components/chat/AssistantLauncher";
 import { fetchMe } from "@/lib/api/hooks";
 import { canAccessPath, resolvePathAccess } from "@/lib/auth/access";
 
@@ -173,6 +174,7 @@ export default function AuthenticatedLayout({
       </main>
       <OfflineQueueBadge />
       <QueueScheduler />
+      <AssistantLauncher />
     </>
   );
 }

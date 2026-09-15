@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
 
 async function proxyRequest(req: NextRequest, path: string): Promise<NextResponse> {
@@ -57,6 +60,7 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   const init: RequestInit = {
     method: req.method,
     headers,
+    signal: req.signal,
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {

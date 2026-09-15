@@ -18,12 +18,18 @@ describe("module access", () => {
     });
     expect(resolvePathAccess("/admin/usuarios")).toEqual({ adminOnly: true });
     expect(resolvePathAccess("/catalogo")).toEqual({ tenantOnly: "masvital" });
+    expect(resolvePathAccess("/chat")).toEqual({ feature: "chat-ia" });
   });
 
   it("blocks a direct restricted URL instead of relying on hidden navigation", () => {
     expect(canAccessPath("/dashboards/movimientos", restricted)).toBe(false);
     expect(canAccessPath("/dashboards/analisis", restricted)).toBe(true);
     expect(canAccessFeature("forecast", restricted)).toBe(false);
+  });
+
+  it("gates the assistant by the tenant chat feature", () => {
+    expect(canAccessPath("/chat", { role: "gerente", enabledFeatures: ["chat-ia"], allowedModules: null })).toBe(true);
+    expect(canAccessPath("/chat", { role: "gerente", enabledFeatures: [], allowedModules: null })).toBe(false);
   });
 
 

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSendMessage } from "@/lib/api/hooks";
-import { Card } from "@/components/ui/Card";
+import { useAuthStore } from "@/lib/auth/store";
 
 interface Message {
   role: "user" | "assistant";
@@ -23,6 +23,7 @@ function ThinkingDots() {
 const MAX_TURNS = 20;
 
 export default function ChatPage(): JSX.Element {
+  const currentTenant = useAuthStore((state) => state.currentTenant);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -77,7 +78,7 @@ export default function ChatPage(): JSX.Element {
     <div className="mx-auto flex max-w-2xl flex-col" style={{ height: "calc(100vh - 80px)" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-1 py-3">
-        <h1 className="text-lg font-bold text-text-primary">Chat con MotoShop</h1>
+        <h1 className="text-lg font-bold text-text-primary">Asistente {currentTenant ?? "de negocio"}</h1>
         <span className="text-xs text-text-muted">
           Turno {turnCount}/{MAX_TURNS}
         </span>
