@@ -10,16 +10,14 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   const targetUrl = `${API_BASE}/api/${path}${url.search}`;
 
   const headers = new Headers();
+  const cookieHeader = req.headers.get("cookie");
   const authHeader = req.headers.get("authorization");
   if (authHeader) {
     headers.set("Authorization", authHeader);
-  } else {
-    const cookieHeader = req.headers.get("cookie");
-    if (cookieHeader) {
-      const tokenMatch = cookieHeader.match(/(?:^|;\s*)motoshop_token=([^;]*)/);
-      if (tokenMatch?.[1]) {
-        headers.set("Authorization", `Bearer ${decodeURIComponent(tokenMatch[1])}`);
-      }
+  } else if (cookieHeader) {
+    const tokenMatch = cookieHeader.match(/(?:^|;\s*)motoshop_token=([^;]*)/);
+    if (tokenMatch?.[1]) {
+      headers.set("Authorization", `Bearer ${decodeURIComponent(tokenMatch[1])}`);
     }
   }
 
@@ -75,14 +73,19 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   try {
     const resp = await fetch(targetUrl, init);
     const contentType = resp.headers.get("content-type") ?? "application/json";
+    const respHeaders: Record<string, string> = {
+      "content-type": contentType,
+      "access-control-allow-origin": "*",
+    };
+    const contentDisposition = resp.headers.get("content-disposition");
+    if (contentDisposition) {
+      respHeaders["content-disposition"] = contentDisposition;
+    }
 
     return new NextResponse(resp.body, {
       status: resp.status,
       statusText: resp.statusText,
-      headers: {
-        "content-type": contentType,
-        "access-control-allow-origin": "*",
-      },
+      headers: respHeaders,
     });
   } catch (err) {
     return NextResponse.json(

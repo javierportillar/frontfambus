@@ -12,6 +12,14 @@ export interface Conversation {
   message_count: number;
 }
 
+export interface ReportAttachment {
+  type: string;
+  format: "excel" | "pdf" | "word" | string;
+  filename: string;
+  download_url: string;
+  file_size_kb?: number;
+}
+
 export interface ChatMessage {
   id: string;
   conversation_id: string;
@@ -20,6 +28,7 @@ export interface ChatMessage {
   created_at: string;
   tools_used?: string[];
   sources?: Array<{ source?: string; section?: string | null; score?: number }>;
+  attachments?: ReportAttachment[];
 }
 
 export interface ChatReply {
@@ -29,6 +38,7 @@ export interface ChatReply {
   tools_used: string[];
   sources: Array<{ source?: string; section?: string | null; score?: number }>;
   data_as_of?: string | null;
+  attachments?: ReportAttachment[];
 }
 
 export function listConversations(signal?: AbortSignal): Promise<Conversation[]> {
