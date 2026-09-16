@@ -20,7 +20,7 @@ function ThinkingDots() {
 const MAX_TURNS = 20;
 const MIN_WIDTH = 360;
 const MAX_WIDTH = 900;
-const DEFAULT_WIDTH = 672; // max-w-2xl
+const DEFAULT_WIDTH = 672;
 
 function getStoredWidth(): number {
   if (typeof window === "undefined") return DEFAULT_WIDTH;
@@ -42,46 +42,45 @@ export default function ChatPage(): JSX.Element {
   const [turnCount, setTurnCount] = useState(0);
   const [error, setError] = useState<string>();
   const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
   const abortRef = useRef<AbortController>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isDraggingRef = useRef(false);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({ startX: 0, startWidth: 0 });
 
-  // Load stored width on mount
   useEffect(() => {
     setPanelWidth(getStoredWidth());
   }, []);
 
-  // Resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    isDraggingRef.current = true;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
+    e.stopPropagation();
+    setIsResizing(true);
 
-    const startX = e.clientX;
-    const startWidth = panelRef.current?.offsetWidth ?? panelWidth;
+    dragRef.current = {
+      startX: e.clientX,
+      startWidth: containerRef.current?.offsetWidth ?? panelWidth,
+    };
 
     const handleMouseMove = (ev: MouseEvent) => {
-      if (!isDraggingRef.current) return;
-      const delta = startX - ev.clientX; // drag left = wider
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+      const delta = dragRef.current.startX - ev.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, dragRef.current.startWidth + delta));
       setPanelWidth(newWidth);
     };
 
     const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+      setIsResizing(false);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
-      // Persist
-      setPanelWidth((w) => {
-        localStorage.setItem("chat-panel-width", String(w));
-        return w;
-      });
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      // persist
+      const el = containerRef.current;
+      if (el) localStorage.setItem("chat-panel-width", String(el.offsetWidth));
     };
 
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   }, [panelWidth]);
@@ -126,93 +125,119 @@ export default function ChatPage(): JSX.Element {
   const accessContext: AccessContext = { role, enabledFeatures, allowedModules, currentTenant };
 
   return (
-    <div className="relative mx-auto flex flex-col" style={{ height: "calc(100vh - 80px)", width: `${panelWidth}px`, maxWidth: "100%" }}>
-      {/* Resize handle — left edge */}
+    <div className="mx-auto flex" style={{ height: "calc(100vh - 80px)", width: `min(${panelWidth}px, 100%)` }}>
+      {/* Resize handle */}
       <div
         onMouseDown={handleResizeStart}
-        className="absolute left-0 top-0 z-10 h-full w-2 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"
+        className="group flex w-3 shrink-0 cursor-col-resize items-center justify-center"
         title="Arrastrá para ajustar el ancho"
-      />
-
-      {/* Header */}
-      <div className="flex items-center justify-between px-1 py-3">
-        <h1 className="text-lg font-bold text-text-primary">Asistente {currentTenant ?? "de negocio"}</h1>
-        <span className="text-xs text-text-muted">
-          Turno {turnCount}/{MAX_TURNS}
-        </span>
+        style={{ opacity: isResizing ? 1 : undefined }}
+      >
+        <div
+          className={`h-10 w-0.5 rounded-full transition-colors ${
+            isResizing ? "bg-primary" : "bg-border group-hover:bg-primary"
+          }`}
+        />
       </div>
 
-      {/* Help block */}
-      <details className="mb-3 text-sm">
-        <summary className="cursor-pointer text-text-secondary hover:text-text-primary">
-          ¿Qué puedo preguntar?
-        </summary>
-        <div className="mt-2 space-y-1 rounded-lg bg-surface-alt p-3 text-xs text-text-muted">
-          <p>• ¿Cómo van las ventas este mes vs el pasado?</p>
-          <p>• ¿Qué productos están dormidos hace más de 60 días?</p>
-          <p>• ¿Quién es la mejor vendedora?</p>
-          <p>• ¿Hay alertas críticas hoy?</p>
-          <p>• ¿Cuál fue la última compra y de qué proveedor?</p>
-          <p>• ¿Cuánto hemos comprado este mes?</p>
-          <p>• ¿Tenemos filtros de aceite? ¿A cuánto están?</p>
-          <p>• ¿Quiénes son nuestros mejores clientes?</p>
-          <p>• ¿Cómo está la clasificación ABC/XYZ?</p>
-          <p>• ¿Hubo drift en alguna categoría del forecast?</p>
-          <p>• ¿Cómo está el forecast?</p>
-          <p>• ¿Cuánto vale el inventario?</p>
+      {/* Chat panel */}
+      <div ref={containerRef} className="flex min-w-0 flex-1 flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-1 py-3">
+          <h1 className="text-lg font-bold text-text-primary">Asistente {currentTenant ?? "de negocio"}</h1>
+          <span className="text-xs text-text-muted">
+            Turno {turnCount}/{MAX_TURNS}
+          </span>
         </div>
-      </details>
 
-      {/* Messages */}
-      <div ref={panelRef} className="flex-1 overflow-y-auto space-y-3 pb-2" aria-live="polite">
-        {messages.length === 0 && (
-          <p className="py-10 text-center text-sm text-text-muted">
-            Preguntale al asistente sobre el negocio. Usa lenguaje natural.
-          </p>
-        )}
-
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            {msg.role === "assistant" ? <AssistantMessage message={msg} context={accessContext} /> : <div className="max-w-[85%] rounded-xl bg-primary px-4 py-2.5 text-sm text-primary-fg"><p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p></div>}
+        {/* Help block */}
+        <details className="mb-3 text-sm">
+          <summary className="cursor-pointer text-text-secondary hover:text-text-primary">
+            ¿Qué puedo preguntar?
+          </summary>
+          <div className="mt-2 space-y-1 rounded-lg bg-surface-alt p-3 text-xs text-text-muted">
+            <p>• ¿Cómo van las ventas este mes vs el pasado?</p>
+            <p>• ¿Qué productos están dormidos hace más de 60 días?</p>
+            <p>• ¿Quién es la mejor vendedora?</p>
+            <p>• ¿Hay alertas críticas hoy?</p>
+            <p>• ¿Cuál fue la última compra y de qué proveedor?</p>
+            <p>• ¿Cuánto hemos comprado este mes?</p>
+            <p>• ¿Tenemos filtros de aceite? ¿A cuánto están?</p>
+            <p>• ¿Quiénes son nuestros mejores clientes?</p>
+            <p>• ¿Cómo está la clasificación ABC/XYZ?</p>
+            <p>• ¿Hubo drift en alguna categoría del forecast?</p>
+            <p>• ¿Cómo está el forecast?</p>
+            <p>• ¿Cuánto vale el inventario?</p>
           </div>
-        ))}
+        </details>
 
-        {isLoading && <div role="status" className="flex justify-start"><div className="rounded-xl bg-surface-alt border border-border px-4 py-2.5 text-sm text-text-muted">Pensando<ThinkingDots /></div></div>}
-        {error && <p role="alert" className="rounded-md bg-warning/10 p-2 text-xs text-warning">{error}</p>}
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto space-y-3 pb-2" aria-live="polite">
+          {messages.length === 0 && (
+            <p className="py-10 text-center text-sm text-text-muted">
+              Preguntale al asistente sobre el negocio. Usa lenguaje natural.
+            </p>
+          )}
 
-        <div ref={messagesEndRef} />
-      </div>
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              {msg.role === "assistant" ? (
+                <AssistantMessage message={msg} context={accessContext} />
+              ) : (
+                <div className="max-w-[85%] rounded-xl bg-primary px-4 py-2.5 text-sm text-primary-fg">
+                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                </div>
+              )}
+            </div>
+          ))}
 
-      {/* Input */}
-      <div className="border-t border-border pt-3 pb-4">
-        <div className="flex gap-2">
-          <label htmlFor="page-chat-input" className="sr-only">Pregunta al asistente</label>
-          <input
-            id="page-chat-input"
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={turnCount >= MAX_TURNS ? "Límite de turnos alcanzado" : "Escribí tu pregunta..."}
-            disabled={isLoading || turnCount >= MAX_TURNS}
-            className="flex-1 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-            maxLength={500}
-          />
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={isLoading || !input.trim() || turnCount >= MAX_TURNS}
-            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-fg hover:bg-primary-light disabled:opacity-40 transition-colors"
-          >
-            Enviar
-          </button>
+          {isLoading && (
+            <div role="status" className="flex justify-start">
+              <div className="rounded-xl bg-surface-alt border border-border px-4 py-2.5 text-sm text-text-muted">
+                Pensando<ThinkingDots />
+              </div>
+            </div>
+          )}
+          {error && <p role="alert" className="rounded-md bg-warning/10 p-2 text-xs text-warning">{error}</p>}
+
+          <div ref={messagesEndRef} />
         </div>
-        {isLoading && <button type="button" onClick={() => abortRef.current?.abort()} className="mt-2 text-xs text-text-muted underline">Cancelar</button>}
-        {turnCount >= MAX_TURNS && (
-          <p className="mt-2 text-xs text-text-muted text-center">
-            Iniciá una nueva conversación (refrescá la página).
-          </p>
-        )}
+
+        {/* Input */}
+        <div className="border-t border-border pt-3 pb-4">
+          <div className="flex gap-2">
+            <label htmlFor="page-chat-input" className="sr-only">Pregunta al asistente</label>
+            <input
+              id="page-chat-input"
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={turnCount >= MAX_TURNS ? "Límite de turnos alcanzado" : "Escribí tu pregunta..."}
+              disabled={isLoading || turnCount >= MAX_TURNS}
+              className="flex-1 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+              maxLength={500}
+            />
+            <button
+              type="button"
+              onClick={() => void handleSend()}
+              disabled={isLoading || !input.trim() || turnCount >= MAX_TURNS}
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-fg hover:bg-primary-light disabled:opacity-40 transition-colors"
+            >
+              Enviar
+            </button>
+          </div>
+          {isLoading && (
+            <button type="button" onClick={() => abortRef.current?.abort()} className="mt-2 text-xs text-text-muted underline">
+              Cancelar
+            </button>
+          )}
+          {turnCount >= MAX_TURNS && (
+            <p className="mt-2 text-xs text-text-muted text-center">
+              Iniciá una nueva conversación (refrescá la página).
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
