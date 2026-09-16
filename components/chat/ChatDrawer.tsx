@@ -20,8 +20,12 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [closing, setClosing] = useState(false);
+  const [mobileConvos, setMobileConvos] = useState(false);
   const abortRef = useRef<AbortController>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const touchStartRef = useRef<{ y: number; time: number } | null>(null);
+  const drawerRef = useRef<HTMLElement>(null);
 
   const refreshConversations = useCallback(async () => {
     const requestedTenant = useAuthStore.getState().currentTenant;
@@ -40,19 +44,45 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
     setMessages([]);
     setInput("");
     setError(undefined);
+    setClosing(false);
+    setMobileConvos(false);
   }, [tenant, user]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
+
+  const handleClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 220);
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
-    const handler = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const handler = (event: KeyboardEvent) => { if (event.key === "Escape") handleClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [open, handleClose]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (touch) touchStartRef.current = { y: touch.clientY, time: Date.now() };
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    if (!touch) { touchStartRef.current = null; return; }
+    const dy = touch.clientY - touchStartRef.current.y;
+    const dt = Date.now() - touchStartRef.current.time;
+    touchStartRef.current = null;
+    if (dy > 80 && dt < 400) handleClose();
+  }, [handleClose]);
 
   const selectConversation = async (id: string) => {
     const requestedTenant = tenant;
     const requestedUser = user;
-    setConversationId(id); setError(undefined);
+    setConversationId(id); setError(undefined); setMobileConvos(false);
     try {
       const rows = await listMessages(id);
       if (useAuthStore.getState().currentTenant === requestedTenant && useAuthStore.getState().user === requestedUser) setMessages(rows.map((row) => ({ ...row, tenant_id: requestedTenant ?? "" })));
@@ -60,7 +90,7 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   };
 
   const newConversation = async () => {
-    setError(undefined);
+    setError(undefined); setMobileConvos(false);
     try { const row = await createConversation(); setConversations((prev) => [row, ...prev]); setConversationId(row.id); setMessages([]); } catch { setError("No pudimos crear la conversación."); }
   };
 
@@ -110,18 +140,131 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
     } finally { setLoading(false); abortRef.current = undefined; }
   };
 
-  if (!open) return null;
+  if (!open && !closing) return null;
   const turnCount = messages.filter((message) => message.role === "user").length;
   const accessContext: AccessContext = { role, enabledFeatures, allowedModules, currentTenant: tenant };
+  const animationClass = closing ? "chat-exit" : "chat-enter";
+
   return <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Asistente de negocio">
-    <button className="absolute inset-0 bg-black/30" aria-label="Cerrar asistente" onClick={onClose} />
-    <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Asistente {tenant ?? ""}</p><h2 className="text-base font-bold text-text-primary">Consultá tu operación</h2></div><div className="flex items-center gap-1"><button onClick={() => void newConversation()} className="rounded-md px-2 py-1 text-xs font-semibold text-primary sm:hidden">Nueva</button><button onClick={onClose} className="rounded-md px-2 py-1 text-lg text-text-muted hover:bg-surface-alt" aria-label="Cerrar">×</button></div></header>
-      <div className="flex min-h-0 flex-1">
-        <nav className="hidden w-36 shrink-0 border-r border-border p-2 sm:block"><button onClick={() => void newConversation()} className="mb-2 w-full rounded-md bg-primary px-2 py-2 text-xs font-semibold text-primary-fg">+ Nueva</button>{conversations.map((conversation) => <button key={conversation.id} onClick={() => void selectConversation(conversation.id)} className={`mb-1 w-full truncate rounded-md px-2 py-2 text-left text-xs ${conversation.id === conversationId ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-alt"}`}>{conversation.title}</button>)}</nav>
-        <section className="flex min-w-0 flex-1 flex-col"><div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">{messages.length === 0 && <p className="py-12 text-center text-sm text-text-muted">Preguntá por ventas, stock, productos dormidos o inventario.</p>}{messages.map((message) => <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" ? <AssistantMessage message={message} context={accessContext} /> : <div className="max-w-[90%] rounded-xl bg-primary px-3 py-2 text-sm text-primary-fg"><p className="whitespace-pre-wrap leading-relaxed">{message.content}</p></div>}</div>)}{loading && <p role="status" className="text-xs text-text-muted">Pensando…</p>}{error && <p role="alert" className="rounded-md bg-warning/10 p-2 text-xs text-warning">{error}</p>}<div ref={messagesEndRef} /></div><form onSubmit={(event) => { event.preventDefault(); void send(); }} className="border-t border-border p-3"><div className="flex gap-2"><label htmlFor="drawer-chat-input" className="sr-only">Pregunta al asistente</label><input id="drawer-chat-input" value={input} onChange={(event) => setInput(event.target.value)} maxLength={500} disabled={loading || turnCount >= MAX_TURNS} placeholder={turnCount >= MAX_TURNS ? "Límite alcanzado" : "Escribí tu pregunta…"} className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none" /><button type="submit" disabled={!input.trim() || loading || turnCount >= MAX_TURNS} className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-fg disabled:opacity-40">Enviar</button></div>{loading && <button type="button" onClick={() => abortRef.current?.abort()} className="mt-2 text-xs text-text-muted underline">Cancelar</button>}</form></section>
+    <button className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ${closing ? "opacity-0" : "opacity-100"}`} aria-label="Cerrar asistente" onClick={handleClose} />
+    <aside
+      ref={drawerRef}
+      className={`absolute bottom-0 left-0 right-0 top-auto flex h-[100dvh] max-h-[100dvh] w-full flex-col border-t border-border bg-surface shadow-2xl sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-full sm:max-w-md sm:rounded-none sm:rounded-l-2xl sm:border-t-0 sm:border-l ${animationClass}`}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Swipe hint on mobile */}
+      <div className="flex justify-center py-1.5 sm:hidden" aria-hidden="true">
+        <div className="h-1 w-10 rounded-full bg-border-strong" />
       </div>
-      {conversationId && <button onClick={async () => { try { await archiveConversation(conversationId); setConversationId(undefined); setMessages([]); void refreshConversations(); } catch { setError("No pudimos archivar la conversación."); } }} className="border-t border-border px-4 py-2 text-left text-xs text-text-muted hover:text-warning">Archivar conversación</button>}
+
+      <header className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2 sm:px-4 sm:py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Asistente {tenant ?? ""}</p>
+          <h2 className="truncate text-sm font-bold text-text-primary sm:text-base">Consultá tu operación</h2>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Mobile conversation toggle */}
+          {conversations.length > 0 && (
+            <button
+              onClick={() => setMobileConvos((v) => !v)}
+              className="flex h-11 w-11 items-center justify-center rounded-md text-xs font-semibold text-primary sm:hidden"
+              aria-label="Historial de conversaciones"
+              aria-expanded={mobileConvos}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+            </button>
+          )}
+          <button onClick={() => void newConversation()} className="flex h-11 items-center justify-center rounded-md px-3 text-xs font-semibold text-primary sm:hidden">Nueva</button>
+          <button onClick={handleClose} className="flex h-11 w-11 items-center justify-center rounded-md text-lg text-text-muted hover:bg-surface-alt" aria-label="Cerrar">&times;</button>
+        </div>
+      </header>
+
+      {/* Mobile conversation dropdown */}
+      {mobileConvos && (
+        <div className="shrink-0 border-b border-border bg-surface-alt p-2 sm:hidden">
+          <button onClick={() => void newConversation()} className="mb-2 w-full rounded-md bg-primary px-3 py-3 text-xs font-semibold text-primary-fg">+ Nueva conversación</button>
+          {conversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              onClick={() => void selectConversation(conversation.id)}
+              className={`mb-1 w-full truncate rounded-md px-3 py-3 text-left text-xs ${conversation.id === conversationId ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-alt"}`}
+            >
+              {conversation.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1">
+        <nav className="hidden w-36 shrink-0 border-r border-border p-2 sm:block">
+          <button onClick={() => void newConversation()} className="mb-2 w-full rounded-md bg-primary px-2 py-2 text-xs font-semibold text-primary-fg">+ Nueva</button>
+          {conversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              onClick={() => void selectConversation(conversation.id)}
+              className={`mb-1 w-full truncate rounded-md px-2 py-2 text-left text-xs transition-colors ${conversation.id === conversationId ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-alt"}`}
+            >
+              {conversation.title}
+            </button>
+          ))}
+        </nav>
+        <section className="flex min-w-0 flex-1 flex-col">
+          <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4" aria-live="polite">
+            {messages.length === 0 && <p className="py-12 text-center text-sm text-text-muted">Preguntá por ventas, stock, productos dormidos o inventario.</p>}
+            {messages.map((message) => (
+              <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                {message.role === "assistant" ? <AssistantMessage message={message} context={accessContext} /> : <div className="max-w-[90%] rounded-xl bg-primary px-3 py-2 text-sm text-primary-fg"><p className="whitespace-pre-wrap leading-relaxed">{message.content}</p></div>}
+              </div>
+            ))}
+            {loading && (
+              <div role="status" className="flex items-center gap-1.5 px-1 py-2 text-text-muted">
+                <span className="chat-dot" /><span className="chat-dot" /><span className="chat-dot" />
+                <span className="sr-only">Pensando</span>
+              </div>
+            )}
+            {error && <p role="alert" className="rounded-md bg-warning/10 p-2 text-xs text-warning">{error}</p>}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form
+            onSubmit={(event) => { event.preventDefault(); void send(); }}
+            className="shrink-0 border-t border-border px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 sm:pb-3"
+          >
+            <div className="flex gap-2">
+              <label htmlFor="drawer-chat-input" className="sr-only">Pregunta al asistente</label>
+              <input
+                id="drawer-chat-input"
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                maxLength={500}
+                disabled={loading || turnCount >= MAX_TURNS}
+                placeholder={turnCount >= MAX_TURNS ? "Límite alcanzado" : "Escribí tu pregunta…"}
+                className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-text-primary focus:border-primary focus:outline-none sm:py-2"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || loading || turnCount >= MAX_TURNS}
+                className="flex h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-40"
+              >
+                Enviar
+              </button>
+            </div>
+            {loading && <button type="button" onClick={() => abortRef.current?.abort()} className="mt-2 text-xs text-text-muted underline">Cancelar</button>}
+          </form>
+        </section>
+      </div>
+
+      {conversationId && (
+        <button
+          onClick={async () => {
+            try { await archiveConversation(conversationId); setConversationId(undefined); setMessages([]); void refreshConversations(); } catch { setError("No pudimos archivar la conversación."); }
+          }}
+          className="shrink-0 border-t border-border px-4 py-3 text-left text-xs text-text-muted hover:text-warning sm:py-2"
+        >
+          Archivar conversación
+        </button>
+      )}
     </aside>
   </div>;
 }
