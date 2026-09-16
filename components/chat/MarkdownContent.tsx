@@ -40,7 +40,43 @@ function renderInline(value: string): ReactNode[] {
 
 function isUnorderedListLine(line: string): boolean { return /^\s*[-*+]\s+/.test(line); }
 function isOrderedListLine(line: string): boolean { return /^\s*\d+[.)]\s+/.test(line); }
-function isBlockLine(line: string): boolean { return /^(#{1,6})\s+/.test(line) || /^\s*>/.test(line) || isUnorderedListLine(line) || isOrderedListLine(line) || /^\s*```/.test(line); }
+function isTableLine(line: string): boolean { return /^\s*\|.*\|\s*$/.test(line); }
+function isTableSeparator(line: string): boolean { return /^\s*\|?\s*[-:]+[-|:\s]+\s*$/.test(line); }
+
+function parseTableRow(line: string): string[] {
+  return line
+    .replace(/^\s*\|/, "")
+    .replace(/\|\s*$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function MarkdownTable({ rows }: { rows: string[][] }): JSX.Element {
+  const header = rows[0] ?? [];
+  const body = rows.slice(2); // skip separator row
+  return (
+    <div className="my-3 overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-surface-alt">
+            {header.map((cell, i) => (
+              <th key={`th-${i}`} className="border-b border-border px-2.5 py-1.5 text-left font-semibold text-text-primary">{renderInline(cell)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, ri) => (
+            <tr key={`tr-${ri}`} className={ri % 2 === 0 ? "bg-surface" : "bg-surface-alt/50"}>
+              {row.map((cell, ci) => (
+                <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">{renderInline(cell)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export function MarkdownContent({ content }: { content: string }): JSX.Element {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
@@ -71,6 +107,21 @@ export function MarkdownContent({ content }: { content: string }): JSX.Element {
       const Heading = `h${headingLevel}` as keyof JSX.IntrinsicElements;
       blocks.push(<Heading key={`heading-${index}`} className="mt-2 font-semibold text-text-primary">{renderInline(headingText)}</Heading>);
       index += 1;
+      blockNumber += 1;
+      continue;
+    }
+
+    // Table detection: header row + separator row + data rows
+    if (isTableLine(line) && index + 1 < lines.length && isTableSeparator(lines[index + 1] ?? "")) {
+      const tableRows: string[][] = [];
+      const start = index;
+      while (index < lines.length && isTableLine(lines[index] ?? "")) {
+        tableRows.push(parseTableRow(lines[index] ?? ""));
+        index += 1;
+      }
+      if (tableRows.length >= 2) {
+        blocks.push(<MarkdownTable key={`table-${start}`} rows={tableRows} />);
+      }
       blockNumber += 1;
       continue;
     }

@@ -18,6 +18,16 @@ function ThinkingDots() {
 }
 
 const MAX_TURNS = 20;
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 900;
+const DEFAULT_WIDTH = 672; // max-w-2xl
+
+function getStoredWidth(): number {
+  if (typeof window === "undefined") return DEFAULT_WIDTH;
+  const stored = localStorage.getItem("chat-panel-width");
+  const parsed = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(parsed) && parsed >= MIN_WIDTH && parsed <= MAX_WIDTH ? parsed : DEFAULT_WIDTH;
+}
 
 export default function ChatPage(): JSX.Element {
   const currentTenant = useAuthStore((state) => state.currentTenant);
@@ -31,8 +41,50 @@ export default function ChatPage(): JSX.Element {
   const [conversationId, setConversationId] = useState<string>();
   const [turnCount, setTurnCount] = useState(0);
   const [error, setError] = useState<string>();
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
   const abortRef = useRef<AbortController>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Load stored width on mount
+  useEffect(() => {
+    setPanelWidth(getStoredWidth());
+  }, []);
+
+  // Resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const startX = e.clientX;
+    const startWidth = panelRef.current?.offsetWidth ?? panelWidth;
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = startX - ev.clientX; // drag left = wider
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      // Persist
+      setPanelWidth((w) => {
+        localStorage.setItem("chat-panel-width", String(w));
+        return w;
+      });
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [panelWidth]);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -74,7 +126,17 @@ export default function ChatPage(): JSX.Element {
   const accessContext: AccessContext = { role, enabledFeatures, allowedModules, currentTenant };
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col" style={{ height: "calc(100vh - 80px)" }}>
+    <div className="mx-auto flex flex-col" style={{ height: "calc(100vh - 80px)", width: `${panelWidth}px`, maxWidth: "100%" }}>
+      {/* Resize handle */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="group absolute left-0 top-0 z-10 flex h-full w-3 cursor-col-resize items-center justify-center"
+        style={{ marginLeft: `calc(50% - ${panelWidth / 2}px - 12px)` }}
+        title="Arrastrá para ajustar el ancho"
+      >
+        <div className="h-10 w-1 rounded-full bg-border transition-colors group-hover:bg-primary group-active:bg-primary" />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-1 py-3">
         <h1 className="text-lg font-bold text-text-primary">Asistente {currentTenant ?? "de negocio"}</h1>
@@ -105,7 +167,7 @@ export default function ChatPage(): JSX.Element {
       </details>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-3 pb-2" aria-live="polite">
+      <div ref={panelRef} className="flex-1 overflow-y-auto space-y-3 pb-2" aria-live="polite">
         {messages.length === 0 && (
           <p className="py-10 text-center text-sm text-text-muted">
             Preguntale al asistente sobre el negocio. Usa lenguaje natural.
