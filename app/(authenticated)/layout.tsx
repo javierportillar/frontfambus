@@ -40,6 +40,7 @@ export default function AuthenticatedLayout({
   const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
   const allowedModules = useAuthStore((s) => s.allowedModules);
   const currentTenant = useAuthStore((s) => s.currentTenant);
+  const user = useAuthStore((s) => s.user);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
   const permissionsReady = useAuthStore((s) => s.permissionsReady);
   const hydrateSession = useAuthStore((s) => s.hydrateSession);
@@ -174,7 +175,7 @@ export default function AuthenticatedLayout({
       </main>
       <OfflineQueueBadge />
       <QueueScheduler />
-      <AssistantLauncher />
+      <AssistantLauncher key={`${currentTenant ?? "no-tenant"}:${user ?? "anonymous"}`} />
     </>
   );
 }

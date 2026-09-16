@@ -5,6 +5,29 @@ export interface AccessContext {
   currentTenant?: string | null;
 }
 
+const ASSISTANT_DOMAIN_FEATURES: Readonly<Record<string, readonly string[]>> = {
+  sales: ["ventas-summary"],
+  purchases: ["ventas-summary"],
+  inventory: ["inventario"],
+  abc: ["abc"],
+  dormant_products: ["dormidos"],
+  alerts: ["alerts"],
+  forecasts: ["forecast"],
+  analyses: ["analisis", "forecast"],
+  expenses: ["gastos"],
+  expiry: ["catalogo"],
+};
+
+export function isSafeServerHref(href: string): boolean {
+  return href.startsWith("/") && !href.startsWith("//") && !/[\\\s]/.test(href)
+    && !/^(?:javascript|data|vbscript):/i.test(href);
+}
+
+export function canAccessAssistantDomain(domain: string, context: AccessContext): boolean {
+  const features = ASSISTANT_DOMAIN_FEATURES[domain];
+  return Boolean(features?.some((feature) => canAccessFeature(feature, context)));
+}
+
 export type PathAccessRule =
   | { feature: string }
   | { anyOfFeatures: readonly string[] }

@@ -1,0 +1,7 @@
+import type { AssistantStatus, ChatMessage } from "./chat";
+const STATUS_COPY = { complete: { label: "Respuesta disponible", tone: "text-text-muted" }, partial: { label: "Respuesta parcial", tone: "text-warning" }, empty: { label: "Sin resultados", tone: "text-text-muted" }, needs_clarification: { label: "Necesita aclaración", tone: "text-primary" }, unavailable: { label: "No disponible", tone: "text-warning" } } as const satisfies Record<AssistantStatus, { label: string; tone: string }>;
+export function getStatusDescription(status: AssistantStatus): (typeof STATUS_COPY)[AssistantStatus] { return STATUS_COPY[status]; }
+export function isAttachmentExpired(expiresAt: string | null, now = Date.now()): boolean { if (!expiresAt) return false; const expiry = Date.parse(expiresAt); return Number.isFinite(expiry) && expiry <= now; }
+export function displayContent(content: string): string { return content.replace(/\[([^\]]+)\]\((?:https?:\/\/|\/)[^)]+\)/g, "$1").replace(/https?:\/\/[^\s)]+/g, "").trim(); }
+export function shouldAcceptChatResult(reply: { tenant_id: string }, currentTenant: string | null): boolean { return Boolean(currentTenant && reply.tenant_id === currentTenant); }
+export function createUserMessage(content: string, id: string, tenant_id: string): ChatMessage { return { id, conversation_id: "", role: "user", content, created_at: new Date().toISOString(), tenant_id, status: "complete", tools_used: [], sources: [], freshness: [], entity_refs: [], attachments: [] }; }

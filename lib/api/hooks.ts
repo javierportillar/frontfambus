@@ -2,6 +2,7 @@ import useSWR, { type KeyedMutator } from "swr";
 import { apiFetch, apiFetchJson } from "./client";
 import { getCached, setCache } from "@/lib/offline/cache";
 import { useAuthStore } from "@/lib/auth/store";
+import { sendChatMessage, type ChatReply } from "./chat";
 
 interface Product {
   codprod: string;
@@ -1176,28 +1177,11 @@ export function useForecastNarrative() {
   );
 }
 
-// ── Q&A Chat (V1.6 Sprint C) ────────────────────────────────────────────
+// ── Q&A Chat (governed envelope) ───────────────────────────────────────
 
-interface QAChatResponse {
-  text: string;
-  conversation_id: string;
-  turn_count: number;
-  tools_used: string[];
-}
-
-export function useSendMessage(conversationId: string) {
-  return async (message: string): Promise<QAChatResponse> => {
-    const resp = await apiFetch("/api/llm/qa/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, conversation_id: conversationId }),
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(err);
-    }
-    return resp.json();
-  };
+export function useSendMessage(conversationId?: string) {
+  return (message: string, signal?: AbortSignal): Promise<ChatReply> =>
+    sendChatMessage(message, conversationId || undefined, crypto.randomUUID(), signal);
 }
 
 // ── Pipeline Observability (V1.7) ──────────────────────────────────────
