@@ -93,6 +93,12 @@ export default function ChatPage(): JSX.Element {
           <p>• ¿Qué productos están dormidos hace más de 60 días?</p>
           <p>• ¿Quién es la mejor vendedora?</p>
           <p>• ¿Hay alertas críticas hoy?</p>
+          <p>• ¿Cuál fue la última compra y de qué proveedor?</p>
+          <p>• ¿Cuánto hemos comprado este mes?</p>
+          <p>• ¿Tenemos filtros de aceite? ¿A cuánto están?</p>
+          <p>• ¿Quiénes son nuestros mejores clientes?</p>
+          <p>• ¿Cómo está la clasificación ABC/XYZ?</p>
+          <p>• ¿Hubo drift en alguna categoría del forecast?</p>
           <p>• ¿Cómo está el forecast?</p>
           <p>• ¿Cuánto vale el inventario?</p>
         </div>
