@@ -22,6 +22,7 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const [error, setError] = useState<string>();
   const [closing, setClosing] = useState(false);
   const [mobileConvos, setMobileConvos] = useState(false);
+  const [desktopConvosOpen, setDesktopConvosOpen] = useState(true);
   const abortRef = useRef<AbortController>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ y: number; time: number } | null>(null);
@@ -37,6 +38,10 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   }, []);
 
   useEffect(() => { if (open && tenant) void refreshConversations(); }, [open, tenant, refreshConversations]);
+  useEffect(() => {
+    const stored = window.localStorage.getItem("chat-desktop-conversations-open");
+    if (stored !== null) setDesktopConvosOpen(stored === "true");
+  }, []);
   useEffect(() => {
     abortRef.current?.abort();
     setConversations([]);
@@ -92,6 +97,14 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const newConversation = async () => {
     setError(undefined); setMobileConvos(false);
     try { const row = await createConversation(); setConversations((prev) => [row, ...prev]); setConversationId(row.id); setMessages([]); } catch { setError("No pudimos crear la conversación."); }
+  };
+
+  const toggleDesktopConversations = () => {
+    setDesktopConvosOpen((current) => {
+      const next = !current;
+      window.localStorage.setItem("chat-desktop-conversations-open", String(next));
+      return next;
+    });
   };
 
   const send = async () => {
@@ -199,19 +212,27 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
       )}
 
       <div className="flex min-h-0 flex-1">
-        <nav className="hidden w-48 shrink-0 border-r border-border p-3 sm:block">
-          <button onClick={() => void newConversation()} className="mb-3 w-full rounded-lg bg-primary px-3 py-2.5 text-xs font-semibold text-primary-fg transition-colors hover:bg-primary-light">+ Nueva conversación</button>
-          <div className="space-y-1 overflow-y-auto">
+        <nav aria-label="Conversaciones" className={`hidden shrink-0 overflow-hidden border-r border-border p-3 transition-[width] duration-200 sm:block ${desktopConvosOpen ? "w-48" : "w-14"}`}>
+          <div className={`mb-3 flex items-center ${desktopConvosOpen ? "justify-between gap-2" : "flex-col gap-2"}`}>
+            <button onClick={() => void newConversation()} className={`flex items-center justify-center rounded-lg bg-primary text-primary-fg transition-colors hover:bg-primary-light ${desktopConvosOpen ? "min-w-0 flex-1 px-3 py-2.5 text-xs font-semibold" : "h-9 w-9 text-lg"}`} aria-label="Nueva conversación" title="Nueva conversación">
+              {desktopConvosOpen ? "+ Nueva conversación" : "+"}
+            </button>
+            <button onClick={toggleDesktopConversations} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-alt hover:text-text-primary" aria-label={desktopConvosOpen ? "Minimizar conversaciones" : "Mostrar conversaciones"} aria-expanded={desktopConvosOpen} title={desktopConvosOpen ? "Minimizar conversaciones" : "Mostrar conversaciones"}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={desktopConvosOpen ? "m15 6-6 6 6 6" : "m9 6 6 6-6 6"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          </div>
+          {desktopConvosOpen && <div className="space-y-1 overflow-y-auto">
             {conversations.map((conversation) => (
               <button
                 key={conversation.id}
                 onClick={() => void selectConversation(conversation.id)}
                 className={`w-full truncate rounded-lg px-3 py-2.5 text-left text-xs transition-all ${conversation.id === conversationId ? "bg-primary/10 text-primary font-medium shadow-sm" : "text-text-muted hover:bg-surface-alt hover:text-text-secondary"}`}
+                title={conversation.title}
               >
                 {conversation.title}
               </button>
             ))}
-          </div>
+          </div>}
         </nav>
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5" aria-live="polite">
