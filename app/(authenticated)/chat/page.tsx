@@ -126,16 +126,13 @@ export default function ChatPage(): JSX.Element {
   const accessContext: AccessContext = { role, enabledFeatures, allowedModules, currentTenant };
 
   return (
-    <div className="mx-auto flex flex-col" style={{ height: "calc(100vh - 80px)", width: `${panelWidth}px`, maxWidth: "100%" }}>
-      {/* Resize handle */}
+    <div className="relative mx-auto flex flex-col" style={{ height: "calc(100vh - 80px)", width: `${panelWidth}px`, maxWidth: "100%" }}>
+      {/* Resize handle — left edge */}
       <div
         onMouseDown={handleResizeStart}
-        className="group absolute left-0 top-0 z-10 flex h-full w-3 cursor-col-resize items-center justify-center"
-        style={{ marginLeft: `calc(50% - ${panelWidth / 2}px - 12px)` }}
+        className="absolute left-0 top-0 z-10 h-full w-2 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors"
         title="Arrastrá para ajustar el ancho"
-      >
-        <div className="h-10 w-1 rounded-full bg-border transition-colors group-hover:bg-primary group-active:bg-primary" />
-      </div>
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between px-1 py-3">
