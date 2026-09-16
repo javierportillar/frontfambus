@@ -11,6 +11,7 @@ import { QueueScheduler } from "@/components/QueueScheduler";
 import { TenantTheme } from "@/components/TenantTheme";
 import { ServerLoadingBanner } from "@/components/ServerLoadingBanner";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AssistantLauncher } from "@/components/chat/AssistantLauncher";
 import { fetchMe } from "@/lib/api/hooks";
 import { canAccessPath, resolvePathAccess } from "@/lib/auth/access";
 
@@ -39,6 +40,7 @@ export default function AuthenticatedLayout({
   const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
   const allowedModules = useAuthStore((s) => s.allowedModules);
   const currentTenant = useAuthStore((s) => s.currentTenant);
+  const user = useAuthStore((s) => s.user);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
   const permissionsReady = useAuthStore((s) => s.permissionsReady);
   const hydrateSession = useAuthStore((s) => s.hydrateSession);
@@ -173,6 +175,7 @@ export default function AuthenticatedLayout({
       </main>
       <OfflineQueueBadge />
       <QueueScheduler />
+      <AssistantLauncher key={`${currentTenant ?? "no-tenant"}:${user ?? "anonymous"}`} />
     </>
   );
 }

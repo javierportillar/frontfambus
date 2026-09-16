@@ -2,6 +2,7 @@ import useSWR, { type KeyedMutator } from "swr";
 import { apiFetch, apiFetchJson } from "./client";
 import { getCached, setCache } from "@/lib/offline/cache";
 import { useAuthStore } from "@/lib/auth/store";
+import { sendChatMessage, type ChatReply } from "./chat";
 
 interface Product {
   codprod: string;
@@ -163,7 +164,19 @@ interface CohortesResponse {
 
 const DEDUP_METRICS = 60_000; // 1 min (DT-F3-10)
 
-function useMetrics<T>(key: string | null): {
+interface UseMetricsOptions {
+  keepPreviousData?: boolean;
+}
+
+export const PURCHASES_DAY_METRICS_OPTIONS = {
+  keepPreviousData: false,
+} satisfies UseMetricsOptions;
+
+export function resolveMetricsKeepPreviousData(options?: UseMetricsOptions): boolean {
+  return options?.keepPreviousData ?? true;
+}
+
+function useMetrics<T>(key: string | null, options?: UseMetricsOptions): {
   data: T | undefined;
   error: Error | undefined;
   isLoading: boolean;
@@ -194,7 +207,8 @@ function useMetrics<T>(key: string | null): {
     revalidateOnReconnect: true,
     dedupingInterval: DEDUP_METRICS,
     refreshInterval: 60_000, // refresh cada 60s (F7-PERF-1)
-    keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
+    // Sensitive views can opt out so data from a previous key/tenant is never retained.
+    keepPreviousData: resolveMetricsKeepPreviousData(options),
     // RESILIENCIA COLD START (2026-06-16): Render Free duerme el servidor;
     // la 1ra request tras inactividad tarda 30-60s y puede fallar. Antes el
     // usuario veia error y tenia que recargar a mano. Ahora SWR reintenta
@@ -1163,28 +1177,11 @@ export function useForecastNarrative() {
   );
 }
 
-// ── Q&A Chat (V1.6 Sprint C) ────────────────────────────────────────────
+// ── Q&A Chat (governed envelope) ───────────────────────────────────────
 
-interface QAChatResponse {
-  text: string;
-  conversation_id: string;
-  turn_count: number;
-  tools_used: string[];
-}
-
-export function useSendMessage(conversationId: string) {
-  return async (message: string): Promise<QAChatResponse> => {
-    const resp = await apiFetch("/api/llm/qa/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, conversation_id: conversationId }),
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(err);
-    }
-    return resp.json();
-  };
+export function useSendMessage(conversationId?: string) {
+  return (message: string, signal?: AbortSignal): Promise<ChatReply> =>
+    sendChatMessage(message, conversationId || undefined, crypto.randomUUID(), signal);
 }
 
 // ── Pipeline Observability (V1.7) ──────────────────────────────────────
@@ -1817,7 +1814,7 @@ export interface CompraItem {
 }
 export interface CompraDocumento {
   num_documento: string;
-  cod_clase?: string;
+  cod_clase: string;
   nit_proveedor?: string | null;
   nombre_proveedor?: string;
   total_factura: number;
@@ -1834,6 +1831,7 @@ export interface PurchasesDayGroupedResponse {
 export function usePurchasesDayGrouped(date: string | null) {
   return useMetrics<PurchasesDayGroupedResponse>(
     date ? `/api/metrics/purchases-day-grouped?date=${date}` : null,
+    PURCHASES_DAY_METRICS_OPTIONS,
   );
 }
 

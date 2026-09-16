@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
 
 async function proxyRequest(req: NextRequest, path: string): Promise<NextResponse> {
@@ -8,7 +11,10 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
 
   const headers = new Headers();
   const cookieHeader = req.headers.get("cookie");
-  if (cookieHeader) {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader) {
+    headers.set("Authorization", authHeader);
+  } else if (cookieHeader) {
     const tokenMatch = cookieHeader.match(/(?:^|;\s*)motoshop_token=([^;]*)/);
     if (tokenMatch?.[1]) {
       headers.set("Authorization", `Bearer ${decodeURIComponent(tokenMatch[1])}`);
@@ -57,6 +63,7 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   const init: RequestInit = {
     method: req.method,
     headers,
+    signal: req.signal,
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -66,14 +73,19 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   try {
     const resp = await fetch(targetUrl, init);
     const contentType = resp.headers.get("content-type") ?? "application/json";
+    const respHeaders: Record<string, string> = {
+      "content-type": contentType,
+      "access-control-allow-origin": "*",
+    };
+    const contentDisposition = resp.headers.get("content-disposition");
+    if (contentDisposition) {
+      respHeaders["content-disposition"] = contentDisposition;
+    }
 
     return new NextResponse(resp.body, {
       status: resp.status,
       statusText: resp.statusText,
-      headers: {
-        "content-type": contentType,
-        "access-control-allow-origin": "*",
-      },
+      headers: respHeaders,
     });
   } catch (err) {
     return NextResponse.json(
