@@ -7,6 +7,16 @@ import { AssistantMessage } from "./AssistantMessage";
 import type { AccessContext } from "@/lib/auth/access";
 
 const MAX_TURNS = 20;
+const MIN_DRAWER_WIDTH = 340;
+const MAX_DRAWER_WIDTH = 900;
+const DEFAULT_DRAWER_WIDTH = 512; // sm:max-w-lg
+
+function getStoredDrawerWidth(): number {
+  if (typeof window === "undefined") return DEFAULT_DRAWER_WIDTH;
+  const stored = localStorage.getItem("chat-drawer-width");
+  const parsed = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(parsed) && parsed >= MIN_DRAWER_WIDTH && parsed <= MAX_DRAWER_WIDTH ? parsed : DEFAULT_DRAWER_WIDTH;
+}
 
 export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element | null {
   const tenant = useAuthStore((state) => state.currentTenant);
@@ -23,10 +33,13 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const [closing, setClosing] = useState(false);
   const [mobileConvos, setMobileConvos] = useState(false);
   const [desktopConvosOpen, setDesktopConvosOpen] = useState(true);
+  const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
   const abortRef = useRef<AbortController>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const touchStartRef = useRef<{ y: number; time: number } | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  const dragRef = useRef({ startX: 0, startWidth: 0 });
 
   const refreshConversations = useCallback(async () => {
     const requestedTenant = useAuthStore.getState().currentTenant;
@@ -53,6 +66,42 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
     setMobileConvos(false);
   }, [tenant, user]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
+
+  useEffect(() => {
+    setDrawerWidth(getStoredDrawerWidth());
+  }, []);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    dragRef.current = { startX: e.clientX, startWidth: drawerRef.current?.offsetWidth ?? drawerWidth };
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      const delta = dragRef.current.startX - ev.clientX;
+      const newWidth = Math.min(MAX_DRAWER_WIDTH, Math.max(MIN_DRAWER_WIDTH, dragRef.current.startWidth + delta));
+      setDrawerWidth(newWidth);
+      if (drawerRef.current) drawerRef.current.style.maxWidth = `${newWidth}px`;
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (drawerRef.current) {
+        const w = drawerRef.current.offsetWidth;
+        setDrawerWidth(w);
+        localStorage.setItem("chat-drawer-width", String(w));
+      }
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [drawerWidth]);
 
   const handleClose = useCallback(() => {
     setClosing(true);
@@ -162,10 +211,19 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
     <button className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ${closing ? "opacity-0" : "opacity-100"}`} aria-label="Cerrar asistente" onClick={handleClose} />
     <aside
       ref={drawerRef}
-      className={`absolute bottom-0 left-0 right-0 top-auto flex h-[100dvh] max-h-[100dvh] w-full flex-col border-t border-border bg-surface shadow-2xl sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-full sm:max-w-lg sm:rounded-none sm:rounded-l-2xl sm:border-t-0 sm:border-l ${animationClass}`}
+      className={`absolute bottom-0 left-0 right-0 top-auto flex h-[100dvh] max-h-[100dvh] w-full flex-col border-t border-border bg-surface shadow-2xl sm:bottom-auto sm:left-auto sm:right-0 sm:top-0 sm:h-full sm:max-h-full sm:rounded-none sm:rounded-l-2xl sm:border-t-0 sm:border-l ${animationClass}`}
+      style={{ maxWidth: `min(${drawerWidth}px, 100%)` }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Resize handle — left edge on desktop */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="group absolute left-0 top-0 z-20 hidden h-full w-2.5 cursor-col-resize sm:flex items-center justify-center"
+        title="Arrastrá para ajustar el ancho"
+      >
+        <div className={`h-12 w-0.5 rounded-full transition-colors ${isResizing ? "bg-primary" : "bg-border group-hover:bg-primary"}`} />
+      </div>
       {/* Swipe hint on mobile */}
       <div className="flex justify-center py-1.5 sm:hidden" aria-hidden="true">
         <div className="h-1 w-10 rounded-full bg-border-strong" />
