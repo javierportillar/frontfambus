@@ -40,6 +40,14 @@ function renderInline(value: string): ReactNode[] {
 
 function isUnorderedListLine(line: string): boolean { return /^\s*[-*+]\s+/.test(line); }
 function isOrderedListLine(line: string): boolean { return /^\s*\d+[.)]\s+/.test(line); }
+function isBlockLine(line: string): boolean {
+  return /^\s*```/.test(line)
+    || /^#{1,6}\s+/.test(line)
+    || isTableLine(line)
+    || isUnorderedListLine(line)
+    || isOrderedListLine(line)
+    || /^\s*>/.test(line);
+}
 function isTableLine(line: string): boolean { return /^\s*\|.*\|\s*$/.test(line); }
 function isTableSeparator(line: string): boolean { return /^\s*\|?\s*[-:]+[-|:\s]+\s*$/.test(line); }
 
