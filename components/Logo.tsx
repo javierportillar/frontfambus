@@ -76,15 +76,17 @@ export function Logo({
 export function LogoMark({
   size = 24,
   className = "",
+  tone = "dark",
 }: {
   size?: number;
   className?: string;
+  tone?: "dark" | "light";
 }): JSX.Element {
   const { src, alt } = useTenantLogo();
 
   return (
     <div
-      className={`inline-flex items-center justify-center rounded-lg bg-surface-dark p-1.5 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg ${tone === "light" ? "bg-surface" : "bg-surface-dark"} p-1.5 ${className}`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
