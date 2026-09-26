@@ -134,7 +134,7 @@ async function seedSession(page: Page, reply = assistantReply) {
 }
 
 test.describe("Governed assistant cross-repository contract", () => {
-  test("keeps drawer and full page parity and downloads an authorized report", async ({ page }) => {
+  test("opens the dedicated assistant module and downloads an authorized report", async ({ page }) => {
     await seedSession(page);
     await page.route("**/api/reports/download/rep-1", (route) => route.fulfill({
       status: 200,
@@ -142,7 +142,9 @@ test.describe("Governed assistant cross-repository contract", () => {
       headers: { "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="ventas.pdf"' },
     }));
 
-    await page.goto("/chat");
+    await page.goto("/");
+    await page.getByRole("link", { name: "Abrir asistente de negocio" }).click();
+    await expect(page).toHaveURL(/\/chat$/);
     await page.getByLabel("Pregunta al asistente").fill("¿Cómo están las ventas?");
     await page.getByRole("button", { name: "Enviar" }).click();
     const fullPageMessage = page.getByRole("article", { name: "Mensaje del asistente: Respuesta parcial" });
@@ -150,19 +152,27 @@ test.describe("Governed assistant cross-repository contract", () => {
     await expect(fullPageMessage).toContainText("Ventas del corte");
     await expect(fullPageMessage).toContainText("sales: current");
     await expect(fullPageMessage.getByRole("link", { name: "Filtro" })).toHaveAttribute("href", "/inventario/productos/SKU-1");
+    await expect(page.getByText(/Enviado ·/)).toBeVisible();
+    await expect(page.getByText(/Respondido ·/)).toBeVisible();
 
     const downloadPromise = page.waitForEvent("download");
     await fullPageMessage.getByRole("link", { name: "Descargar PDF" }).click();
     expect((await downloadPromise).suggestedFilename()).toBe("ventas.pdf");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
 
-    await page.getByRole("button", { name: "Abrir asistente de negocio" }).click();
-    const drawer = page.getByRole("dialog", { name: "Asistente de negocio" });
-    await drawer.getByRole("button", { name: "Ventas de septiembre" }).click();
-    const drawerMessage = drawer.getByRole("article", { name: "Mensaje del asistente: Respuesta parcial" });
-    await expect(drawerMessage).toContainText("Ventas disponibles.");
-    await expect(drawerMessage).toContainText("Ventas del corte");
-    await expect(drawerMessage).toContainText("sales: current");
-    await expect(drawerMessage.getByRole("link", { name: "Filtro" })).toHaveAttribute("href", "/inventario/productos/SKU-1");
+  test("opens the dedicated assistant module from the mobile launcher", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedSession(page);
+    await page.goto("/");
+
+    const launcher = page.getByRole("link", { name: "Abrir asistente de negocio" });
+    await expect(launcher).toBeVisible();
+    await launcher.click();
+
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.getByRole("heading", { name: /(?:Buenos días|Buenas tardes|Buenas noches), Admin/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Asistente IA" })).toBeVisible();
   });
 
   test("marks expired reports unavailable and clears assistant state after tenant switch", async ({ page }) => {
@@ -178,7 +188,7 @@ test.describe("Governed assistant cross-repository contract", () => {
     await page.getByRole("button", { name: /MasVital/ }).click();
     await expect(page).toHaveURL("/");
     await page.goto("/chat");
-    await expect(page.getByText("Preguntale al asistente sobre el negocio.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /(?:Buenos días|Buenas tardes|Buenas noches), Admin/ })).toBeVisible();
     await expect(page.getByText("El reporte anterior expiró.")).toHaveCount(0);
   });
 });

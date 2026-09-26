@@ -122,6 +122,12 @@ const Icons = {
       <circle cx="4" cy="17" r="1" fill="currentColor" />
     </svg>
   ),
+  assistant: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M12 3a7 7 0 0 0-7 7v3.5A3.5 3.5 0 0 0 8.5 17H10l2 3 2-3h1.5a3.5 3.5 0 0 0 3.5-3.5V10a7 7 0 0 0-7-7Z" />
+      <path d="M9 10h.01M12 10h.01M15 10h.01" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, ReactNode> = {
@@ -136,6 +142,7 @@ const iconMap: Record<string, ReactNode> = {
   acciones: Icons.acciones,
   "plan-compras": Icons.planCompras,
   catalogo: Icons.catalogo,
+  chat: Icons.assistant,
 };
 
 // ─── Sidebar Desktop (≥ lg) ─────────────────────────────────────
@@ -576,6 +583,7 @@ export function gerenteNavItems(): NavItem[] {
   //        Las rutas viejas redirigen automáticamente.
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
+    { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
@@ -594,6 +602,7 @@ export function gerenteNavItems(): NavItem[] {
 export function vendedorNavItems(): NavItem[] {
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
+    { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
     { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
   ];

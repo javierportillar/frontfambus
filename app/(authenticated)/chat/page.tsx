@@ -1,32 +1,84 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { sendChatMessage, type ChatMessage } from "@/lib/api/chat";
-import { createUserMessage, shouldAcceptChatResult } from "@/lib/api/chatView";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  archiveConversation,
+  createConversation,
+  listConversations,
+  listMessages,
+  normalizeChatMessage,
+  sendChatMessage,
+  type ChatMessage,
+  type Conversation,
+} from "@/lib/api/chat";
+import { formatMessageTime } from "@/lib/api/chatView";
 import { useAuthStore } from "@/lib/auth/store";
+import { getTenantDisplay } from "@/lib/tenant/config";
+import { LogoMark } from "@/components/Logo";
 import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import type { AccessContext } from "@/lib/auth/access";
 
-function ThinkingDots() {
+const MAX_TURNS = 20;
+
+const SUGGESTIONS = [
+  "¿Cómo van las ventas este mes?",
+  "¿Qué productos necesitan atención?",
+  "¿Cuál es la situación del inventario?",
+];
+
+interface ConversationSelectHandler {
+  // eslint-disable-next-line no-unused-vars
+  (conversationId: string): void;
+}
+
+function ThinkingDots(): JSX.Element {
   return (
-    <span className="inline-flex gap-0.5">
-      <span className="animate-bounce">.</span>
-      <span className="animate-bounce" style={{ animationDelay: "0.15s" }}>.</span>
-      <span className="animate-bounce" style={{ animationDelay: "0.3s" }}>.</span>
+    <span className="inline-flex gap-1" aria-hidden="true">
+      <span className="chat-dot" />
+      <span className="chat-dot" />
+      <span className="chat-dot" />
     </span>
   );
 }
 
-const MAX_TURNS = 20;
-const MIN_WIDTH = 360;
-const MAX_WIDTH = 900;
-const DEFAULT_WIDTH = 672;
+function MessageTime({ message }: { message: ChatMessage }): JSX.Element {
+  const label = message.role === "user" ? "Enviado" : "Respondido";
+  return <time dateTime={message.created_at} className="mt-1 block text-[10px] text-text-muted">{label} · {formatMessageTime(message.created_at)}</time>;
+}
 
-function getStoredWidth(): number {
-  if (typeof window === "undefined") return DEFAULT_WIDTH;
-  const stored = localStorage.getItem("chat-panel-width");
-  const parsed = stored ? parseInt(stored, 10) : NaN;
-  return Number.isFinite(parsed) && parsed >= MIN_WIDTH && parsed <= MAX_WIDTH ? parsed : DEFAULT_WIDTH;
+function ConversationList({
+  conversations,
+  conversationId,
+  onSelect,
+}: {
+  conversations: Conversation[];
+  conversationId?: string;
+  onSelect: ConversationSelectHandler;
+}): JSX.Element {
+  if (!conversations.length) {
+    return <p className="px-3 py-4 text-xs leading-relaxed text-text-muted">Tus conversaciones aparecerán acá.</p>;
+  }
+
+  return (
+    <div className="space-y-1 overflow-y-auto">
+      {conversations.map((conversation) => (
+        <button
+          key={conversation.id}
+          type="button"
+          onClick={() => onSelect(conversation.id)}
+          className={`w-full truncate rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+            conversation.id === conversationId
+              ? "bg-primary/10 font-semibold text-primary"
+              : "text-text-secondary hover:bg-surface-alt hover:text-text-primary"
+          }`}
+          title={conversation.title}
+        >
+          {conversation.title}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function ChatPage(): JSX.Element {
@@ -35,210 +87,371 @@ export default function ChatPage(): JSX.Element {
   const role = useAuthStore((state) => state.role);
   const enabledFeatures = useAuthStore((state) => state.enabledFeatures);
   const allowedModules = useAuthStore((state) => state.allowedModules);
+  const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : undefined;
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [conversationId, setConversationId] = useState<string>();
-  const [turnCount, setTurnCount] = useState(0);
   const [error, setError] = useState<string>();
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
-  const [isResizing, setIsResizing] = useState(false);
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [greeting, setGreeting] = useState("Buenas tardes");
   const abortRef = useRef<AbortController>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef({ startX: 0, startWidth: 0 });
 
-  useEffect(() => {
-    setPanelWidth(getStoredWidth());
+  const refreshConversations = useCallback(async () => {
+    const requestedTenant = useAuthStore.getState().currentTenant;
+    const requestedUser = useAuthStore.getState().user;
+
+    try {
+      const rows = await listConversations();
+      if (
+        useAuthStore.getState().currentTenant === requestedTenant &&
+        useAuthStore.getState().user === requestedUser
+      ) {
+        setConversations(rows);
+      }
+    } catch {
+      setError("No pudimos cargar tus conversaciones.");
+    }
   }, []);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsResizing(true);
-
-    dragRef.current = {
-      startX: e.clientX,
-      startWidth: containerRef.current?.offsetWidth ?? panelWidth,
-    };
-
-    const handleMouseMove = (ev: MouseEvent) => {
-      const delta = dragRef.current.startX - ev.clientX;
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, dragRef.current.startWidth + delta));
-      setPanelWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      // persist
-      const el = containerRef.current;
-      if (el) localStorage.setItem("chat-panel-width", String(el.offsetWidth));
-    };
-
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  }, [panelWidth]);
+  useEffect(() => {
+    if (currentTenant) void refreshConversations();
+  }, [currentTenant, refreshConversations]);
 
   useEffect(() => {
     abortRef.current?.abort();
-    setMessages([]); setInput(""); setError(undefined); setConversationId(undefined); setTurnCount(0); setIsLoading(false);
+    setConversations([]);
+    setConversationId(undefined);
+    setMessages([]);
+    setInput("");
+    setError(undefined);
+    setMobileHistoryOpen(false);
   }, [currentTenant, user]);
 
-  const scrollToBottom = useCallback(() => {
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  }, [messages, isLoading]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading, scrollToBottom]);
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches");
+  }, []);
 
-  const handleSend = async () => {
+  const selectConversation = async (id: string) => {
     const requestedTenant = currentTenant;
     const requestedUser = user;
-    if (!input.trim() || isLoading || turnCount >= MAX_TURNS || !requestedTenant || !requestedUser) return;
-    const userMsg = input.trim();
-    const requestId = crypto.randomUUID();
-    setInput(""); setError(undefined); setMessages((prev) => [...prev, createUserMessage(userMsg, requestId, requestedTenant)]); setIsLoading(true);
-    abortRef.current = new AbortController();
-    try {
-      const resp = await sendChatMessage(userMsg, conversationId, requestId, abortRef.current.signal);
-      if (!shouldAcceptChatResult(resp, requestedTenant) || useAuthStore.getState().currentTenant !== requestedTenant || useAuthStore.getState().user !== requestedUser) return;
-      setMessages((prev) => [...prev, { id: `${requestId}-assistant`, conversation_id: resp.conversation_id, role: "assistant", content: resp.text, created_at: new Date().toISOString(), tenant_id: resp.tenant_id, status: resp.status, tools_used: resp.tools_used, sources: resp.sources, freshness: resp.freshness, entity_refs: resp.entity_refs, attachments: resp.attachments }]);
-      setConversationId(resp.conversation_id); setTurnCount(resp.turn_count);
-    } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) setError("No pudimos procesar tu consulta. Intentá de nuevo.");
-    } finally { setIsLoading(false); abortRef.current = undefined; }
-  };
+    setConversationId(id);
+    setError(undefined);
+    setMobileHistoryOpen(false);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
+    try {
+      const rows = await listMessages(id);
+      if (
+        useAuthStore.getState().currentTenant === requestedTenant &&
+        useAuthStore.getState().user === requestedUser
+      ) {
+        setMessages(rows.map((row) => ({ ...row, tenant_id: requestedTenant ?? "" })));
+      }
+    } catch {
+      setError("No pudimos cargar este historial.");
     }
   };
-  const accessContext: AccessContext = { role, enabledFeatures, allowedModules, currentTenant };
+
+  const newConversation = async () => {
+    setError(undefined);
+    setMobileHistoryOpen(false);
+    try {
+      const row = await createConversation();
+      setConversations((previous) => [row, ...previous.filter((item) => item.id !== row.id)]);
+      setConversationId(row.id);
+      setMessages([]);
+    } catch {
+      setError("No pudimos crear la conversación.");
+    }
+  };
+
+  const handleSend = async () => {
+    const text = input.trim();
+    const requestedTenant = currentTenant;
+    const requestedUser = user;
+    const turnCount = messages.filter((message) => message.role === "user").length;
+
+    if (!text || isLoading || turnCount >= MAX_TURNS || !requestedTenant || !requestedUser) return;
+
+    setInput("");
+    setError(undefined);
+    setIsLoading(true);
+    const requestId = crypto.randomUUID();
+    const optimistic = normalizeChatMessage({
+      id: requestId,
+      tenant_id: requestedTenant,
+      conversation_id: conversationId ?? "",
+      role: "user",
+      content: text,
+      created_at: new Date().toISOString(),
+    });
+    setMessages((previous) => [...previous, optimistic]);
+    abortRef.current = new AbortController();
+
+    try {
+      let activeConversationId = conversationId;
+      if (!activeConversationId) {
+        const created = await createConversation(abortRef.current.signal);
+        activeConversationId = created.id;
+        setConversationId(created.id);
+        setConversations((previous) => [created, ...previous]);
+      }
+
+      if (
+        useAuthStore.getState().currentTenant !== requestedTenant ||
+        useAuthStore.getState().user !== requestedUser
+      ) return;
+
+      const reply = await sendChatMessage(
+        text,
+        activeConversationId,
+        requestId,
+        abortRef.current.signal,
+      );
+      if (
+        reply.tenant_id !== requestedTenant ||
+        useAuthStore.getState().currentTenant !== requestedTenant ||
+        useAuthStore.getState().user !== requestedUser
+      ) return;
+
+      setConversationId(reply.conversation_id);
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: `${requestId}-assistant`,
+          conversation_id: reply.conversation_id,
+          role: "assistant",
+          content: reply.text,
+          created_at: new Date().toISOString(),
+          tenant_id: reply.tenant_id,
+          status: reply.status,
+          tools_used: reply.tools_used,
+          sources: reply.sources,
+          freshness: reply.freshness,
+          entity_refs: reply.entity_refs,
+          attachments: reply.attachments,
+        },
+      ]);
+      void refreshConversations();
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        setError("No pudimos procesar tu consulta. Intentá de nuevo.");
+      }
+    } finally {
+      setIsLoading(false);
+      abortRef.current = undefined;
+    }
+  };
+
+  const turnCount = messages.filter((message) => message.role === "user").length;
+  const accessContext: AccessContext = {
+    role,
+    enabledFeatures,
+    allowedModules,
+    currentTenant,
+  };
+  const rawDisplayName = user?.split(/[.@]/)[0] || "equipo";
+  const displayName = rawDisplayName.charAt(0).toUpperCase() + rawDisplayName.slice(1);
+
 
   return (
-    <div className="mx-auto flex" style={{ height: "calc(100vh - 80px)", width: `min(${panelWidth}px, 100%)` }}>
-      {/* Resize handle */}
-      <div
-        onMouseDown={handleResizeStart}
-        className="group flex w-3 shrink-0 cursor-col-resize items-center justify-center"
-        title="Arrastrá para ajustar el ancho"
-        style={{ opacity: isResizing ? 1 : undefined }}
-      >
-        <div
-          className={`h-10 w-0.5 rounded-full transition-colors ${
-            isResizing ? "bg-primary" : "bg-border group-hover:bg-primary"
-          }`}
-        />
-      </div>
-
-      {/* Chat panel */}
-      <div ref={containerRef} className="flex min-w-0 flex-1 flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-1 py-3">
-          <h1 className="text-lg font-bold text-text-primary">Asistente {currentTenant ?? "de negocio"}</h1>
-          <span className="text-xs text-text-muted">
-            Turno {turnCount}/{MAX_TURNS}
+    <div className="assistant-workspace -mx-4 -mt-4 flex min-h-[calc(100dvh-4rem)] overflow-hidden bg-background text-text-primary lg:-mx-6 lg:min-h-[calc(100dvh-2rem)]">
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-border bg-surface-alt px-4 py-5 lg:flex">
+        <div className="flex items-center justify-between px-2">
+          <Link href="/" className="flex items-center gap-2 text-text-primary" aria-label="Volver al inicio">
+            <LogoMark size={28} tone="light" />
+            <span className="font-serif text-xl font-semibold tracking-tight">Asistente IA</span>
+          </Link>
+          <span className="rounded-full bg-surface px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+            IA
           </span>
         </div>
 
-        {/* Help block */}
-        <details className="mb-3 text-sm">
-          <summary className="cursor-pointer text-text-secondary hover:text-text-primary">
-            ¿Qué puedo preguntar?
-          </summary>
-          <div className="mt-2 space-y-1 rounded-lg bg-surface-alt p-3 text-xs text-text-muted">
-            <p>• ¿Cómo van las ventas este mes vs el pasado?</p>
-            <p>• ¿Qué productos están dormidos hace más de 60 días?</p>
-            <p>• ¿Quién es la mejor vendedora?</p>
-            <p>• ¿Hay alertas críticas hoy?</p>
-            <p>• ¿Cuál fue la última compra y de qué proveedor?</p>
-            <p>• ¿Cuánto hemos comprado este mes?</p>
-            <p>• ¿Tenemos filtros de aceite? ¿A cuánto están?</p>
-            <p>• ¿Quiénes son nuestros mejores clientes?</p>
-            <p>• ¿Cómo está la clasificación ABC/XYZ?</p>
-            <p>• ¿Hubo drift en alguna categoría del forecast?</p>
-            <p>• ¿Cómo está el forecast?</p>
-            <p>• ¿Cuánto vale el inventario?</p>
-          </div>
-        </details>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto space-y-3 pb-2" aria-live="polite">
-          {messages.length === 0 && (
-            <p className="py-10 text-center text-sm text-text-muted">
-              Preguntale al asistente sobre el negocio. Usa lenguaje natural.
-            </p>
-          )}
-
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              {msg.role === "assistant" ? (
-                <AssistantMessage message={msg} context={accessContext} />
-              ) : (
-                <div className="max-w-[85%] rounded-xl bg-primary px-4 py-2.5 text-sm text-primary-fg">
-                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {isLoading && (
-            <div role="status" className="flex justify-start">
-              <div className="rounded-xl bg-surface-alt border border-border px-4 py-2.5 text-sm text-text-muted">
-                Pensando<ThinkingDots />
-              </div>
-            </div>
-          )}
-          {error && <p role="alert" className="rounded-md bg-warning/10 p-2 text-xs text-warning">{error}</p>}
-
-          <div ref={messagesEndRef} />
+        <div className="mt-7 rounded-2xl border border-border bg-surface p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Negocio activo</p>
+          <p className="mt-1 truncate text-sm font-semibold text-text-primary">
+            {tenantDisplay?.name ?? currentTenant ?? "Tu negocio"}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-text-muted">
+            {tenantDisplay?.shortDescription ?? "Datos operativos"}
+          </p>
         </div>
 
-        {/* Input */}
-        <div className="border-t border-border pt-3 pb-4">
-          <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => void newConversation()}
+          className="mt-4 flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-sm font-semibold text-text-primary shadow-sm transition-colors hover:border-primary/40 hover:text-primary"
+        >
+          <span className="text-lg leading-none" aria-hidden="true">+</span>
+          Nueva conversación
+        </button>
+
+        <div className="mt-8 min-h-0 flex-1">
+          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Recientes</p>
+          <ConversationList conversations={conversations} conversationId={conversationId} onSelect={(id) => void selectConversation(id)} />
+        </div>
+
+        {conversationId && (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await archiveConversation(conversationId);
+                setConversationId(undefined);
+                setMessages([]);
+                void refreshConversations();
+              } catch {
+                setError("No pudimos archivar la conversación.");
+              }
+            }}
+            className="mt-4 border-t border-border pt-3 text-left text-xs text-text-muted transition-colors hover:text-warning"
+          >
+            Archivar conversación
+          </button>
+        )}
+      </aside>
+
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center justify-between border-b border-border bg-surface px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-text-primary lg:px-8 lg:py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link href="/" className="flex h-10 w-10 items-center justify-center rounded-full lg:hidden" aria-label="Volver al inicio"><span className="text-2xl">←</span></Link>
+            <div className="min-w-0 lg:hidden">
+              <div className="flex items-center gap-2"><LogoMark size={26} tone="light" /><p className="truncate text-base font-semibold">Asistente IA</p></div>
+              <p className="truncate text-xs text-text-muted">{tenantDisplay?.name ?? currentTenant ?? "Tu negocio"}</p>
+            </div>
+            <div className="hidden min-w-0 lg:block">
+              <p className="truncate text-sm font-semibold text-text-primary">Asistente de negocio</p>
+              <p className="truncate text-xs text-text-muted">{tenantDisplay?.name ?? currentTenant ?? "Datos de tu operación"}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setMobileHistoryOpen((open) => !open)} className="rounded-full border border-border bg-surface-alt px-3 py-2 text-xs font-semibold text-text-secondary lg:hidden" aria-expanded={mobileHistoryOpen}>
+              Conversaciones
+            </button>
+            <span className="hidden rounded-full bg-white px-3 py-1.5 text-xs text-text-muted lg:inline-flex">
+              {turnCount}/{MAX_TURNS} turnos
+            </span>
+          </div>
+        </header>
+
+        {mobileHistoryOpen && (
+          <div className="border-b border-border bg-surface-alt p-4 lg:hidden">
+            <button type="button" onClick={() => void newConversation()} className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-primary-fg">
+              <span aria-hidden="true">+</span> Nueva conversación
+            </button>
+            <ConversationList conversations={conversations} conversationId={conversationId} onSelect={(id) => void selectConversation(id)} />
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background px-5 py-8 lg:px-10 lg:py-10" aria-live="polite">
+          {messages.length === 0 ? (
+            <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center text-center">
+              <div className="mb-6 flex h-16 w-16 items-center justify-center" aria-hidden="true"><LogoMark size={52} tone="light" /></div>
+              <p className="hidden text-xs font-semibold uppercase tracking-[0.22em] text-primary lg:block">{tenantDisplay?.name ?? "Tu negocio"}</p>
+              <h1 className="mt-3 max-w-2xl font-serif text-[2.65rem] leading-tight tracking-tight text-text-primary sm:text-5xl">
+                {greeting}, {displayName}
+              </h1>
+              <p className="mt-4 max-w-xl text-base leading-relaxed text-text-muted sm:text-lg">
+                ¿Qué te gustaría entender hoy de tu operación?
+              </p>
+              <div className="mt-9 hidden w-full gap-3 sm:grid-cols-3 lg:grid">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setInput(suggestion)}
+                    className="rounded-2xl border border-[#e4dfd8] bg-white/80 p-4 text-left text-sm leading-relaxed text-text-secondary transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-text-primary hover:shadow-sm"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              {error && <p role="alert" className="mt-5 rounded-xl bg-warning/10 p-3 text-sm text-warning">{error}</p>}
+            </div>
+          ) : (
+            <div className="mx-auto max-w-3xl space-y-5">
+              {messages.map((message) => (
+                <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                  {message.role === "assistant" ? (
+                    <div>
+                      <AssistantMessage message={message} context={accessContext} />
+                      <MessageTime message={message} />
+                    </div>
+                  ) : (
+                    <div className="max-w-[88%] rounded-2xl bg-primary px-4 py-3 text-sm text-primary-fg shadow-sm">
+                      <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                      <MessageTime message={message} />
+                    </div>
+                  )}
+                </div>
+              ))}
+              {isLoading && (
+                <div role="status" className="flex items-center gap-3 px-2 text-sm text-text-muted">
+                  <span>Pensando</span>
+                  <ThinkingDots />
+                  <span className="sr-only">El asistente está preparando una respuesta</span>
+                </div>
+              )}
+              {error && <p role="alert" className="rounded-xl bg-warning/10 p-3 text-sm text-warning">{error}</p>}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSend();
+          }}
+          className="shrink-0 bg-background px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 lg:px-10 lg:pb-7"
+        >
+          <div className="mx-auto flex max-w-3xl items-end gap-3 rounded-[1.6rem] border border-border bg-surface p-4 shadow-sm transition-shadow focus-within:border-primary/50 focus-within:shadow-md lg:rounded-2xl lg:p-3">
             <label htmlFor="page-chat-input" className="sr-only">Pregunta al asistente</label>
-            <input
+            <textarea
               id="page-chat-input"
-              type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={turnCount >= MAX_TURNS ? "Límite de turnos alcanzado" : "Escribí tu pregunta..."}
-              disabled={isLoading || turnCount >= MAX_TURNS}
-              className="flex-1 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleSend();
+                }
+              }}
               maxLength={500}
+              rows={1}
+              disabled={isLoading || turnCount >= MAX_TURNS}
+              placeholder={turnCount >= MAX_TURNS ? "Límite de turnos alcanzado" : "Chat con el asistente"}
+              className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-50"
             />
             <button
-              type="button"
-              onClick={() => void handleSend()}
+              type="submit"
               disabled={isLoading || !input.trim() || turnCount >= MAX_TURNS}
-              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-fg hover:bg-primary-light disabled:opacity-40 transition-colors"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-fg transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-40 lg:h-10 lg:w-auto lg:rounded-xl lg:px-4 lg:text-sm"
+              aria-label="Enviar"
             >
-              Enviar
+              <span className="hidden lg:inline">Enviar</span>
+              <span className="lg:hidden" aria-hidden="true">↑</span>
             </button>
           </div>
+          <div className="mx-auto mt-3 flex max-w-3xl items-center justify-between text-[11px] text-text-muted lg:mt-2 lg:justify-center">
+            <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary lg:hidden">{tenantDisplay?.name ?? "Negocio"} IA · datos del negocio</span>
+            <p className="hidden lg:block">La información se consulta con los datos disponibles de {tenantDisplay?.name ?? "tu negocio"}.</p>
+          </div>
           {isLoading && (
-            <button type="button" onClick={() => abortRef.current?.abort()} className="mt-2 text-xs text-text-muted underline">
+            <button type="button" onClick={() => abortRef.current?.abort()} className="mx-auto mt-1 block text-xs text-text-muted underline">
               Cancelar
             </button>
           )}
-          {turnCount >= MAX_TURNS && (
-            <p className="mt-2 text-xs text-text-muted text-center">
-              Iniciá una nueva conversación (refrescá la página).
-            </p>
-          )}
-        </div>
-      </div>
+        </form>
+      </section>
     </div>
   );
 }
