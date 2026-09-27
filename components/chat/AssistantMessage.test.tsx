@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { AssistantMessage } from "./AssistantMessage";
 import type { ChatMessage } from "@/lib/api/chat";
 import type { AccessContext } from "@/lib/auth/access";
@@ -288,6 +287,60 @@ describe("AssistantMessage rendered states", () => {
     });
     render(<AssistantMessage message={unsafeMessage} context={baseContext} />);
     expect(screen.queryByRole("link", { name: /Ver ficha de/ })).not.toBeInTheDocument();
+  });
+
+  it("hides supplier and purchase links without Purchases access", () => {
+    const restrictedContext: AccessContext = {
+      role: "analista",
+      enabledFeatures: ["chat-ia", "analisis"],
+      allowedModules: ["chat-ia", "analisis"],
+      currentTenant: "motoshop",
+    };
+    const message = makeMessage({
+      content: "Factura 456 de Distribuidora Norte (NIT 900123456).",
+      entity_refs: [
+        {
+          entity_type: "purchase_document",
+          entity_id: "2026-07-20|FC|456",
+          label: "Factura 456",
+          domain: "purchases",
+          href: "/dashboards/compras/dia/2026-07-20/documento/456?cod_clase=FC",
+        },
+        {
+          entity_type: "supplier",
+          entity_id: "900123456",
+          label: "Distribuidora Norte",
+          label_is_unique: true,
+          domain: "purchases",
+          href: "/dashboards/compras/proveedores/900123456",
+        },
+      ],
+    });
+    render(<AssistantMessage message={message} context={restrictedContext} />);
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText(/Factura 456 de Distribuidora Norte/)).toBeInTheDocument();
+  });
+
+  it("labels an ambiguous supplier entity with its NIT instead of linking its name", () => {
+    const message = makeMessage({
+      content: "Distribuidora Norte · NIT 900123456",
+      entity_refs: [{
+        entity_type: "supplier",
+        entity_id: "900123456",
+        label: "Distribuidora Norte",
+        label_is_unique: false,
+        domain: "purchases",
+        href: "/dashboards/compras/proveedores/900123456",
+      }],
+    });
+    render(<AssistantMessage message={message} context={baseContext} />);
+
+    expect(screen.queryByRole("link", { name: "Distribuidora Norte" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Abrir ficha de proveedor NIT 900123456" })).toHaveAttribute(
+      "href",
+      "/dashboards/compras/proveedores/900123456",
+    );
   });
 
   it("hides entity links when domain access is denied", () => {

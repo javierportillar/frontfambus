@@ -2,6 +2,7 @@ import useSWR, { type KeyedMutator } from "swr";
 import { apiFetch, apiFetchJson } from "./client";
 import { getCached, setCache } from "@/lib/offline/cache";
 import { useAuthStore } from "@/lib/auth/store";
+import { isValidBusinessDate, isValidSupplierNit } from "@/lib/compras/routes";
 import { sendChatMessage, type ChatReply } from "./chat";
 
 interface Product {
@@ -1871,6 +1872,93 @@ export function useComprasProveedorDetalle(
     ok
       ? `/api/metrics/compras-proveedor-detalle?nit_proveedor=${encodeURIComponent(nit)}&fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`
       : null,
+  );
+}
+
+export interface ComprasProveedorPerfilDocumento {
+  business_date: string;
+  cod_clase: string;
+  num_documento: string;
+  total_factura: number;
+  num_items: number;
+}
+
+export interface ComprasProveedorPerfilProducto {
+  cod_producto: string;
+  nombre: string;
+  unidades: number;
+  total_compras: number;
+  documentos: number;
+}
+
+export interface ComprasProveedorPerfilResponse {
+  proveedor: { nit: string; nombre: string };
+  periodo: { fecha_inicio: string; fecha_fin: string };
+  compras: {
+    total_compras: number;
+    num_documentos: number;
+    ticket_promedio: number;
+    primera_compra: string | null;
+    ultima_compra: string | null;
+    skus_distintos: number;
+    productos_top: ComprasProveedorPerfilProducto[];
+  };
+  ventas_estimadas: {
+    revenue: number;
+    revenue_with_cost: number;
+    margen_cobertura_pct: number | null;
+    margen: number | null;
+    margen_pct: number | null;
+    skus_vendidos: number;
+    skus_con_costo: number;
+    metodo_atribucion: { id: string; descripcion: string };
+  };
+  documentos: ComprasProveedorPerfilDocumento[];
+  paginacion: {
+    page: number;
+    page_size: number;
+    total_documentos: number;
+    has_more: boolean;
+  };
+}
+
+export function buildComprasProveedorPerfilUrl(
+  nit: string,
+  fechaInicio: string,
+  fechaFin: string,
+  page = 1,
+  pageSize = 20,
+): string {
+  const params = new URLSearchParams({
+    nit_proveedor: nit,
+    fecha_inicio: fechaInicio,
+    fecha_fin: fechaFin,
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  return `/api/metrics/compras-proveedor-perfil?${params.toString()}`;
+}
+
+export function useComprasProveedorPerfil(
+  nit: string | null,
+  fechaInicio: string,
+  fechaFin: string,
+  page = 1,
+  pageSize = 20,
+) {
+  const ok = !!nit
+    && isValidSupplierNit(nit)
+    && isValidBusinessDate(fechaInicio)
+    && isValidBusinessDate(fechaFin)
+    && fechaInicio <= fechaFin
+    && Number.isInteger(page)
+    && page >= 1
+    && Number.isInteger(pageSize)
+    && pageSize >= 1
+    && pageSize <= 100;
+  return useMetrics<ComprasProveedorPerfilResponse>(
+    ok ? buildComprasProveedorPerfilUrl(nit, fechaInicio, fechaFin, page, pageSize) : null,
+    { keepPreviousData: false },
   );
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChatMessage, EntityRef, ReportAttachment } from "@/lib/api/chat";
+import { parsePurchaseDocumentEntityId } from "@/lib/compras/routes";
 import {
   canAccessAssistantDomain,
   isSafeAssistantEntityHref,
@@ -21,10 +22,15 @@ function EntityLinks({ refs, context }: { refs: EntityRef[]; context: AccessCont
   if (!allowed.length) return null;
 
   const productNameCounts = new Map<string, number>();
+  const supplierNameCounts = new Map<string, number>();
   for (const ref of allowed) {
-    if (ref.entity_type !== "product") continue;
     const key = ref.label.toLocaleLowerCase("es-CO");
-    productNameCounts.set(key, (productNameCounts.get(key) ?? 0) + 1);
+    if (ref.entity_type === "product") {
+      productNameCounts.set(key, (productNameCounts.get(key) ?? 0) + 1);
+    }
+    if (ref.entity_type === "supplier") {
+      supplierNameCounts.set(key, (supplierNameCounts.get(key) ?? 0) + 1);
+    }
   }
 
   return (
@@ -33,11 +39,27 @@ function EntityLinks({ refs, context }: { refs: EntityRef[]; context: AccessCont
         const ambiguousProductName = ref.entity_type === "product"
           && (ref.label_is_unique === false
             || (productNameCounts.get(ref.label.toLocaleLowerCase("es-CO")) ?? 0) > 1);
-        const label = ambiguousProductName ? `${ref.label} (${ref.entity_id})` : ref.label;
+        const uniqueSupplierName = ref.entity_type === "supplier"
+          && ref.label_is_unique === true
+          && supplierNameCounts.get(ref.label.toLocaleLowerCase("es-CO")) === 1;
+        const documentIdentity = ref.entity_type === "purchase_document"
+          ? parsePurchaseDocumentEntityId(ref.entity_id)
+          : null;
+        const label = ref.entity_type === "supplier"
+          ? uniqueSupplierName ? ref.label : `NIT ${ref.entity_id}`
+          : documentIdentity
+            ? `Factura ${documentIdentity.documentNumber} · ${documentIdentity.businessDate}`
+            : ambiguousProductName ? `${ref.label} (${ref.entity_id})` : ref.label;
+        const ariaLabel = ref.entity_type === "supplier"
+          ? `Abrir ficha de proveedor ${uniqueSupplierName ? ref.label : `NIT ${ref.entity_id}`}`
+          : documentIdentity
+            ? `Abrir factura ${documentIdentity.documentNumber} del ${documentIdentity.businessDate}`
+            : undefined;
         return (
           <a
             key={`${ref.domain}-${ref.entity_type}-${ref.entity_id}`}
             href={ref.href}
+            aria-label={ariaLabel}
             className="rounded-md border border-primary/30 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
           >
             {label}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { EntityRef } from "@/lib/api/chat";
+import { parsePurchaseDocumentEntityId } from "@/lib/compras/routes";
 import {
   canAccessAssistantDomain,
   isSafeAssistantEntityHref,
@@ -11,10 +12,12 @@ type InlinePart = { kind: "text" | "strong" | "emphasis" | "code" | "link"; valu
 
 const INLINE_TOKEN = /(\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)|(https?:\/\/[^\s)]+))/g;
 
-interface ProductMention {
+type MentionKind = "product-sku" | "product-name" | "supplier-nit" | "supplier-name" | "purchase-document";
+
+interface EntityMention {
   term: string;
   ref: EntityRef;
-  isSku: boolean;
+  kind: MentionKind;
 }
 
 function visibleEntityRefs(refs: EntityRef[], context?: AccessContext): EntityRef[] {
@@ -25,32 +28,57 @@ function visibleEntityRefs(refs: EntityRef[], context?: AccessContext): EntityRe
   ));
 }
 
-function productMentions(refs: EntityRef[]): ProductMention[] {
+function assistantMentions(refs: EntityRef[]): EntityMention[] {
   const products = refs.filter((ref) => (
     ref.entity_type === "product"
     && ref.domain === "inventory"
   ));
-  const labelCounts = new Map<string, number>();
+  const suppliers = refs.filter((ref) => ref.entity_type === "supplier" && ref.domain === "purchases");
+  const productLabelCounts = new Map<string, number>();
+  const supplierLabelCounts = new Map<string, number>();
   for (const ref of products) {
     const key = ref.label.toLocaleLowerCase("es-CO");
-    labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
+    productLabelCounts.set(key, (productLabelCounts.get(key) ?? 0) + 1);
+  }
+  for (const ref of suppliers) {
+    const key = ref.label.toLocaleLowerCase("es-CO");
+    supplierLabelCounts.set(key, (supplierLabelCounts.get(key) ?? 0) + 1);
   }
 
-  return products.flatMap((ref) => {
-    const mentions: ProductMention[] = [{ term: ref.entity_id, ref, isSku: true }];
+  const mentions: EntityMention[] = [];
+  for (const ref of products) {
+    mentions.push({ term: ref.entity_id, ref, kind: "product-sku" });
     const normalizedLabel = ref.label.toLocaleLowerCase("es-CO");
     if (ref.label_is_unique !== false
       && normalizedLabel
       && normalizedLabel !== ref.entity_id.toLocaleLowerCase("es-CO")
-      && labelCounts.get(normalizedLabel) === 1) {
-      mentions.push({ term: ref.label, ref, isSku: false });
+      && productLabelCounts.get(normalizedLabel) === 1) {
+      mentions.push({ term: ref.label, ref, kind: "product-name" });
     }
-    return mentions;
-  }).sort((left, right) => right.term.length - left.term.length);
+  }
+  for (const ref of suppliers) {
+    mentions.push({ term: ref.entity_id, ref, kind: "supplier-nit" });
+    const normalizedLabel = ref.label.toLocaleLowerCase("es-CO");
+    if (ref.label_is_unique === true
+      && normalizedLabel
+      && normalizedLabel !== ref.entity_id.toLocaleLowerCase("es-CO")
+      && supplierLabelCounts.get(normalizedLabel) === 1) {
+      mentions.push({ term: ref.label, ref, kind: "supplier-name" });
+    }
+  }
+  for (const ref of refs.filter((item) => item.entity_type === "purchase_document" && item.domain === "purchases")) {
+    const identity = parsePurchaseDocumentEntityId(ref.entity_id);
+    if (identity) mentions.push({ term: identity.documentNumber, ref, kind: "purchase-document" });
+  }
+  return mentions.sort((left, right) => right.term.length - left.term.length);
 }
 
 function isWordCharacter(value: string | undefined): boolean {
   return value !== undefined && /[\p{L}\p{N}_]/u.test(value);
+}
+
+function isIdentifierContinuation(value: string | undefined): boolean {
+  return value !== undefined && /[\p{L}\p{N}_./-]/u.test(value);
 }
 
 function countWholeTerm(value: string, term: string): number {
@@ -79,16 +107,36 @@ function visibleMarkdownText(value: string): string {
     .replace(/https?:\/\/[^\s)]+/gi, " ");
 }
 
-function linkProductMentions(
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasExplicitDocumentLabel(value: string, documentNumber: string): boolean {
+  const pattern = new RegExp(
+    `\\b(?:factura|documento)\\b[^\\d\\n]{0,20}${escapeRegExp(documentNumber)}(?![\\p{L}\\p{N}_./-])`,
+    "iu",
+  );
+  return pattern.test(value);
+}
+
+function hasExplicitNitLabel(value: string, nit: string): boolean {
+  const pattern = new RegExp(
+    `\\bnit\\b(?:\\s*(?:n(?:ro|[úu]mero)?\\.?))?\\s*[:#-]?\\s*${escapeRegExp(nit)}(?![\\d./-])`,
+    "iu",
+  );
+  return pattern.test(value);
+}
+
+function linkEntityMentions(
   value: string,
-  mentions: ProductMention[],
+  mentions: EntityMention[],
   keyPrefix: string,
   context: string,
 ): ReactNode[] {
   if (!mentions.length || !value) return [value];
   const lowerValue = value.toLocaleLowerCase("es-CO");
-  const visibleContext = visibleMarkdownText(context);
-  const matches: Array<{ start: number; end: number; mention: ProductMention }> = [];
+  const safeContext = visibleMarkdownText(context);
+  const matches: Array<{ start: number; end: number; mention: EntityMention }> = [];
 
   for (const mention of mentions) {
     const term = mention.term.toLocaleLowerCase("es-CO");
@@ -98,14 +146,21 @@ function linkProductMentions(
       const start = lowerValue.indexOf(term, searchFrom);
       if (start < 0) break;
       const end = start + term.length;
-      const needsNameContext = mention.isSku && /^\d+$/.test(mention.ref.entity_id);
+      const needsNameContext = mention.kind === "product-sku" && /^\d+$/.test(mention.ref.entity_id);
+      const numericContextIsUnique = countWholeTerm(safeContext, mention.term) === 1;
+      const supplierNitHasContext = mention.kind !== "supplier-nit"
+        || (numericContextIsUnique && hasExplicitNitLabel(safeContext, mention.ref.entity_id));
+      const documentHasContext = mention.kind !== "purchase-document"
+        || (numericContextIsUnique && hasExplicitDocumentLabel(safeContext, mention.term));
       if (!isWordCharacter(value[start - 1])
         && !isWordCharacter(value[end])
+        && (mention.kind !== "supplier-nit" && mention.kind !== "purchase-document"
+          || (!isIdentifierContinuation(value[start - 1]) && !isIdentifierContinuation(value[end])))
         && (!needsNameContext || (
-          containsWholeTerm(visibleContext, mention.ref.label)
-          && countWholeTerm(visibleContext, mention.ref.entity_id) === 1
+          containsWholeTerm(safeContext, mention.ref.label)
+          && numericContextIsUnique
         ))) {
-        matches.push({ start, end, mention });
+        if (supplierNitHasContext && documentHasContext) matches.push({ start, end, mention });
       }
       searchFrom = end;
     }
@@ -120,9 +175,9 @@ function linkProductMentions(
     const visibleText = value.slice(match.start, match.end);
     nodes.push(
       <a
-        key={`${keyPrefix}-product-${match.mention.ref.entity_id}-${match.start}-${index}`}
+        key={`${keyPrefix}-${match.mention.kind}-${match.mention.ref.entity_id}-${match.start}-${index}`}
         href={match.mention.ref.href}
-        aria-label={`Ver ficha de ${match.mention.ref.label}${match.mention.isSku ? ` (${match.mention.ref.entity_id})` : ""}`}
+        aria-label={mentionAriaLabel(match.mention)}
         className="font-medium text-primary underline underline-offset-2 hover:text-primary-light"
       >
         {visibleText}
@@ -132,6 +187,49 @@ function linkProductMentions(
   }
   if (cursor < value.length) nodes.push(value.slice(cursor));
   return nodes.length ? nodes : [value];
+}
+
+function mentionAriaLabel(mention: EntityMention): string {
+  if (mention.kind === "supplier-name") return `Ver ficha de proveedor ${mention.ref.label}`;
+  if (mention.kind === "supplier-nit") return `Ver ficha de proveedor NIT ${mention.ref.entity_id}`;
+  if (mention.kind === "purchase-document") {
+    return `Ver factura ${mention.term}`;
+  }
+  return `Ver ficha de ${mention.ref.label}${mention.kind === "product-sku" ? ` (${mention.ref.entity_id})` : ""}`;
+}
+
+function canLinkMarkdownEntity(label: string, ref: EntityRef, refs: EntityRef[], context: string): boolean {
+  const visibleLabel = visibleMarkdownText(label).trim();
+  const visibleContext = visibleMarkdownText(context);
+  if (ref.entity_type === "purchase_document") {
+    const identity = parsePurchaseDocumentEntityId(ref.entity_id);
+    return !!identity
+      && countWholeTerm(visibleContext, identity.documentNumber) === 1
+      && hasExplicitDocumentLabel(visibleContext, identity.documentNumber)
+      && containsWholeTerm(visibleLabel, identity.documentNumber);
+  }
+  if (ref.entity_type === "supplier") {
+    const matchingNames = refs.filter((candidate) => (
+      candidate.entity_type === "supplier"
+      && candidate.label.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO")
+    ));
+    const canonicalName = ref.label_is_unique === true
+      && matchingNames.length === 1
+      && visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
+    const verifiedNit = containsWholeTerm(visibleLabel, ref.entity_id)
+      && hasExplicitNitLabel(visibleLabel, ref.entity_id)
+      && countWholeTerm(visibleContext, ref.entity_id) === 1;
+    return canonicalName || verifiedNit;
+  }
+  if (ref.entity_type === "product") {
+    const ambiguousProductName = ref.label_is_unique === false
+      && visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
+    const numericSkuNeedsName = /^\d+$/.test(ref.entity_id)
+      && (!containsWholeTerm(visibleContext, ref.label)
+        || countWholeTerm(visibleContext, ref.entity_id) !== 1);
+    return !ambiguousProductName && !numericSkuNeedsName;
+  }
+  return true;
 }
 
 function parseInline(value: string): InlinePart[] {
@@ -157,7 +255,7 @@ function parseInline(value: string): InlinePart[] {
 
 function renderInline(
   value: string,
-  mentions: ProductMention[] = [],
+  mentions: EntityMention[] = [],
   entityRefs: EntityRef[] = [],
   context: string = value,
 ): ReactNode[] {
@@ -166,31 +264,34 @@ function renderInline(
       case "strong": return <strong key={part.key}>{renderInline(part.value, mentions, entityRefs, context)}</strong>;
       case "emphasis": return <em key={part.key}>{renderInline(part.value, mentions, entityRefs, context)}</em>;
       case "code": {
-        const skuLink = mentions.find((mention) => (
-          mention.isSku && mention.term.toLocaleLowerCase("es-CO") === part.value.toLocaleLowerCase("es-CO")
+        const codeMention = mentions.find((mention) => (
+          ["product-sku", "supplier-nit", "purchase-document"].includes(mention.kind)
+          && mention.term.toLocaleLowerCase("es-CO") === part.value.toLocaleLowerCase("es-CO")
         ));
-        const numericSkuNeedsName = skuLink && /^\d+$/.test(skuLink.ref.entity_id)
-          && (!containsWholeTerm(visibleMarkdownText(context), skuLink.ref.label)
-            || countWholeTerm(visibleMarkdownText(context), skuLink.ref.entity_id) !== 1);
+        const visibleContext = visibleMarkdownText(context);
+        const codeMentionIsSafe = codeMention?.kind === "product-sku"
+          ? (!/^\d+$/.test(codeMention.ref.entity_id)
+            || (containsWholeTerm(visibleContext, codeMention.ref.label)
+              && countWholeTerm(visibleContext, codeMention.ref.entity_id) === 1))
+          : codeMention?.kind === "supplier-nit"
+            ? countWholeTerm(visibleContext, codeMention.ref.entity_id) === 1
+              && hasExplicitNitLabel(visibleContext, codeMention.ref.entity_id)
+            : codeMention?.kind === "purchase-document"
+              ? countWholeTerm(visibleContext, codeMention.term) === 1
+                && hasExplicitDocumentLabel(visibleContext, codeMention.term)
+              : false;
         const code = <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-text-primary">{part.value}</code>;
-        return skuLink && !numericSkuNeedsName
-          ? <a key={part.key} href={skuLink.ref.href} aria-label={`Ver ficha de ${skuLink.ref.label} (${skuLink.ref.entity_id})`}>{code}</a>
+        return codeMention && codeMentionIsSafe
+          ? <a key={part.key} href={codeMention.ref.href} aria-label={mentionAriaLabel(codeMention)}>{code}</a>
           : <span key={part.key}>{code}</span>;
       }
       case "link": {
         const ref = entityRefs.find((item) => item.href === part.href);
-        const ambiguousProductName = ref?.entity_type === "product"
-          && ref.label_is_unique === false
-          && part.value.trim().toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
-        const visibleContext = visibleMarkdownText(context);
-        const numericSkuNeedsName = ref?.entity_type === "product"
-          && /^\d+$/.test(ref.entity_id)
-          && !containsWholeTerm(visibleContext, ref.label);
-        return part.href && ref && !ambiguousProductName && !numericSkuNeedsName
+        return part.href && ref && canLinkMarkdownEntity(part.value, ref, entityRefs, context)
           ? <a key={part.key} href={part.href} className="font-medium text-primary underline underline-offset-2 hover:text-primary-light">{renderInline(part.value)}</a>
           : part.value;
       }
-      default: return linkProductMentions(part.value, mentions, part.key, context);
+      default: return linkEntityMentions(part.value, mentions, part.key, context);
     }
   });
 }
@@ -222,7 +323,7 @@ function MarkdownTable({
   entityRefs,
 }: {
   rows: string[][];
-  mentions: ProductMention[];
+  mentions: EntityMention[];
   entityRefs: EntityRef[];
 }): JSX.Element {
   const header = rows[0] ?? [];
@@ -233,7 +334,7 @@ function MarkdownTable({
         <thead>
           <tr className="bg-surface-alt">
             {header.map((cell, i) => (
-              <th key={`th-${i}`} className="border-b border-border px-2.5 py-1.5 text-left font-semibold text-text-primary">{renderInline(cell, mentions, entityRefs)}</th>
+              <th key={`th-${i}`} className="border-b border-border px-2.5 py-1.5 text-left font-semibold text-text-primary">{renderInline(cell, mentions, entityRefs, cell)}</th>
             ))}
           </tr>
         </thead>
@@ -243,7 +344,7 @@ function MarkdownTable({
               {row.map((cell, ci) => {
                 return (
                   <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
-                    {renderInline(cell, mentions, entityRefs, cell)}
+                    {renderInline(cell, mentions, entityRefs, `${header[ci] ?? ""} ${cell}`)}
                   </td>
                 );
               })}
@@ -265,7 +366,7 @@ export function MarkdownContent({
   accessContext?: AccessContext;
 }): JSX.Element {
   const authorizedEntityRefs = visibleEntityRefs(entityRefs, accessContext);
-  const mentions = productMentions(authorizedEntityRefs);
+  const mentions = assistantMentions(authorizedEntityRefs);
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;

@@ -1,3 +1,9 @@
+import {
+  isValidSupplierNit,
+  purchaseDocumentHrefFromEntityId,
+  supplierProfileHref,
+} from "@/lib/compras/routes";
+
 export interface AccessContext {
   role: string | null;
   enabledFeatures: readonly string[];
@@ -35,6 +41,10 @@ export function isSafeAssistantEntityHref(
     ? `/dashboards/productos/${encodedId}`
     : entityType === "alert" && domain === "alerts"
       ? `/inventario/alertas/${encodedId}`
+      : entityType === "purchase_document" && domain === "purchases"
+        ? purchaseDocumentHrefFromEntityId(entityId)
+        : entityType === "supplier" && domain === "purchases" && isValidSupplierNit(entityId)
+          ? supplierProfileHref(entityId)
       : null;
   return expected !== null && href === expected;
 }

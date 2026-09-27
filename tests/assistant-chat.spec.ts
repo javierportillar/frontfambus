@@ -21,7 +21,14 @@ type TestReply = {
   tools_used: string[];
   sources: Array<Record<string, string>>;
   freshness: Array<Record<string, string>>;
-  entity_refs: Array<Record<string, string>>;
+  entity_refs: Array<{
+    entity_type: string;
+    entity_id: string;
+    label: string;
+    label_is_unique?: boolean;
+    domain: string;
+    href: string;
+  }>;
   attachments: TestAttachment[];
 };
 
@@ -272,3 +279,122 @@ test.describe("Governed assistant cross-repository contract", () => {
     });
   }
 });
+
+function purchaseReply(tenant: string): TestReply {
+  return {
+    ...assistantReply,
+    tenant_id: tenant,
+    text: "Factura 9081 del proveedor Distribuidora Norte (NIT: 900123456). Total $125000.",
+    tools_used: ["get_detalle_compra"],
+    entity_refs: [
+      {
+        entity_type: "purchase_document",
+        entity_id: "2026-09-10|FV|9081",
+        label: "Factura 9081",
+        domain: "purchases",
+        href: "/dashboards/compras/dia/2026-09-10/documento/9081?cod_clase=FV",
+      },
+      {
+        entity_type: "supplier",
+        entity_id: "900123456",
+        label: "Distribuidora Norte",
+        label_is_unique: true,
+        domain: "purchases",
+        href: "/dashboards/compras/proveedores/900123456",
+      },
+    ],
+    attachments: [],
+  };
+}
+
+async function mockPurchaseProfileApis(page: Page) {
+  await page.route("**/api/metrics/compras-proveedor-perfil*", (route) => route.fulfill({ json: {
+    proveedor: { nit: "900123456", nombre: "Distribuidora Norte" },
+    periodo: { fecha_inicio: "2025-09-27", fecha_fin: "2026-09-27" },
+    compras: {
+      total_compras: 125000,
+      num_documentos: 1,
+      ticket_promedio: 125000,
+      primera_compra: "2026-09-10",
+      ultima_compra: "2026-09-10",
+      skus_distintos: 1,
+      productos_top: [],
+    },
+    ventas_estimadas: {
+      revenue: 240000,
+      revenue_with_cost: 240000,
+      margen_cobertura_pct: 100,
+      margen: 85000,
+      margen_pct: 35.4,
+      skus_vendidos: 1,
+      skus_con_costo: 1,
+      metodo_atribucion: {
+        id: "latest_supplier_per_sku",
+        descripcion: "Atribución de cada SKU a su proveedor conocido más reciente.",
+      },
+    },
+    documentos: [{
+      business_date: "2026-09-10",
+      cod_clase: "FV",
+      num_documento: "9081",
+      total_factura: 125000,
+      num_items: 1,
+    }],
+    paginacion: { page: 1, page_size: 20, total_documentos: 1, has_more: false },
+  } }));
+  await page.route("**/api/metrics/purchases-day-grouped*", (route) => route.fulfill({ json: {
+    date: "2026-09-10",
+    total_compras: 125000,
+    total_documentos: 1,
+    documentos: [{
+      num_documento: "9081",
+      cod_clase: "FV",
+      nit_proveedor: "900123456",
+      nombre_proveedor: "Distribuidora Norte",
+      total_factura: 125000,
+      num_items: 1,
+      items: [],
+    }],
+  } }));
+}
+
+for (const tenant of ["motoshop", "masvital"] as const) {
+  test(`${tenant} assistant document reference opens the exact purchase identity`, async ({ page }) => {
+    await seedSession(page, purchaseReply(tenant), tenant);
+    await mockPurchaseProfileApis(page);
+    await page.goto("/chat");
+    await page.getByLabel("Pregunta al asistente").fill("Abre la factura del proveedor");
+    await page.getByRole("button", { name: "Enviar" }).click();
+
+    const answer = page.getByRole("article", { name: "Mensaje del asistente: Respuesta parcial" });
+    const documentLink = answer.getByRole("link", { name: "Ver factura 9081" });
+    await expect(documentLink).toHaveAttribute(
+      "href",
+      "/dashboards/compras/dia/2026-09-10/documento/9081?cod_clase=FV",
+    );
+    await documentLink.click();
+
+    await expect(page).toHaveURL(/\/dashboards\/compras\/dia\/2026-09-10\/documento\/9081\?cod_clase=FV$/);
+    await expect(page.getByRole("heading", { name: "Detalle de la compra" })).toBeVisible();
+    await expect(page.getByText("Distribuidora Norte")).toBeVisible();
+  });
+
+  test(`${tenant} assistant supplier link opens its profile and an exact purchase document`, async ({ page }) => {
+    await seedSession(page, purchaseReply(tenant), tenant);
+    await mockPurchaseProfileApis(page);
+    await page.goto("/chat");
+    await page.getByLabel("Pregunta al asistente").fill("Muestra el proveedor y su factura");
+    await page.getByRole("button", { name: "Enviar" }).click();
+
+    const answer = page.getByRole("article", { name: "Mensaje del asistente: Respuesta parcial" });
+    await answer.getByRole("link", { name: "Ver ficha de proveedor Distribuidora Norte" }).click();
+    await expect(page).toHaveURL(/\/dashboards\/compras\/proveedores\/900123456$/);
+    await expect(page.getByRole("heading", { name: "Distribuidora Norte" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Compras al proveedor" })).toBeVisible();
+    await expect(page.getByText(/No representa ventas facturadas directamente/)).toBeVisible();
+
+    await page.getByRole("link", { name: "Factura 9081" }).click();
+    await expect(page).toHaveURL(/\/dashboards\/compras\/dia\/2026-09-10\/documento\/9081\?cod_clase=FV$/);
+    await expect(page.getByRole("heading", { name: "Detalle de la compra" })).toBeVisible();
+  });
+}

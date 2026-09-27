@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useAnalisisProveedores, type ProveedorAnalisis } from "@/lib/api/hooks";
+import { isValidSupplierNit, supplierProfileHref } from "@/lib/compras/routes";
+import { canAccessFeature } from "@/lib/auth/access";
+import { useAuthStore } from "@/lib/auth/store";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
@@ -24,6 +28,14 @@ type SortBy = "compras" | "ventas" | "margen" | "ratio";
 
 export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
   const { data, isLoading } = useAnalisisProveedores(ini, fin);
+  const role = useAuthStore((state) => state.role);
+  const enabledFeatures = useAuthStore((state) => state.enabledFeatures);
+  const allowedModules = useAuthStore((state) => state.allowedModules);
+  const canOpenSupplierProfile = canAccessFeature("ventas-summary", {
+    role,
+    enabledFeatures,
+    allowedModules,
+  });
   const [filter, setFilter] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("compras");
 
@@ -198,7 +210,7 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
             </thead>
             <tbody>
               {proveedoresFiltrados.map((p, idx) => (
-                <ProveedorRow key={p.nit} p={p} rank={idx + 1} />
+                <ProveedorRow key={p.nit} p={p} rank={idx + 1} canOpenProfile={canOpenSupplierProfile} />
               ))}
             </tbody>
           </table>
@@ -230,7 +242,7 @@ function SortPill({ label, active, onClick }: { label: string; active: boolean; 
   );
 }
 
-function ProveedorRow({ p, rank }: { p: ProveedorAnalisis; rank: number }): JSX.Element {
+function ProveedorRow({ p, rank, canOpenProfile }: { p: ProveedorAnalisis; rank: number; canOpenProfile: boolean }): JSX.Element {
   const dependencia = p.pct_del_total >= 30 ? "text-red-600 font-bold" : p.pct_del_total >= 15 ? "text-amber-600 font-semibold" : "text-text-primary";
   const durmiendo = (p.dias_desde_ultima_compra ?? 0) > 180;
   const ratio = p.ratio_venta_compra;
@@ -244,9 +256,17 @@ function ProveedorRow({ p, rank }: { p: ProveedorAnalisis; rank: number }): JSX.
     <tr className="border-b border-border/60 hover:bg-surface-alt">
       <td className="py-2 px-3 text-xs text-text-muted tabular-nums">{rank}</td>
       <td className="py-2 px-3">
-        <div className="text-text-primary font-medium">{p.nombre}</div>
+        {canOpenProfile && isValidSupplierNit(p.nit) ? (
+          <Link href={supplierProfileHref(p.nit)} className="font-medium text-primary hover:underline">
+            {p.nombre}
+          </Link>
+        ) : (
+          <div className="font-medium text-text-primary">{p.nombre}</div>
+        )}
         <div className="text-[0.65rem] text-text-muted">
-          NIT {p.nit} · {p.num_documentos} doc · ticket {formatMoneyFull(p.ticket_promedio)}
+          {canOpenProfile && isValidSupplierNit(p.nit) ? (
+            <Link href={supplierProfileHref(p.nit)} className="hover:text-primary hover:underline">NIT {p.nit}</Link>
+          ) : `NIT ${p.nit}`} · {p.num_documentos} doc · ticket {formatMoneyFull(p.ticket_promedio)}
         </div>
       </td>
       <td className="py-2 px-3 text-right tabular-nums font-semibold">{formatMoneyFull(p.total_compras)}</td>

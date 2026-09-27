@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { EntityRef } from "@/lib/api/chat";
 import type { AccessContext } from "@/lib/auth/access";
 import { MarkdownContent } from "./MarkdownContent";
@@ -98,5 +98,136 @@ describe("MarkdownContent", () => {
 
     expect(screen.getByText("<select>*</select>")).toBeInTheDocument();
     expect(document.querySelector("select")).not.toBeInTheDocument();
+  });
+
+  it("links a verified document number only when its visible label identifies an invoice", () => {
+    const ref: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-07-20|FC|456",
+      label: "Factura 456",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-07-20/documento/456?cod_clase=FC",
+    };
+    const accessContext: AccessContext = {
+      role: "admin",
+      enabledFeatures: ["ventas-summary"],
+      allowedModules: null,
+      currentTenant: "motoshop",
+    };
+    const { rerender } = render(
+      <MarkdownContent
+        content="Factura 456 · total $7890"
+        entityRefs={[ref]}
+        accessContext={accessContext}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Ver factura 456" })).toHaveAttribute("href", ref.href);
+    expect(screen.getByText(/total \$7890/)).toBeInTheDocument();
+
+    rerender(
+      <MarkdownContent
+        content="[Factura 456](/dashboards/compras/dia/2026-07-20/documento/456?cod_clase=FC)"
+        entityRefs={[ref]}
+        accessContext={accessContext}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Factura 456" })).toHaveAttribute("href", ref.href);
+
+    rerender(
+      <MarkdownContent
+        content="[Abrir](/dashboards/compras/dia/2026-07-20/documento/456?cod_clase=FC)"
+        entityRefs={[ref]}
+        accessContext={accessContext}
+      />,
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    rerender(
+      <MarkdownContent
+        content="Referencia 456 · total $7890"
+        entityRefs={[ref]}
+        accessContext={accessContext}
+      />,
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("recognizes a document column label but leaves an equal numeric amount unlinked", () => {
+    const ref: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-07-20|FC|456",
+      label: "Factura 456",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-07-20/documento/456?cod_clase=FC",
+    };
+    render(
+      <MarkdownContent
+        content={"| Factura | Total |\n| --- | --- |\n| 456 | $456 |"}
+        entityRefs={[ref]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary"], allowedModules: null }}
+      />,
+    );
+
+    const row = screen.getByRole("row", { name: /456.*\$456/ });
+    const documentCell = within(row).getByRole("cell", { name: "Ver factura 456" });
+    const amountCell = within(row).getByRole("cell", { name: "$456" });
+    expect(within(documentCell).getByRole("link", { name: "Ver factura 456" })).toHaveAttribute("href", ref.href);
+    expect(within(amountCell).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("links a supplier by its canonical unique name and explicit NIT", () => {
+    const ref: EntityRef = {
+      entity_type: "supplier",
+      entity_id: "900123456",
+      label: "Distribuidora Norte",
+      label_is_unique: true,
+      domain: "purchases",
+      href: "/dashboards/compras/proveedores/900123456",
+    };
+    render(
+      <MarkdownContent
+        content="Distribuidora Norte · NIT: 900123456 · total $48000"
+        entityRefs={[ref]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary"], allowedModules: null }}
+      />,
+    );
+
+    const supplierLinks = screen.getAllByRole("link", {
+      name: /Ver ficha de proveedor/,
+    });
+    expect(supplierLinks).toHaveLength(2);
+    expect(supplierLinks.every((link) => link.getAttribute("href") === ref.href)).toBe(true);
+    expect(screen.getByText(/total \$48000/)).toBeInTheDocument();
+  });
+
+  it("keeps an ambiguous supplier name plain while linking its verified NIT", () => {
+    const ref: EntityRef = {
+      entity_type: "supplier",
+      entity_id: "900123456",
+      label: "Distribuidora Norte",
+      label_is_unique: false,
+      domain: "purchases",
+      href: "/dashboards/compras/proveedores/900123456",
+    };
+    render(
+      <MarkdownContent
+        content="Distribuidora Norte · NIT 900123456 · total $48000"
+        entityRefs={[ref]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary"], allowedModules: null }}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: "Distribuidora Norte" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", {
+      name: "Ver ficha de proveedor NIT 900123456",
+    })).toHaveAttribute("href", ref.href);
+  });
+
+  it("does not turn an arbitrary internal Markdown destination into a link", () => {
+    render(<MarkdownContent content="[Abrir ficha](/dashboards/compras/proveedores/900123456)" />);
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText("Abrir ficha")).toBeInTheDocument();
   });
 });
