@@ -35,6 +35,13 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
   }
 
   const pareto = data.pareto;
+  const unitsByMeasure = Object.entries(data.total_unidades_por_medida ?? {});
+  const singleUnit = unitsByMeasure.length === 1 ? unitsByMeasure[0] : undefined;
+  const unitsSubtitle = unitsByMeasure.length > 1
+    ? `${unitsByMeasure.map(([unit, amount]) => `${amount.toLocaleString("es-CO", { maximumFractionDigits: 0 })} ${unit}`).join(" · ")} vendidas por medida (no sumar entre medidas)`
+    : singleUnit
+      ? `${singleUnit[1].toLocaleString("es-CO", { maximumFractionDigits: 0 })} ${singleUnit[0]}`
+      : "desglose por medida no disponible";
   const paretoColor = pareto.pct_skus < 25 ? "#DC2626" : pareto.pct_skus < 40 ? "#C2410C" : "#16A34A";
   const paretoInsight = pareto.pct_skus < 25
     ? "Muy concentrado — pocos SKUs sostienen todo. Cuidá esos productos."
@@ -50,7 +57,7 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
           <Stat
             label="Revenue vendido"
             value={formatMoneyFull(data.total_revenue)}
-            subtitle={`${data.total_skus_vendidos.toLocaleString("es-CO")} SKUs · ${data.total_unidades.toLocaleString("es-CO", { maximumFractionDigits: 0 })} u`}
+            subtitle={`${data.total_skus_vendidos.toLocaleString("es-CO")} SKUs · ${unitsSubtitle}`}
           />
         </Card>
         <Card>

@@ -21,8 +21,10 @@ const RANGE_ANALYSIS_TABS: readonly AnalysisTab[] = [
 
 export function allowedAnalysisTabs(context: AccessContext): AnalysisTab[] {
   const tabs: AnalysisTab[] = [];
-  if (canAccessFeature("analisis", context)) tabs.push(...RANGE_ANALYSIS_TABS);
-  if (canAccessFeature("forecast", context)) tabs.push("proyeccion");
+  const canSeeAnalysis = canAccessFeature("analisis", context);
+  const canSeeForecast = canAccessFeature("forecast", context);
+  if (canSeeAnalysis) tabs.push(...RANGE_ANALYSIS_TABS);
+  if (canSeeAnalysis || canSeeForecast) tabs.push("proyeccion");
   return tabs;
 }
 

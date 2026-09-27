@@ -312,6 +312,12 @@ interface SalesForecastMonthly {
     end: string;
     days_with_sales: number;
   } | null;
+  backtest_accuracy?: {
+    confidence: "high" | "medium" | "low";
+    sample_months: number;
+    median_absolute_error_pct: number | null;
+    note: string;
+  } | null;
   // V1.27: backtest de los últimos 6 meses cerrados para ver precisión del modelo
   history?: SalesForecastHistoryItem[];
 }
@@ -1897,6 +1903,7 @@ export interface AnalisisProductosResponse {
   total_revenue: number;
   total_margen: number;
   total_unidades: number;
+  total_unidades_por_medida?: Record<string, number>;
   /** V1.22 */
   total_compras_periodo?: number;
   margen_promedio_pct: number | null;

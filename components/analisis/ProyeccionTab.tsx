@@ -16,6 +16,11 @@ import {
 } from "recharts";
 
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const CONFIDENCE_LABELS: Record<string, string> = {
+  high: "alta",
+  medium: "media",
+  low: "baja",
+};
 
 function monthLabel(month: string): string {
   const [year, rawMonth] = month.split("-");
@@ -47,6 +52,7 @@ export function ProyeccionTab(): JSX.Element {
 
   const current = data.current_month;
   const next = data.next_month;
+  const confidenceNote = data.backtest_accuracy?.note;
   const observed = current.observed_amount ?? 0;
   const pendingCurrent = Math.max(0, current.projected_amount - observed);
   const projectionRows = [
@@ -97,6 +103,14 @@ export function ProyeccionTab(): JSX.Element {
             El modelo está usando una base alternativa ({data.rate_basis}) porque todavía no hay 90 días completos.
           </p>
         )}
+        {confidenceNote && (
+          <p
+            role="status"
+            className="mt-3 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary"
+          >
+            Confianza {CONFIDENCE_LABELS[data.backtest_accuracy?.confidence ?? "low"] ?? "baja"} según backtest: {confidenceNote}
+          </p>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -104,14 +118,14 @@ export function ProyeccionTab(): JSX.Element {
           <Stat
             label={`Mes en curso — ${monthLabel(current.month)}`}
             value={formatMoneyFull(current.projected_amount)}
-            subtitle={`Real: ${formatMoneyFull(observed)} · restante: ${formatMoneyFull(pendingCurrent)} · confianza ${current.confidence}`}
+            subtitle={`Real: ${formatMoneyFull(observed)} · restante: ${formatMoneyFull(pendingCurrent)} · confianza ${CONFIDENCE_LABELS[current.confidence] ?? current.confidence}`}
           />
         </Card>
         <Card>
           <Stat
             label={`Próximo mes — ${monthLabel(next.month)}`}
             value={formatMoneyFull(next.projected_amount)}
-            subtitle={`${next.days_total} días · confianza ${next.confidence}${
+            subtitle={`${next.days_total} días · confianza ${CONFIDENCE_LABELS[next.confidence] ?? next.confidence}${
               next.last_year_same_month ? ` · mismo mes anterior: ${formatMoneyFull(next.last_year_same_month)}` : ""
             }`}
           />
@@ -166,7 +180,7 @@ export function ProyeccionTab(): JSX.Element {
                   <td className="px-2 py-3 text-right tabular-nums text-[#9A7414]">{formatMoneyFull(row.pending)}</td>
                   <td className="px-2 py-3 text-right font-semibold tabular-nums text-text-primary">{formatMoneyFull(row.total)}</td>
                   <td className="px-4 py-3 text-right md:pr-2">
-                    <span className="inline-flex rounded-full border border-border bg-surface-alt px-2 py-1 text-xs font-semibold text-text-secondary">{row.confidence}</span>
+                    <span className="inline-flex rounded-full border border-border bg-surface-alt px-2 py-1 text-xs font-semibold text-text-secondary">{CONFIDENCE_LABELS[row.confidence] ?? "—"}</span>
                   </td>
                 </tr>
               ))}

@@ -16,15 +16,15 @@ describe("analysis tab permissions", () => {
     expect(resolveAnalysisTab("balance", null, allowed)).toBe("proyeccion");
   });
 
-  it("does not expose Projection to an analysis-only user", () => {
+  it("exposes the monthly projection as part of the Analysis module", () => {
     const allowed = allowedAnalysisTabs({
       role: "vendedor",
       enabledFeatures,
       allowedModules: ["analisis"],
     });
 
-    expect(allowed).toEqual(["balance", "productos", "proveedores", "horas", "gastos"]);
-    expect(resolveAnalysisTab("proyeccion", null, allowed)).toBe("balance");
+    expect(allowed).toEqual(["balance", "productos", "proveedores", "horas", "gastos", "proyeccion"]);
+    expect(resolveAnalysisTab("proyeccion", null, allowed)).toBe("proyeccion");
   });
 
   it.each([
