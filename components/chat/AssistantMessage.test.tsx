@@ -153,13 +153,141 @@ describe("AssistantMessage rendered states", () => {
         entity_id: "SKU-1",
         label: "Filtro",
         domain: "inventory",
-        href: "/inventario/productos/SKU-1",
+        href: "/dashboards/productos/SKU-1",
       }],
     });
     render(<AssistantMessage message={message} context={baseContext} />);
 
     const link = screen.getByRole("link", { name: "Filtro" });
-    expect(link).toHaveAttribute("href", "/inventario/productos/SKU-1");
+    expect(link).toHaveAttribute("href", "/dashboards/productos/SKU-1");
+  });
+
+  it("links product SKUs and unique names in prose and Markdown tables", () => {
+    const message = makeMessage({
+      content: "Producto BONNAT001 SALSAS MRS TASTE para revisar.\n\n| Código | Producto |\n| --- | --- |\n| BONNAT001 | SALSAS MRS TASTE |",
+      entity_refs: [{
+        entity_type: "product",
+        entity_id: "BONNAT001",
+        label: "SALSAS MRS TASTE",
+        domain: "inventory",
+        href: "/dashboards/productos/BONNAT001",
+      }],
+    });
+    render(<AssistantMessage message={message} context={baseContext} />);
+
+    const skuLinks = screen.getAllByRole("link", {
+      name: "Ver ficha de SALSAS MRS TASTE (BONNAT001)",
+    });
+    const nameLinks = screen.getAllByRole("link", { name: "Ver ficha de SALSAS MRS TASTE" });
+    expect(skuLinks).toHaveLength(2);
+    expect(nameLinks).toHaveLength(2);
+    expect([...skuLinks, ...nameLinks].every(
+      (link) => link.getAttribute("href") === "/dashboards/productos/BONNAT001",
+    )).toBe(true);
+  });
+
+  it("does not link an ambiguous product name but keeps each verified SKU clickable", () => {
+    const message = makeMessage({
+      content: "SALSAS MRS TASTE: revisar BONNAT001 y BONNAT002.",
+      entity_refs: ["BONNAT001", "BONNAT002"].map((entity_id) => ({
+        entity_type: "product",
+        entity_id,
+        label: "SALSAS MRS TASTE",
+        domain: "inventory",
+        href: `/dashboards/productos/${entity_id}`,
+      })),
+    });
+    render(<AssistantMessage message={message} context={baseContext} />);
+
+    expect(screen.queryByRole("link", { name: "Ver ficha de SALSAS MRS TASTE" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver ficha de SALSAS MRS TASTE (BONNAT001)" })).toHaveAttribute(
+      "href", "/dashboards/productos/BONNAT001",
+    );
+    expect(screen.getByRole("link", { name: "Ver ficha de SALSAS MRS TASTE (BONNAT002)" })).toHaveAttribute(
+      "href", "/dashboards/productos/BONNAT002",
+    );
+    expect(screen.getByRole("link", { name: "SALSAS MRS TASTE (BONNAT001)" })).toHaveAttribute(
+      "href", "/dashboards/productos/BONNAT001",
+    );
+    expect(screen.getByRole("link", { name: "SALSAS MRS TASTE (BONNAT002)" })).toHaveAttribute(
+      "href", "/dashboards/productos/BONNAT002",
+    );
+  });
+
+  it("does not link a catalog-wide ambiguous name absent from the visible refs", () => {
+    const message = makeMessage({
+      content: "SALSAS MRS TASTE: revisar BONNAT001.",
+      entity_refs: [{
+        entity_type: "product",
+        entity_id: "BONNAT001",
+        label: "SALSAS MRS TASTE",
+        label_is_unique: false,
+        domain: "inventory",
+        href: "/dashboards/productos/BONNAT001",
+      }],
+    });
+    render(<AssistantMessage message={message} context={baseContext} />);
+
+    expect(screen.queryByRole("link", { name: /^Ver ficha de SALSAS MRS TASTE$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver ficha de SALSAS MRS TASTE (BONNAT001)" })).toHaveAttribute(
+      "href", "/dashboards/productos/BONNAT001",
+    );
+  });
+
+  it("keeps numeric invoice amounts plain and links the unique product name in a table", () => {
+    const message = makeMessage({
+      content: "| Código | Producto | Valor |\n| --- | --- | --- |\n| 123456 | Product alpha | $123456 |",
+      entity_refs: [{
+        entity_type: "product",
+        entity_id: "123456",
+        label: "Product alpha",
+        domain: "inventory",
+        href: "/dashboards/productos/123456",
+      }],
+    });
+    render(<AssistantMessage message={message} context={baseContext} />);
+
+    const row = screen.getByRole("row", { name: /\$123456/ });
+    const skuCell = within(row).getByRole("cell", { name: "123456" });
+    const productCell = within(row).getByRole("cell", { name: "Ver ficha de Product alpha" });
+    const amountCell = within(row).getByRole("cell", { name: "$123456" });
+    expect(within(skuCell).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(productCell).getByRole("link", { name: "Ver ficha de Product alpha" })).toHaveAttribute(
+      "href", "/dashboards/productos/123456",
+    );
+    expect(within(amountCell).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("does not render product links without Inventory access or for an untrusted destination", () => {
+    const productRef = {
+      entity_type: "product",
+      entity_id: "BONNAT001",
+      label: "SALSAS MRS TASTE",
+      domain: "inventory",
+      href: "/dashboards/productos/BONNAT001",
+    };
+    const restrictedContext: AccessContext = {
+      role: "analista",
+      enabledFeatures: ["chat-ia", "analisis"],
+      allowedModules: ["chat-ia", "analisis"],
+      currentTenant: "motoshop",
+    };
+    const restrictedMessage = makeMessage({
+      content: "BONNAT001 SALSAS MRS TASTE",
+      entity_refs: [productRef],
+    });
+    const { unmount } = render(
+      <AssistantMessage message={restrictedMessage} context={restrictedContext} />,
+    );
+    expect(screen.queryByRole("link", { name: /Ver ficha de/ })).not.toBeInTheDocument();
+
+    unmount();
+    const unsafeMessage = makeMessage({
+      content: "BONNAT001 SALSAS MRS TASTE",
+      entity_refs: [{ ...productRef, href: "https://evil.test/product" }],
+    });
+    render(<AssistantMessage message={unsafeMessage} context={baseContext} />);
+    expect(screen.queryByRole("link", { name: /Ver ficha de/ })).not.toBeInTheDocument();
   });
 
   it("hides entity links when domain access is denied", () => {
@@ -175,7 +303,7 @@ describe("AssistantMessage rendered states", () => {
         entity_id: "SKU-1",
         label: "Filtro",
         domain: "inventory",
-        href: "/inventario/productos/SKU-1",
+        href: "/dashboards/productos/SKU-1",
       }],
     });
     render(<AssistantMessage message={message} context={restrictedContext} />);

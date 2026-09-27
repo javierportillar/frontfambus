@@ -730,6 +730,7 @@ export type ProductAbc = "A" | "B" | "C" | "sin_venta";
 export interface ProductMetric {
   cod_producto: string;
   nombre: string;
+  stock_source?: "catalog_snapshot" | "purchases_minus_sales_estimate";
   comprado_total?: number;
   vendido_total?: number;
   cantidad_actual: number;

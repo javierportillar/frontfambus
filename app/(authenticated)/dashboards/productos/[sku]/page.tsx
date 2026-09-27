@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useProductDetail, type ProductMovimiento, type ProductTimelineMonth } from "@/lib/api/hooks";
+import { useProductDetail, type ProductMetric, type ProductMovimiento, type ProductTimelineMonth } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { diasStockLabel, estadoCfg, accionCfg } from "@/lib/productos/display";
 import { Card } from "@/components/ui/Card";
@@ -256,6 +256,7 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
       <MovimientosSplit
         movimientos={data.movimientos ?? []}
         stockActual={m.cantidad_actual}
+        stockSource={m.stock_source}
         compradoTotal={compradoTotal}
         vendidoTotal={vendidoTotal}
         totalesLabel={totalesLabel}
@@ -460,12 +461,14 @@ function FifoSaleTiming({ fifo, fechaCompra }: { fifo: ComprasFifo | undefined; 
 function MovimientosSplit({
   movimientos,
   stockActual,
+  stockSource,
   compradoTotal,
   vendidoTotal,
   totalesLabel,
 }: {
   movimientos: ProductMovimiento[];
   stockActual: number;
+  stockSource: ProductMetric["stock_source"];
   compradoTotal: number;
   vendidoTotal: number;
   totalesLabel: string;
@@ -524,13 +527,22 @@ function MovimientosSplit({
           />
         </div>
       </div>
-      {tieneTotalesHistoricos && (
+      {tieneTotalesHistoricos && stockSource !== "catalog_snapshot" && (
         <div className="mt-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-text-secondary">
           <span className="font-semibold text-text-primary">Cálculo del stock:</span>{" "}
           {compradoTotal.toLocaleString("es-CO")} u compradas {totalesLabel} − {vendidoTotal.toLocaleString("es-CO")} u vendidas {totalesLabel} ={" "}
           <span className="font-semibold text-text-primary">{stockActual.toLocaleString("es-CO")} u actuales</span>.
           <span className="ml-1 text-text-muted">
             Abajo se muestran todos los movimientos que devuelve el backend, agrupados para que no sea una lista infinita.
+          </span>
+        </div>
+      )}
+      {stockSource === "catalog_snapshot" && (
+        <div className="mt-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-text-secondary">
+          <span className="font-semibold text-text-primary">Stock actual:</span>{" "}
+          {stockActual.toLocaleString("es-CO")} u según el snapshot vigente del catálogo de MasVital.
+          <span className="ml-1 text-text-muted">
+            Las compras menos las ventas históricas pueden diferir por ajustes, traslados o devoluciones.
           </span>
         </div>
       )}

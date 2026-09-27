@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canAccessFeature, canAccessPath, resolvePathAccess } from "./access";
+import {
+  canAccessFeature,
+  canAccessPath,
+  isSafeAssistantEntityHref,
+  resolvePathAccess,
+} from "./access";
 
 describe("module access", () => {
   const restricted = {
@@ -30,6 +35,14 @@ describe("module access", () => {
   it("gates the assistant by the tenant chat feature", () => {
     expect(canAccessPath("/chat", { role: "gerente", enabledFeatures: ["chat-ia"], allowedModules: null })).toBe(true);
     expect(canAccessPath("/chat", { role: "gerente", enabledFeatures: [], allowedModules: null })).toBe(false);
+  });
+
+  it("allows only the server route template for product and alert entity links", () => {
+    expect(isSafeAssistantEntityHref("product", "SKU/1", "inventory", "/dashboards/productos/SKU%2F1")).toBe(true);
+    expect(isSafeAssistantEntityHref("product", "SKU-1", "sales", "/dashboards/productos/SKU-1")).toBe(false);
+    expect(isSafeAssistantEntityHref("product", "SKU-1", "inventory", "/inventario/productos/SKU-1")).toBe(false);
+    expect(isSafeAssistantEntityHref("product", "SKU-1", "inventory", "https://evil.test/SKU-1")).toBe(false);
+    expect(isSafeAssistantEntityHref("alert", "SKU-1", "alerts", "/inventario/alertas/SKU-1")).toBe(true);
   });
 
 

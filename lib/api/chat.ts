@@ -4,7 +4,7 @@ export type AssistantStatus = "complete" | "partial" | "empty" | "needs_clarific
 export type ReportFormat = "excel" | "pdf" | "word";
 export interface SourceEvidence { source_id: string; domain: string; kind: "duckdb" | "supabase" | "document"; citation: string; cutoff_at: string | null; observed_at: string | null; status: "used" | "failed"; }
 export interface Freshness { domain: string; cutoff_at: string | null; observed_at: string | null; status: "current" | "stale" | "unknown"; }
-export interface EntityRef { entity_type: string; entity_id: string; label: string; domain: string; href: string; }
+export interface EntityRef { entity_type: string; entity_id: string; label: string; label_is_unique?: boolean; domain: string; href: string; }
 
 export interface Conversation {
   id: string;

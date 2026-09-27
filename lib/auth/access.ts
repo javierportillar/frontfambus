@@ -23,6 +23,22 @@ export function isSafeServerHref(href: string): boolean {
     && !/^(?:javascript|data|vbscript):/i.test(href);
 }
 
+export function isSafeAssistantEntityHref(
+  entityType: string,
+  entityId: string,
+  domain: string,
+  href: string,
+): boolean {
+  if (!isSafeServerHref(href)) return false;
+  const encodedId = encodeURIComponent(entityId);
+  const expected = entityType === "product" && domain === "inventory"
+    ? `/dashboards/productos/${encodedId}`
+    : entityType === "alert" && domain === "alerts"
+      ? `/inventario/alertas/${encodedId}`
+      : null;
+  return expected !== null && href === expected;
+}
+
 export function canAccessAssistantDomain(domain: string, context: AccessContext): boolean {
   const features = ASSISTANT_DOMAIN_FEATURES[domain];
   return Boolean(features?.some((feature) => canAccessFeature(feature, context)));

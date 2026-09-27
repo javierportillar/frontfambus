@@ -52,7 +52,7 @@ const assistantReply: TestReply = {
     entity_id: "SKU-1",
     label: "Filtro",
     domain: "inventory",
-    href: "/inventario/productos/SKU-1",
+    href: "/dashboards/productos/SKU-1",
   }],
   attachments: [{
     type: "report",
@@ -93,22 +93,22 @@ function persistedState(tenant = "motoshop") {
   });
 }
 
-async function seedSession(page: Page, reply = assistantReply) {
+async function seedSession(page: Page, reply = assistantReply, tenant = "motoshop") {
   await page.context().addCookies([
     { name: "motoshop_token", value: "test-token", domain: "localhost", path: "/" },
-    { name: "motoshop_tenant", value: "motoshop", domain: "localhost", path: "/" },
+    { name: "motoshop_tenant", value: tenant, domain: "localhost", path: "/" },
   ]);
   await page.addInitScript((state) => {
     window.localStorage.setItem("motoshop_auth", state);
-  }, persistedState());
+  }, persistedState(tenant));
 
   await page.route("**/api/auth/me", (route: Route) => {
-    const tenant = route.request().headers()["x-tenant"] ?? "motoshop";
+    const activeTenant = route.request().headers()["x-tenant"] ?? tenant;
     return route.fulfill({ json: {
       username: "admin",
       role: "admin",
       tenants_allowed: ["motoshop", "masvital"],
-      current_tenant: tenant,
+      current_tenant: activeTenant,
       enabled_features: ["chat-ia", "ventas-summary", "inventario", "alerts", "dormidos", "abc", "analisis", "forecast"],
       allowed_modules: null,
     } });
@@ -117,18 +117,18 @@ async function seedSession(page: Page, reply = assistantReply) {
   await page.route("**/api/llm/qa/chat", (route: Route) => route.fulfill({ json: reply }));
   await page.route("**/api/llm/chat/conversations", (route: Route) => {
     if (route.request().method() === "POST") return route.fulfill({ json: {
-      id: "conversation-1", tenant_id: "motoshop", user_id: "admin", title: "Ventas de septiembre",
+      id: "conversation-1", tenant_id: tenant, user_id: "admin", title: "Ventas de septiembre",
       status: "active", created_at: "2026-09-15T10:00:00Z", updated_at: "2026-09-15T10:00:00Z",
       last_message_at: "2026-09-15T10:00:00Z", message_count: 2,
     } });
     return route.fulfill({ json: [{
-      id: "conversation-1", tenant_id: "motoshop", user_id: "admin", title: "Ventas de septiembre",
+      id: "conversation-1", tenant_id: tenant, user_id: "admin", title: "Ventas de septiembre",
       status: "active", created_at: "2026-09-15T10:00:00Z", updated_at: "2026-09-15T10:00:00Z",
       last_message_at: "2026-09-15T10:00:00Z", message_count: 2,
     }] });
   });
   await page.route("**/api/llm/chat/conversations/*/messages", (route: Route) => route.fulfill({ json: [
-    { id: "user-1", conversation_id: "conversation-1", tenant_id: "motoshop", user_id: "admin", role: "user", content: "ventas", created_at: "2026-09-15T10:00:00Z" },
+    { id: "user-1", conversation_id: "conversation-1", tenant_id: tenant, user_id: "admin", role: "user", content: "ventas", created_at: "2026-09-15T10:00:00Z" },
     { id: "assistant-1", user_id: "admin", role: "assistant", content: reply.text, created_at: "2026-09-15T10:00:01Z", ...reply },
   ] }));
 }
@@ -151,7 +151,7 @@ test.describe("Governed assistant cross-repository contract", () => {
     await expect(fullPageMessage).toContainText("Ventas disponibles.");
     await expect(fullPageMessage).toContainText("Ventas del corte");
     await expect(fullPageMessage).toContainText("sales: current");
-    await expect(fullPageMessage.getByRole("link", { name: "Filtro" })).toHaveAttribute("href", "/inventario/productos/SKU-1");
+    await expect(fullPageMessage.getByRole("link", { name: "Filtro" })).toHaveAttribute("href", "/dashboards/productos/SKU-1");
     await expect(page.getByText(/Enviado ·/)).toBeVisible();
     await expect(page.getByText(/Respondido ·/)).toBeVisible();
 
@@ -191,4 +191,84 @@ test.describe("Governed assistant cross-repository contract", () => {
     await expect(page.getByRole("heading", { name: /(?:Buenos días|Buenas tardes|Buenas noches), Admin/ })).toBeVisible();
     await expect(page.getByText("El reporte anterior expiró.")).toHaveCount(0);
   });
+
+  for (const tenant of ["motoshop", "masvital"] as const) {
+    test(`${tenant} product mentions open the matching detail page`, async ({ page }) => {
+      const productReply: TestReply = {
+        ...assistantReply,
+        tenant_id: tenant,
+        text: "Producto BONNAT001 SALSAS MRS TASTE para revisar.\n\n| Código | Producto |\n| --- | --- |\n| BONNAT001 | SALSAS MRS TASTE |",
+        entity_refs: [{
+          entity_type: "product",
+          entity_id: "BONNAT001",
+          label: "SALSAS MRS TASTE",
+          domain: "inventory",
+          href: "/dashboards/productos/BONNAT001",
+        }],
+      };
+      await seedSession(page, productReply, tenant);
+      await page.route("**/api/metrics/product-detail*", (route) => route.fulfill({ json: {
+        found: true,
+        sku: "BONNAT001",
+        window_days: 180,
+        metrics: {
+          cod_producto: "BONNAT001",
+          nombre: "SALSAS MRS TASTE",
+          stock_source: tenant === "masvital" ? "catalog_snapshot" : "purchases_minus_sales_estimate",
+          comprado_total: 33,
+          vendido_total: 3,
+          cantidad_actual: 9,
+          costo_unit: 100,
+          precio: 200,
+          valor_inventario: 900,
+          revenue_win: 600,
+          unidades_win: 3,
+          margen_win: 300,
+          margen_pct: 50,
+          velocidad_mensual: 0.5,
+          dias_stock: 540,
+          rotacion_anual: 0.7,
+          ultima_venta: "2026-09-20",
+          dias_sin_venta: 7,
+          ultima_compra: "2026-09-18",
+          dias_sin_compra: 9,
+          proveedor: "Proveedor de prueba",
+          pct_revenue: 1,
+          rank_rev: 1,
+          abc: "B",
+          estado: "saludable",
+          es_servicio: false,
+          accion: "ok",
+        },
+        timeline: [],
+        movimientos: [],
+      } }));
+
+      await page.goto("/chat");
+      await page.getByLabel("Pregunta al asistente").fill("Revisa el producto BONNAT001");
+      await page.getByRole("button", { name: "Enviar" }).click();
+
+      const answer = page.getByRole("article", { name: "Mensaje del asistente: Respuesta parcial" });
+      await expect(answer).toHaveCount(1);
+      const nameLinks = answer.getByRole("link", { name: "Ver ficha de SALSAS MRS TASTE", exact: true });
+      await expect(nameLinks).toHaveCount(2);
+      const tableProductLink = answer.getByRole("table").getByRole("link", {
+        name: "Ver ficha de SALSAS MRS TASTE",
+        exact: true,
+      });
+      await expect(tableProductLink).toHaveAttribute(
+        "href",
+        "/dashboards/productos/BONNAT001",
+      );
+      await tableProductLink.click();
+
+      await expect(page).toHaveURL(/\/dashboards\/productos\/BONNAT001$/);
+      await expect(page.getByRole("heading", { name: "SALSAS MRS TASTE" })).toBeVisible();
+      if (tenant === "masvital") {
+        await expect(page.getByText(/snapshot vigente del catálogo de MasVital/)).toBeVisible();
+      } else {
+        await expect(page.getByText(/compradas históricas − 3 u vendidas históricas/)).toBeVisible();
+      }
+    });
+  }
 });
