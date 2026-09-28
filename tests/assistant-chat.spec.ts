@@ -140,6 +140,38 @@ async function seedSession(page: Page, reply = assistantReply, tenant = "motosho
   ] }));
 }
 
+async function seedLongConversationHistory(page: Page): Promise<void> {
+  const conversations = Array.from({ length: 32 }, (_, index) => ({
+    id: `conversation-${index}`,
+    tenant_id: "motoshop",
+    user_id: "admin",
+    title: `Conversación ${String(index).padStart(2, "0")}`,
+    status: "active",
+    created_at: "2026-09-15T10:00:00Z",
+    updated_at: "2026-09-15T10:00:00Z",
+    last_message_at: "2026-09-15T10:00:00Z",
+    message_count: 40,
+  }));
+  const messages = Array.from({ length: 40 }, (_, index) => ({
+    id: `message-${index}`,
+    conversation_id: "conversation-0",
+    tenant_id: "motoshop",
+    user_id: "admin",
+    role: "user",
+    content: `Mensaje de historial ${index}: ${"detalle de la conversación. ".repeat(5)}`,
+    created_at: "2026-09-15T10:00:00Z",
+  }));
+
+  await page.route("**/api/llm/chat/conversations", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: conversations })
+      : route.continue(),
+  );
+  await page.route("**/api/llm/chat/conversations/conversation-0/messages", (route) =>
+    route.fulfill({ json: messages }),
+  );
+}
+
 test.describe("Governed assistant cross-repository contract", () => {
   test("opens the dedicated assistant module and downloads an authorized report", async ({ page }) => {
     await seedSession(page);
@@ -197,6 +229,97 @@ test.describe("Governed assistant cross-repository contract", () => {
     await page.goto("/chat");
     await expect(page.getByRole("heading", { name: /(?:Buenos días|Buenas tardes|Buenas noches), Admin/ })).toBeVisible();
     await expect(page.getByText("El reporte anterior expiró.")).toHaveCount(0);
+  });
+
+  test("keeps conversation history and the active thread in independent scroll areas", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await seedSession(page);
+    await seedLongConversationHistory(page);
+    await page.goto("/chat");
+
+    const firstConversation = page.getByRole("button", { name: "Conversación 00" });
+    const workspace = page.getByTestId("assistant-workspace");
+    const historyScrollArea = page.getByRole("region", { name: "Conversaciones recientes" });
+    const messageScrollArea = page.getByRole("region", { name: "Mensajes de la conversación" });
+    await firstConversation.focus();
+    await firstConversation.press("Enter");
+    await expect(page.getByText(/Mensaje de historial 39:/)).toBeVisible();
+
+    const dimensions = await workspace.evaluate((workspace) => {
+      const history = workspace.querySelector('[aria-label="Conversaciones recientes"]');
+      const messages = workspace.querySelector('[aria-label="Mensajes de la conversación"]');
+      if (!(history instanceof HTMLElement) || !(messages instanceof HTMLElement)) {
+        throw new Error("Expected independent history and message scroll areas");
+      }
+      return {
+        viewportHeight: window.innerHeight,
+        pageScrollHeight: document.documentElement.scrollHeight,
+        workspaceClientHeight: workspace.clientHeight,
+        workspaceScrollHeight: workspace.scrollHeight,
+        historyClientHeight: history.clientHeight,
+        historyScrollHeight: history.scrollHeight,
+        messageClientHeight: messages.clientHeight,
+        messageScrollHeight: messages.scrollHeight,
+      };
+    });
+
+    expect(dimensions.workspaceClientHeight).toBeLessThanOrEqual(dimensions.viewportHeight);
+    expect(dimensions.pageScrollHeight).toBeLessThanOrEqual(dimensions.viewportHeight + 1);
+    expect(dimensions.workspaceScrollHeight).toBeLessThanOrEqual(dimensions.workspaceClientHeight + 1);
+    expect(dimensions.historyScrollHeight).toBeGreaterThan(dimensions.historyClientHeight);
+    expect(dimensions.messageScrollHeight).toBeGreaterThan(dimensions.messageClientHeight);
+
+    await messageScrollArea.evaluate((element) => { element.scrollTop = 0; });
+    const messageTopBeforeHistoryScroll = await messageScrollArea.evaluate((element) => element.scrollTop);
+    await historyScrollArea.evaluate((element) => { element.scrollTop = 120; });
+    const scrollPositions = await workspace.evaluate((workspace) => {
+      const history = workspace.querySelector('[aria-label="Conversaciones recientes"]');
+      const messages = workspace.querySelector('[aria-label="Mensajes de la conversación"]');
+      return {
+        historyTop: history?.scrollTop,
+        messageTop: messages?.scrollTop,
+        pageTop: document.documentElement.scrollTop,
+      };
+    });
+    expect(scrollPositions.historyTop).toBeGreaterThan(0);
+    expect(scrollPositions.messageTop).toBe(messageTopBeforeHistoryScroll);
+    expect(scrollPositions.pageTop).toBe(0);
+  });
+
+  test("keeps mobile conversation history scrollable without pushing the current chat away", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedSession(page);
+    await seedLongConversationHistory(page);
+    await page.goto("/chat");
+
+    await page.getByRole("button", { name: "Conversaciones" }).click();
+    const historyScrollArea = page.getByRole("region", { name: "Conversaciones recientes" });
+    const firstConversation = historyScrollArea.getByRole("button", { name: "Conversación 00" });
+    await expect(firstConversation).toBeVisible();
+    const historyDimensions = await historyScrollArea.evaluate((history) => ({
+      clientHeight: history.clientHeight,
+      scrollHeight: history.scrollHeight,
+    }));
+    expect(historyDimensions.scrollHeight).toBeGreaterThan(historyDimensions.clientHeight);
+
+    await historyScrollArea.evaluate((history) => { history.scrollTop = 0; });
+    await firstConversation.focus();
+    await firstConversation.press("Enter");
+    await expect(page.getByText(/Mensaje de historial 39:/)).toBeVisible();
+
+    const messageScrollArea = page.getByRole("region", { name: "Mensajes de la conversación" });
+    const dimensions = await page.getByTestId("assistant-workspace").evaluate((workspace) => ({
+      workspaceHeight: workspace.clientHeight,
+      viewportHeight: window.innerHeight,
+      documentHeight: document.documentElement.scrollHeight,
+    }));
+    const messageDimensions = await messageScrollArea.evaluate((messages) => ({
+      clientHeight: messages.clientHeight,
+      scrollHeight: messages.scrollHeight,
+    }));
+    expect(dimensions.workspaceHeight).toBeLessThanOrEqual(dimensions.viewportHeight);
+    expect(dimensions.documentHeight).toBeLessThanOrEqual(dimensions.viewportHeight + 1);
+    expect(messageDimensions.scrollHeight).toBeGreaterThan(messageDimensions.clientHeight);
   });
 
   for (const tenant of ["motoshop", "masvital"] as const) {

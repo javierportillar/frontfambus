@@ -51,17 +51,23 @@ function ConversationList({
   conversations,
   conversationId,
   onSelect,
+  scrollAreaClassName = "min-h-0 flex-1",
 }: {
   conversations: Conversation[];
   conversationId?: string;
   onSelect: ConversationSelectHandler;
+  scrollAreaClassName?: string;
 }): JSX.Element {
   if (!conversations.length) {
     return <p className="px-3 py-4 text-xs leading-relaxed text-text-muted">Tus conversaciones aparecerán acá.</p>;
   }
 
   return (
-    <div className="space-y-1 overflow-y-auto">
+    <div
+      role="region"
+      aria-label="Conversaciones recientes"
+      className={`space-y-1 overflow-y-auto overscroll-contain ${scrollAreaClassName}`}
+    >
       {conversations.map((conversation) => (
         <button
           key={conversation.id}
@@ -263,8 +269,8 @@ export default function ChatPage(): JSX.Element {
 
 
   return (
-    <div className="assistant-workspace -mx-4 -mt-4 flex min-h-[calc(100dvh-4rem)] overflow-hidden bg-background text-text-primary lg:-mx-6 lg:min-h-[calc(100dvh-2rem)]">
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-border bg-surface-alt px-4 py-5 lg:flex">
+    <div data-testid="assistant-workspace" className="assistant-workspace -mx-4 -mt-4 flex h-[calc(100dvh-5rem)] overflow-hidden bg-background text-text-primary lg:-mx-6 lg:h-[calc(100dvh-2rem)]">
+      <aside aria-label="Historial de conversaciones" className="hidden min-h-0 w-72 shrink-0 flex-col border-r border-border bg-surface-alt px-4 py-5 lg:flex">
         <div className="flex items-center justify-between px-2">
           <Link href="/" className="flex items-center gap-2 text-text-primary" aria-label="Volver al inicio">
             <LogoMark size={28} tone="light" />
@@ -294,7 +300,7 @@ export default function ChatPage(): JSX.Element {
           Nueva conversación
         </button>
 
-        <div className="mt-8 min-h-0 flex-1">
+        <div className="mt-8 flex min-h-0 flex-1 flex-col">
           <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Recientes</p>
           <ConversationList conversations={conversations} conversationId={conversationId} onSelect={(id) => void selectConversation(id)} />
         </div>
@@ -319,7 +325,7 @@ export default function ChatPage(): JSX.Element {
         )}
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center justify-between border-b border-border bg-surface px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-text-primary lg:px-8 lg:py-3">
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="flex h-10 w-10 items-center justify-center rounded-full lg:hidden" aria-label="Volver al inicio"><span className="text-2xl">←</span></Link>
@@ -343,15 +349,25 @@ export default function ChatPage(): JSX.Element {
         </header>
 
         {mobileHistoryOpen && (
-          <div className="border-b border-border bg-surface-alt p-4 lg:hidden">
+          <div className="shrink-0 border-b border-border bg-surface-alt p-4 lg:hidden">
             <button type="button" onClick={() => void newConversation()} className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-primary-fg">
               <span aria-hidden="true">+</span> Nueva conversación
             </button>
-            <ConversationList conversations={conversations} conversationId={conversationId} onSelect={(id) => void selectConversation(id)} />
+            <ConversationList
+              conversations={conversations}
+              conversationId={conversationId}
+              onSelect={(id) => void selectConversation(id)}
+              scrollAreaClassName="max-h-[35dvh] shrink-0"
+            />
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-background px-5 py-8 lg:px-10 lg:py-10" aria-live="polite">
+        <div
+          role="region"
+          aria-label="Mensajes de la conversación"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-background px-5 py-8 lg:px-10 lg:py-10"
+          aria-live="polite"
+        >
           {messages.length === 0 ? (
             <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center text-center">
               <div className="mb-6 flex h-16 w-16 items-center justify-center" aria-hidden="true"><LogoMark size={52} tone="light" /></div>
