@@ -343,4 +343,34 @@ describe("MarkdownContent", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("Abrir ficha")).toBeInTheDocument();
   });
+
+  it("renders clickable supplier links inside a supplier sales markdown table", () => {
+    const ref: EntityRef = {
+      entity_type: "supplier",
+      entity_id: "900123456",
+      label: "Distribuidora Norte",
+      label_is_unique: true,
+      domain: "purchases",
+      href: "/dashboards/compras/proveedores/900123456",
+    };
+    render(
+      <MarkdownContent
+        content={`
+| Proveedor | NIT | Unidades vendidas | Ventas asociadas ($ COP) | Margen ($ COP / %) | Compras ($ COP) | Ratio V/C |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| Distribuidora Norte | NIT: 900123456 | 1,200 | $ 35,000,000 | $ 12,000,000 (34.3%) | $ 28,000,000 | 1.25 |
+        `.trim()}
+        entityRefs={[ref]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary"], allowedModules: null }}
+      />,
+    );
+
+    const supplierLinks = screen.getAllByRole("link", {
+      name: /Ver ficha de proveedor/,
+    });
+    expect(supplierLinks.length).toBeGreaterThanOrEqual(1);
+    expect(supplierLinks.some((link) => link.getAttribute("href") === ref.href)).toBe(true);
+    expect(screen.getByText("1,200")).toBeInTheDocument();
+    expect(screen.getByText("$ 35,000,000")).toBeInTheDocument();
+  });
 });
