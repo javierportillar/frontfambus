@@ -209,11 +209,50 @@ function isVerifiedPurchaseDocumentMention(
 }
 
 function hasExplicitNitLabel(value: string, nit: string): boolean {
-  const pattern = new RegExp(
-    `\\bnit\\b(?:\\s*(?:n(?:ro|[úu]mero)?\\.?))?\\s*[:#-]?\\s*${escapeRegExp(nit)}(?![\\d./-])`,
+  const directPattern = new RegExp(
+    `\\b(?:nit|rut)\\b(?:\\s*(?:n(?:ro|[úu]mero)?\\.?))?\\s*[:#-]?\\s*${escapeRegExp(nit)}(?![\\d./-])`,
     "iu",
   );
-  return pattern.test(value);
+  if (directPattern.test(value)) return true;
+  const contextHasNit = /\b(?:nit|rut)\b/i.test(value);
+  const nitInParens = new RegExp(`\\(\\s*${escapeRegExp(nit)}\\s*\\)`).test(value);
+  const nitAsTerm = countWholeTerm(value, nit) === 1;
+  return contextHasNit && (nitInParens || nitAsTerm);
+}
+
+function hasExplicitSkuLabel(context: string, sku: string): boolean {
+  const pattern = new RegExp(
+    `\\b(?:sku|c[oó]digo|cod|ean)\\b(?:\\s*(?:n(?:ro|[úu]mero)?\\.?))?\\s*[:#-]?\\s*${escapeRegExp(sku)}(?![\\p{L}\\p{N}_./-])`,
+    "iu",
+  );
+  if (pattern.test(context)) return true;
+  const contextHasSkuHeader = /\b(?:sku|c[oó]digo|cod|ean)\b/i.test(context);
+  const skuAsTerm = countWholeTerm(context, sku) === 1;
+  return contextHasSkuHeader && skuAsTerm;
+}
+
+function normalizeDiacritics(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function containsProductLabelMatch(context: string, label: string): boolean {
+  if (containsWholeTerm(context, label)) return true;
+  const normalizedContext = normalizeDiacritics(context);
+  const normalizedLabel = normalizeDiacritics(label);
+  if (containsWholeTerm(normalizedContext, normalizedLabel)) return true;
+  const words = normalizedLabel
+    .split(/[\s,./_-]+/)
+    .map((w) => w.trim().toLocaleLowerCase("es-CO"))
+    .filter((w) => w.length >= 4 && !["para", "cada", "unos", "unas", "como"].includes(w));
+  if (words.length >= 2) {
+    const matchedCount = words.filter((w) => containsWholeTerm(normalizedContext, w)).length;
+    if (matchedCount >= 2 && matchedCount >= Math.min(words.length, 3)) return true;
+  }
+  return false;
+}
+
+function isAmountOrQuantityContext(context: string): boolean {
+  return /\b(?:total|precio|valor|margen|costo|unidades?|cantidad|ref|saldo)\b/i.test(context);
 }
 
 function linkEntityMentions(
@@ -222,10 +261,12 @@ function linkEntityMentions(
   keyPrefix: string,
   context: string,
   purchaseContext: string,
+  rowContext: string = context,
 ): ReactNode[] {
   if (!mentions.length || !value) return [value];
   const lowerValue = value.toLocaleLowerCase("es-CO");
   const safeContext = visibleMarkdownText(context);
+  const safeRowContext = visibleMarkdownText(rowContext);
   const matches: Array<{ start: number; end: number; mention: EntityMention }> = [];
 
   for (const mention of mentions) {
@@ -238,6 +279,13 @@ function linkEntityMentions(
       const end = start + term.length;
       const needsNameContext = mention.kind === "product-sku" && /^\d+$/.test(mention.ref.entity_id);
       const numericContextIsUnique = countWholeTerm(safeContext, mention.term) === 1;
+      const notInAmountColumn = !isAmountOrQuantityContext(safeContext);
+      const productSkuHasContext = mention.kind !== "product-sku"
+        || (!needsNameContext && notInAmountColumn)
+        || (needsNameContext
+          && notInAmountColumn
+          && numericContextIsUnique
+          && containsWholeTerm(safeContext, mention.ref.label));
       const supplierNitHasContext = mention.kind !== "supplier-nit"
         || (numericContextIsUnique && hasExplicitNitLabel(safeContext, mention.ref.entity_id));
       const documentHasContext = mention.kind !== "purchase-document"
@@ -251,10 +299,7 @@ function linkEntityMentions(
         && !isWordCharacter(value[end])
         && (mention.kind !== "supplier-nit" && mention.kind !== "purchase-document"
           || (!isIdentifierContinuation(value[start - 1]) && !isIdentifierContinuation(value[end])))
-        && (!needsNameContext || (
-          containsWholeTerm(safeContext, mention.ref.label)
-          && numericContextIsUnique
-        ))) {
+        && productSkuHasContext) {
         if (supplierNitHasContext && documentHasContext) matches.push({ start, end, mention });
       }
       searchFrom = end;
@@ -299,9 +344,11 @@ function canLinkMarkdownEntity(
   refs: EntityRef[],
   context: string,
   purchaseContext: string,
+  rowContext: string = context,
 ): boolean {
   const visibleLabel = visibleMarkdownText(label).trim();
   const visibleContext = visibleMarkdownText(context);
+  const visibleRowContext = visibleMarkdownText(rowContext);
   if (ref.entity_type === "purchase_document") {
     const identity = parsePurchaseDocumentEntityId(ref.entity_id);
     return !!identity
@@ -318,15 +365,18 @@ function canLinkMarkdownEntity(
       && matchingNames.length === 1
       && visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
     const verifiedNit = containsWholeTerm(visibleLabel, ref.entity_id)
-      && hasExplicitNitLabel(visibleLabel, ref.entity_id)
+      && (hasExplicitNitLabel(visibleLabel, ref.entity_id) || hasExplicitNitLabel(visibleContext, ref.entity_id))
       && countWholeTerm(visibleContext, ref.entity_id) === 1;
     return canonicalName || verifiedNit;
   }
   if (ref.entity_type === "product") {
     const ambiguousProductName = ref.label_is_unique === false
       && visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
-    const numericSkuNeedsName = /^\d+$/.test(ref.entity_id)
-      && (!containsWholeTerm(visibleContext, ref.label)
+    const isNumericSku = /^\d+$/.test(ref.entity_id);
+    const mentionsNumericSkuAsLabel = isNumericSku && containsWholeTerm(visibleLabel, ref.entity_id);
+    const numericSkuNeedsName = mentionsNumericSkuAsLabel
+      && (isAmountOrQuantityContext(visibleContext)
+        || !containsProductLabelMatch(visibleRowContext, ref.label)
         || countWholeTerm(visibleContext, ref.entity_id) !== 1);
     return !ambiguousProductName && !numericSkuNeedsName;
   }
@@ -360,20 +410,23 @@ function renderInline(
   entityRefs: EntityRef[] = [],
   context: string = value,
   purchaseContext: string = context,
+  rowContext: string = context,
 ): ReactNode[] {
   return parseInline(value).map((part) => {
     switch (part.kind) {
-      case "strong": return <strong key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext)}</strong>;
-      case "emphasis": return <em key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext)}</em>;
+      case "strong": return <strong key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext, rowContext)}</strong>;
+      case "emphasis": return <em key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext, rowContext)}</em>;
       case "code": {
         const codeMention = mentions.find((mention) => (
           ["product-sku", "supplier-nit", "purchase-document"].includes(mention.kind)
           && mention.term.toLocaleLowerCase("es-CO") === part.value.toLocaleLowerCase("es-CO")
         ));
         const visibleContext = visibleMarkdownText(context);
+        const visibleRowContext = visibleMarkdownText(rowContext);
         const codeMentionIsSafe = codeMention?.kind === "product-sku"
           ? (!/^\d+$/.test(codeMention.ref.entity_id)
-            || (containsWholeTerm(visibleContext, codeMention.ref.label)
+            || (!isAmountOrQuantityContext(visibleContext)
+              && containsProductLabelMatch(visibleRowContext, codeMention.ref.label)
               && countWholeTerm(visibleContext, codeMention.ref.entity_id) === 1))
           : codeMention?.kind === "supplier-nit"
             ? countWholeTerm(visibleContext, codeMention.ref.entity_id) === 1
@@ -398,11 +451,12 @@ function renderInline(
           entityRefs,
           context,
           purchaseContext,
+          rowContext,
         )
           ? <a key={part.key} href={part.href} className="font-medium text-primary underline underline-offset-2 hover:text-primary-light">{renderInline(part.value)}</a>
           : part.value;
       }
-      default: return linkEntityMentions(part.value, mentions, part.key, context, purchaseContext);
+      default: return linkEntityMentions(part.value, mentions, part.key, context, purchaseContext, rowContext);
     }
   });
 }
@@ -450,30 +504,34 @@ function MarkdownTable({
           </tr>
         </thead>
         <tbody>
-          {body.map((row, ri) => (
-            <tr key={`tr-${ri}`} className={ri % 2 === 0 ? "bg-surface" : "bg-surface-alt/50"}>
-              {row.map((cell, ci) => {
-                const purchaseRowContext = header
-                  .flatMap((headerCell, column) => (
-                    /\b(?:factura|documento|comprobante|doc|fecha|date|clase|cod[_\s]*clase)\b/i.test(headerCell)
-                      ? [`${headerCell}: ${row[column] ?? ""}`]
-                      : []
-                  ))
-                  .join(" | ");
-                return (
+          {body.map((row, ri) => {
+            const entireRowContext = header
+              .map((headerCell, column) => `${headerCell}: ${row[column] ?? ""}`)
+              .join(" | ");
+            const purchaseRowContext = header
+              .flatMap((headerCell, column) => (
+                /\b(?:factura|documento|comprobante|doc|fecha|date|clase|cod[_\s]*clase)\b/i.test(headerCell)
+                  ? [`${headerCell}: ${row[column] ?? ""}`]
+                  : []
+              ))
+              .join(" | ");
+            return (
+              <tr key={`tr-${ri}`} className={ri % 2 === 0 ? "bg-surface" : "bg-surface-alt/50"}>
+                {row.map((cell, ci) => (
                   <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
                     {renderInline(
                       cell,
                       mentions,
                       entityRefs,
-                      `${header[ci] ?? ""} ${cell}`,
+                      `${header[ci] ?? ""}: ${cell}`,
                       purchaseRowContext,
+                      entireRowContext,
                     )}
                   </td>
-                );
-              })}
-            </tr>
-          ))}
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

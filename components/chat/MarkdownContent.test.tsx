@@ -373,4 +373,96 @@ describe("MarkdownContent", () => {
     expect(screen.getByText("1,200")).toBeInTheDocument();
     expect(screen.getByText("$ 35,000,000")).toBeInTheDocument();
   });
+
+  it("renders replenishment table linking suppliers, parenthesized NITs, and products while keeping amounts unlinked", () => {
+    const camilaRef: EntityRef = {
+      entity_type: "supplier",
+      entity_id: "1010119448",
+      label: "MARIA CAMILA MUÑOZ PANTOJA",
+      label_is_unique: true,
+      domain: "purchases",
+      href: "/dashboards/compras/proveedores/1010119448",
+    };
+    const natifRef: EntityRef = {
+      entity_type: "supplier",
+      entity_id: "901406306",
+      label: "NATIF",
+      label_is_unique: true,
+      domain: "purchases",
+      href: "/dashboards/compras/proveedores/901406306",
+    };
+    const chocotabsRef: EntityRef = {
+      entity_type: "product",
+      entity_id: "EAN: 7709799022257",
+      label: "CHOCOTABS CRUNCH LECHE 35GR",
+      label_is_unique: true,
+      domain: "inventory",
+      href: `/dashboards/productos/${encodeURIComponent("EAN: 7709799022257")}`,
+    };
+    const chocolateRef: EntityRef = {
+      entity_type: "product",
+      entity_id: "7709990231205",
+      label: "CHOCOLATE ORGANICO OSCURO 80%",
+      label_is_unique: true,
+      domain: "inventory",
+      href: "/dashboards/productos/7709990231205",
+    };
+
+    render(
+      <MarkdownContent
+        content={`
+| Proveedor (NIT) | Producto más importante | SKU | Unid. vendidas (180d) | Ventas asociadas |
+| :--- | :--- | :--- | ---: | ---: |
+| MARIA CAMILA MUÑOZ PANTOJA (1010119448) | [Litro Chilacuan Maracuya](/dashboards/productos/L-CM) | [L-CM](/dashboards/productos/L-CM) | 16 | $554.400 |
+| NATIF (901406306) | CHOCOTABS CRUNCH LECHE 35GR | EAN: 7709799022257 | 36 | $324.000 |
+| CHOCOLATES SAS (900111222) | [CHOCOLATE ORGÁNICO OSCURO 80%](/dashboards/productos/7709990231205) | [7709990231205](/dashboards/productos/7709990231205) | 10 | $125.400 |
+        `.trim()}
+        entityRefs={[camilaRef, natifRef, chocotabsRef, chocolateRef]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary", "inventario"], allowedModules: null }}
+      />,
+    );
+
+    // Supplier links in row 1
+    const camilaLinks = screen.getAllByRole("link", { name: /MARIA CAMILA MUÑOZ PANTOJA/ });
+    expect(camilaLinks.length).toBeGreaterThanOrEqual(1);
+    expect(camilaLinks[0]).toHaveAttribute("href", camilaRef.href);
+    const camilaNitLinks = screen.getAllByRole("link", { name: /1010119448/ });
+    expect(camilaNitLinks.length).toBeGreaterThanOrEqual(1);
+    expect(camilaNitLinks[0]).toHaveAttribute("href", camilaRef.href);
+
+    // Supplier links in row 2
+    const natifLinks = screen.getAllByRole("link", { name: /NATIF/ });
+    expect(natifLinks.length).toBeGreaterThanOrEqual(1);
+    expect(natifLinks[0]).toHaveAttribute("href", natifRef.href);
+    const natifNitLinks = screen.getAllByRole("link", { name: /901406306/ });
+    expect(natifNitLinks.length).toBeGreaterThanOrEqual(1);
+    expect(natifNitLinks[0]).toHaveAttribute("href", natifRef.href);
+
+    // Product links in row 2 (plain text mentioned)
+    const chocotabsProductLinks = screen.getAllByRole("link", { name: /CHOCOTABS CRUNCH LECHE 35GR/ });
+    expect(chocotabsProductLinks.length).toBeGreaterThanOrEqual(1);
+    expect(chocotabsProductLinks[0]).toHaveAttribute("href", chocotabsRef.href);
+    const chocotabsSkuLinks = screen.getAllByRole("link", { name: /7709799022257/ });
+    expect(chocotabsSkuLinks.length).toBeGreaterThanOrEqual(1);
+    expect(chocotabsSkuLinks[0]).toHaveAttribute("href", chocotabsRef.href);
+
+    // Product links in row 3 (markdown link format)
+    const chocolateProductLinks = screen.getAllByRole("link", { name: /CHOCOLATE ORGÁNICO OSCURO 80%/ });
+    expect(chocolateProductLinks.length).toBeGreaterThanOrEqual(1);
+    expect(chocolateProductLinks[0]).toHaveAttribute("href", chocolateRef.href);
+    const chocolateSkuLinks = screen.getAllByRole("link", { name: /7709990231205/ });
+    expect(chocolateSkuLinks.length).toBeGreaterThanOrEqual(1);
+    expect(chocolateSkuLinks[0]).toHaveAttribute("href", chocolateRef.href);
+
+    // Amounts must not be linked
+    expect(screen.getByText("16")).toBeInTheDocument();
+    expect(screen.getByText("$554.400")).toBeInTheDocument();
+    expect(screen.getByText("36")).toBeInTheDocument();
+    expect(screen.getByText("$324.000")).toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("$125.400")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /\$324/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /\$554/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /\$125/ })).not.toBeInTheDocument();
+  });
 });
