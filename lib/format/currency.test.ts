@@ -22,6 +22,12 @@ describe("formatMoney", () => {
   });
 
   it("borde: exactamente 999K usa K", () => {
-    expect(formatMoney(999_999)).toBe("$1000.0K");
+    expect(formatMoney(999_999)).toBe("$1.0M");
+  });
+
+  it("compacta correctamente importes negativos", () => {
+    expect(formatMoney(-1_250_000)).toBe("$-1.3M");
+    expect(formatMoney(-25_814)).toBe("$-25.8K");
+    expect(formatMoney(-847)).toBe("$-847");
   });
 });

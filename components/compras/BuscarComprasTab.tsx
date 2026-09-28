@@ -93,12 +93,12 @@ export function BuscarComprasTab(): JSX.Element {
               Elegí un rango válido de hasta 10 años, sin fechas futuras.
             </p>
           ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-text-muted">Rango predeterminado: últimos 12 meses. La búsqueda incluye proveedores, productos y documentos válidos.</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-snug text-text-muted">Rango predeterminado: últimos 12 meses. La búsqueda incluye proveedores, productos y documentos válidos.</p>
             <button
               type="submit"
               disabled={!rangeIsValid || normalizedQuery.length < 2}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               Buscar compras
             </button>
@@ -174,22 +174,22 @@ export function BuscarComprasTab(): JSX.Element {
               ))}
             </div>
           )}
-          <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-text-muted" aria-live="polite">
               Página {page} · {PAGE_SIZE} por página
             </p>
-            <div className="flex gap-2">
+            <div className="flex w-full gap-2 sm:w-auto">
               <button
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((current) => current - 1)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50"
+                className="min-h-11 flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50 sm:flex-none"
               >Anterior</button>
               <button
                 type="button"
                 disabled={!data.paginacion.has_more}
                 onClick={() => setPage((current) => current + 1)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50"
+                className="min-h-11 flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50 sm:flex-none"
               >Siguiente</button>
             </div>
           </div>

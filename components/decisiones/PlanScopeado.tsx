@@ -130,7 +130,85 @@ export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 2
         ) : items.length === 0 ? (
           <p className="py-8 text-center text-sm text-text-muted">Nada por acá. 👌</p>
         ) : (
-          <div className="-mx-4 overflow-x-auto md:mx-0">
+          <>
+          <ul aria-label={titulo} className="space-y-2 lg:hidden">
+            {items.map((item, index) => {
+              const suggested = sugeridoComprar(item, leadColchonDias);
+              const cover = coberturaDias(item);
+              return (
+                <li key={item.cod_producto}>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`)}
+                    className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{(page - 1) * PAGE_SIZE + index + 1}.</span>
+                        <AbcChip abc={item.abc} />
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-semibold leading-snug text-text-primary">{item.nombre}</p>
+                          <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{item.cod_producto}</p>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[0.65rem] text-text-muted">Stock</p>
+                        <p className="font-semibold tabular-nums text-text-primary">
+                          {Math.round(item.cantidad_actual).toLocaleString("es-CO")}
+                        </p>
+                      </div>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
+                      {modo === "compra" ? (
+                        <>
+                          <div>
+                            <dt className="text-text-muted">Velocidad</dt>
+                            <dd className="mt-0.5 font-medium tabular-nums text-text-primary">
+                              {item.velocidad_mensual.toLocaleString("es-CO", { maximumFractionDigits: 1 })}/mes
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-text-muted">Cobertura</dt>
+                            <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{cover !== null ? `${cover} días` : "—"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-text-muted">Sugerido comprar</dt>
+                            <dd className="mt-0.5 font-semibold tabular-nums" style={{ color: suggested > 0 ? accent : undefined }}>
+                              {suggested > 0 ? `+${suggested.toLocaleString("es-CO")}` : "—"}
+                            </dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="text-text-muted">Costo estimado</dt>
+                            <dd className="mt-0.5 break-words font-semibold tabular-nums text-text-primary">
+                              {formatMoneyFull(suggested * (item.costo_unit ?? 0))}
+                            </dd>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="min-w-0">
+                            <dt className="text-text-muted">Capital inventario</dt>
+                            <dd className="mt-0.5 break-words font-semibold tabular-nums text-text-primary">{formatMoneyFull(item.valor_inventario)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-text-muted">Sin vender</dt>
+                            <dd className="mt-0.5 font-medium tabular-nums text-text-primary">
+                              {item.dias_sin_venta !== null ? `${item.dias_sin_venta} días` : "Nunca"}
+                            </dd>
+                          </div>
+                          <div className="col-span-2 min-w-0">
+                            <dt className="text-text-muted">Acción sugerida</dt>
+                            <dd className="mt-0.5 break-words font-medium leading-snug text-text-primary">{accionVenta(item)}</dd>
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
@@ -212,6 +290,7 @@ export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 2
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {/* Paginación */}

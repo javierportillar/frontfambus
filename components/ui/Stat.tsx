@@ -55,10 +55,10 @@ export function Stat({
   const dir = delta !== null && delta !== undefined ? deltaDirection(delta) : null;
 
   return (
-    <div className={`flex flex-col gap-1 ${className}`}>
+    <div className={`flex min-w-0 flex-col gap-1 ${className}`}>
       {/* Fila superior: label + icono */}
-      <div className="flex items-start justify-between">
-        <p className="text-xs font-medium uppercase tracking-wider text-text-muted">
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <p className="min-w-0 break-words text-xs font-medium uppercase leading-tight tracking-wider text-text-muted">
           {label}
         </p>
         {icon && (
@@ -69,11 +69,11 @@ export function Stat({
       </div>
 
       {/* Valor principal */}
-      <p className="text-2xl font-bold text-text-primary">{value}</p>
+      <p className="break-words text-xl font-bold leading-tight text-text-primary sm:text-2xl">{value}</p>
 
       {/* Fila inferior: delta + label o subtitle */}
       {(dir || subtitle) && (
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
           {dir && delta !== null && delta !== undefined && (
             <span
               className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-medium ${deltaStyles[dir]}`}
@@ -82,10 +82,10 @@ export function Stat({
             </span>
           )}
           {deltaLabel && (
-            <span className="text-text-muted">{deltaLabel}</span>
+            <span className="min-w-0 break-words text-text-muted">{deltaLabel}</span>
           )}
           {subtitle && !deltaLabel && (
-            <span className="text-text-muted">{subtitle}</span>
+            <span className="min-w-0 break-words leading-snug text-text-muted">{subtitle}</span>
           )}
         </div>
       )}

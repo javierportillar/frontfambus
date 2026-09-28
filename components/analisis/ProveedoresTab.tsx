@@ -169,10 +169,10 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
 
       {/* Tabla de proveedores */}
       <Card header={
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h2 className="font-semibold text-text-primary">Detalle por proveedor</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-1">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="grid grid-cols-2 gap-1 sm:flex sm:flex-wrap">
               <SortPill label="🔵 Compras" active={sortBy === "compras"} onClick={() => setSortBy("compras")} />
               <SortPill label="🟢 Ventas" active={sortBy === "ventas"} onClick={() => setSortBy("ventas")} />
               <SortPill label="🟢 Margen" active={sortBy === "margen"} onClick={() => setSortBy("margen")} />
@@ -183,7 +183,8 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Buscar proveedor o NIT..."
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm w-56"
+              aria-label="Buscar proveedor analizado o NIT"
+              className="w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm sm:w-56"
             />
           </div>
         </div>
@@ -192,7 +193,17 @@ export function ProveedoresTab({ ini, fin }: Props): JSX.Element {
           🔵 = lado compra (cuánto le pagaste) · 🟢 = lado venta (qué generaron sus productos) ·
           ⚡ ratio = ventas / compras (eficiencia de rotación)
         </p>
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <ul aria-label="Proveedores analizados" className="space-y-2 lg:hidden">
+          {proveedoresFiltrados.map((provider, index) => (
+            <SupplierInsightCard
+              key={provider.nit}
+              provider={provider}
+              rank={index + 1}
+              canOpenProfile={canOpenSupplierProfile}
+            />
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
@@ -233,12 +244,100 @@ function SortPill({ label, active, onClick }: { label: string; active: boolean; 
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-2 py-1 text-[0.7rem] ${
+      aria-pressed={active}
+      className={`min-h-9 rounded-md px-2 py-1 text-[0.7rem] ${
         active ? "bg-surface-dark text-text-inverse" : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"
       }`}
     >
       {label}
     </button>
+  );
+}
+
+function SupplierInsightCard({
+  provider,
+  rank,
+  canOpenProfile,
+}: {
+  provider: ProveedorAnalisis;
+  rank: number;
+  canOpenProfile: boolean;
+}): JSX.Element {
+  const ratio = provider.ratio_venta_compra;
+  const isHighDependency = provider.pct_del_total >= 30;
+  const isSleeping = (provider.dias_desde_ultima_compra ?? 0) > 180;
+  const supplierHref = canOpenProfile && isValidSupplierNit(provider.nit)
+    ? supplierProfileHref(provider.nit)
+    : null;
+
+  return (
+    <li className="min-w-0 rounded-xl border border-border bg-surface p-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-start gap-2">
+            <span className="shrink-0 rounded-md bg-surface-alt px-1.5 py-0.5 text-xs font-semibold tabular-nums text-text-muted">
+              #{rank}
+            </span>
+            {supplierHref ? (
+              <Link href={supplierHref} className="break-words text-sm font-semibold leading-snug text-primary hover:underline">
+                {provider.nombre}
+              </Link>
+            ) : (
+              <p className="break-words text-sm font-semibold leading-snug text-text-primary">{provider.nombre}</p>
+            )}
+          </div>
+          <p className="mt-1 break-all pl-8 font-mono text-xs text-text-muted">
+            {supplierHref ? (
+              <Link href={supplierHref} className="hover:text-primary hover:underline">NIT {provider.nit}</Link>
+            ) : `NIT ${provider.nit}`}
+            <span> · {provider.num_documentos.toLocaleString("es-CO")} doc</span>
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[0.65rem] text-text-muted">Comprado</p>
+          <p className="break-words text-sm font-bold leading-tight tabular-nums text-text-primary">
+            {formatMoneyFull(provider.total_compras)}
+          </p>
+          <p className={`mt-1 text-xs tabular-nums ${isHighDependency ? "font-bold text-red-600" : "text-text-muted"}`}>
+            {provider.pct_del_total}% del total
+          </p>
+        </div>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs sm:grid-cols-3">
+        <div className="min-w-0">
+          <dt className="text-text-muted">Vendido</dt>
+          <dd className="mt-0.5 break-words font-semibold tabular-nums text-green-700">{formatMoneyFull(provider.revenue_periodo ?? 0)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="text-text-muted">Margen</dt>
+          <dd className="mt-0.5 break-words font-semibold tabular-nums text-text-primary">{formatMoneyFull(provider.margen_periodo ?? 0)}</dd>
+        </div>
+        <div>
+          <dt className="text-text-muted">Margen %</dt>
+          <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">
+            {provider.margen_pct == null ? "—" : `${provider.margen_pct.toFixed(1)}%`}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-text-muted">SKU vendidos</dt>
+          <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{(provider.skus_vendidos ?? 0).toLocaleString("es-CO")}</dd>
+        </div>
+        <div>
+          <dt className="text-text-muted">Ratio venta/compra</dt>
+          <dd className={`mt-0.5 font-semibold tabular-nums ${ratio == null ? "text-text-muted" : ratio >= 1.5 ? "text-green-700" : ratio < 0.5 ? "text-red-600" : "text-text-primary"}`}>
+            {ratio == null ? "—" : ratio.toFixed(2)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-text-muted">Última compra</dt>
+          <dd className={`mt-0.5 font-medium tabular-nums ${isSleeping ? "text-red-600" : "text-text-primary"}`}>
+            {provider.dias_desde_ultima_compra == null ? "—" : `${provider.dias_desde_ultima_compra} días`}
+            {isSleeping ? " · inactivo" : ""}
+          </dd>
+        </div>
+      </dl>
+    </li>
   );
 }
 

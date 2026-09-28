@@ -74,8 +74,8 @@ export function ComprasView(): JSX.Element {
         )}
       </div>
 
-      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
-        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+      <div className="border-b border-border pb-2">
+        <div role="group" aria-label="Vistas de compras" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <TabPill active={tab === "mensual"} onClick={() => setTab("mensual")} label="📅 Mensual" />
           <TabPill active={tab === "proveedor"} onClick={() => setTab("proveedor")} label="🏷 Por proveedor" />
           <TabPill active={tab === "historico"} onClick={() => setTab("historico")} label="📈 Histórica" />
@@ -96,7 +96,8 @@ function TabPill({ active, onClick, label }: { active: boolean; onClick: () => v
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+      aria-pressed={active}
+      className={`min-h-10 w-full whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium sm:w-auto ${
         active ? "bg-surface-dark text-text-inverse" : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"
       }`}
     >
@@ -230,7 +231,32 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
           {data.top_productos.length === 0 ? (
             <p className="py-6 text-center text-sm text-text-muted">Sin productos en el mes.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <ul aria-label="Productos más comprados del mes" className="space-y-2 lg:hidden">
+              {data.top_productos.map((product, index) => (
+                <li key={product.cod_producto}>
+                  <Link
+                    href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                    className="flex min-h-11 min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3 hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <div className="flex min-w-0 items-start gap-2">
+                      <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{index + 1}.</span>
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nom_producto}</p>
+                        <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{product.cod_producto}</p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-xs">
+                      <p className="font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_total)}</p>
+                      <p className="mt-0.5 text-text-muted">
+                        {product.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {product.unidad_medida ?? "u"}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
@@ -264,6 +290,7 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </Card>
       </div>
@@ -291,18 +318,18 @@ function ProveedorTab(): JSX.Element {
   return (
     <div className="space-y-4">
       <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-text-muted">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="min-w-0 text-xs text-text-muted">
             Desde
             <input
               type="date"
               value={ini}
               max={fin}
               onChange={(e) => setIni(e.target.value)}
-              className="mt-1 block rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+              className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
             />
           </label>
-          <label className="text-xs text-text-muted">
+          <label className="min-w-0 text-xs text-text-muted">
             Hasta
             <input
               type="date"
@@ -310,17 +337,21 @@ function ProveedorTab(): JSX.Element {
               min={ini}
               max={today}
               onChange={(e) => setFin(e.target.value)}
-              className="mt-1 block rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+              className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
             />
           </label>
+        </div>
+        <label className="mt-3 block min-w-0 text-xs text-text-muted">
+          Buscar proveedor
           <input
             type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
+            aria-label="Buscar proveedor o NIT"
             placeholder="Buscar proveedor (nombre o NIT)..."
-            className="flex-1 min-w-[200px] rounded-lg border border-border bg-surface px-3 py-1.5 text-sm"
+            className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
           />
-        </div>
+        </label>
       </Card>
 
       {isLoading && !data ? (
@@ -329,17 +360,63 @@ function ProveedorTab(): JSX.Element {
         <Card><p className="py-8 text-center text-sm text-text-muted">Sin compras en el rango seleccionado.</p></Card>
       ) : (
         <Card header={
-          <div className="flex items-center justify-between">
+          <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-text-primary">
               {visibles.length} proveedor{visibles.length === 1 ? "" : "es"} en el rango
             </h2>
-            <span className="text-sm font-semibold text-text-primary tabular-nums">
+            <span className="text-base font-semibold tabular-nums text-text-primary sm:text-sm">
               Total: {formatMoneyFull(totalRango)}
             </span>
           </div>
         }>
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+          <ul aria-label="Proveedores del período" className="space-y-2 lg:hidden">
+            {visibles.map((provider, index) => {
+              const profileHref = isValidSupplierNit(provider.nit ?? "")
+                ? supplierProfileHref(provider.nit ?? "")
+                : null;
+              return (
+                <li key={`${provider.nit}-${index}`} className="min-w-0 rounded-lg border border-border bg-surface p-3">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      {profileHref ? (
+                        <Link href={profileHref} className="block break-words text-sm font-semibold leading-snug text-primary hover:underline">
+                          {provider.nombre}
+                        </Link>
+                      ) : (
+                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{provider.nombre}</p>
+                      )}
+                      <p className="mt-1 break-all font-mono text-xs text-text-muted">
+                        {profileHref ? (
+                          <Link href={profileHref} className="hover:text-primary hover:underline">NIT {provider.nit}</Link>
+                        ) : `NIT ${provider.nit ?? "?"}`}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-right text-sm font-bold tabular-nums text-text-primary">
+                      {formatMoneyFull(provider.total_compras)}
+                    </p>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
+                    <div>
+                      <dt className="text-text-muted">Documentos</dt>
+                      <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">
+                        {provider.num_documentos.toLocaleString("es-CO")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Primera compra</dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{provider.primera_compra ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Última compra</dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{provider.ultima_compra ?? "—"}</dd>
+                    </div>
+                  </dl>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
+            <table aria-label="Compras por proveedor" className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
                   <th className="py-2 px-3">#</th>
@@ -454,7 +531,26 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
       </Card>
 
       <Card header={<h2 className="font-semibold text-text-primary">Tabla mensual</h2>}>
-        <div className="overflow-x-auto">
+        <ul aria-label="Compras mensuales históricas" className="space-y-2 lg:hidden">
+          {[...data.serie].reverse().map((month) => (
+            <li key={month.mes}>
+              <button
+                type="button"
+                onClick={() => onClickMes(month.mes)}
+                className="flex min-h-11 w-full min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3 text-left hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <div>
+                  <p className="font-semibold text-text-primary">{mesLabel(month.mes)}</p>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {month.num_documentos.toLocaleString("es-CO")} documentos · {month.proveedores_unicos.toLocaleString("es-CO")} proveedores
+                  </p>
+                </div>
+                <p className="shrink-0 text-right text-sm font-bold tabular-nums text-text-primary">{formatMoneyFull(month.total)}</p>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto lg:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
@@ -538,13 +634,39 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
         <Card header={
           <div>
             <h2 className="font-semibold text-text-primary">Top 15 productos comprados (histórico)</h2>
-            <p className="text-xs text-text-muted">click → ficha del producto</p>
+            <p className="text-xs text-text-muted">Seleccioná un producto para abrir su ficha.</p>
           </div>
         }>
           {!data.top_productos || data.top_productos.length === 0 ? (
             <p className="py-6 text-center text-sm text-text-muted">Sin productos registrados.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <ul aria-label="Productos más comprados históricamente" className="space-y-2 lg:hidden">
+              {data.top_productos.map((product, index) => (
+                <li key={product.cod_producto}>
+                  <Link
+                    href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                    className="flex min-h-11 min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3 hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <div className="flex min-w-0 items-start gap-2">
+                      <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{index + 1}.</span>
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nom_producto}</p>
+                        <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{product.cod_producto}</p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-xs">
+                      <p className="font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_total)}</p>
+                      <p className="mt-0.5 text-text-muted">
+                        {product.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {product.unidad_medida ?? "u"}
+                        {` · ${product.veces_comprado} compras`}
+                      </p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto lg:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
@@ -578,6 +700,7 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </Card>
       </div>

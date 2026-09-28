@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatMoneyFull } from "@/lib/format/currency";
+import { formatMoney, formatMoneyFull } from "@/lib/format/currency";
 import { businessDateISO } from "@/lib/date/business";
 import {
   calendarCopy,
@@ -114,7 +114,7 @@ export function Calendar({ mode, month, days, onDayClick, selectedDate }: Calend
               disabled={!isSelectable}
               className={[
                 "relative flex flex-col rounded-xl border p-2 text-left transition-[transform,border-color,box-shadow,background-color] motion-reduce:transition-none",
-                "min-h-[90px]",
+                "min-h-[64px] p-1 sm:min-h-[90px] sm:p-2",
                 isSelected
                   ? "border-primary-light bg-primary/10 ring-2 ring-primary/30"
                   : hasRecord
@@ -141,14 +141,14 @@ export function Calendar({ mode, month, days, onDayClick, selectedDate }: Calend
               <div className="flex items-center justify-between">
                 <span
                   className={[
-                    "text-xs font-semibold",
+                    "text-[0.65rem] font-semibold sm:text-xs",
                     isToday ? "text-primary" : isWeekend ? "text-text-muted" : "text-text-secondary",
                   ].join(" ")}
                 >
                   {cell.day}
                 </span>
                 {isToday && (
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-primary">Hoy</span>
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-primary sm:text-[9px]">Hoy</span>
                 )}
               </div>
 
@@ -156,7 +156,7 @@ export function Calendar({ mode, month, days, onDayClick, selectedDate }: Calend
               {hasMovement && data ? (
                 <div className="mt-auto">
                   <div
-                    className="text-xs font-bold text-text-primary leading-tight tabular-nums"
+                    className="text-[0.6rem] font-bold leading-tight text-text-primary tabular-nums sm:text-xs"
                     title={calendarMetricTitle(
                       mode,
                       formatMoneyFull(data.sales),
@@ -164,12 +164,13 @@ export function Calendar({ mode, month, days, onDayClick, selectedDate }: Calend
                       formatMoneyFull(data.avgTicket),
                     )}
                   >
-                    {formatMoneyFull(data.sales)}
+                    <span className="sm:hidden">{formatMoney(data.sales)}</span>
+                    <span className="hidden sm:inline">{formatMoneyFull(data.sales)}</span>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[9px] leading-tight text-text-muted sm:gap-x-1.5 sm:text-[10px]">
                     <span>{data.invoices} {copy.countShort}</span>
-                    <span>·</span>
-                    <span className="tabular-nums">{formatMoneyFull(data.avgTicket)}</span>
+                    <span className="hidden sm:inline">·</span>
+                    <span className="hidden tabular-nums sm:inline">{formatMoneyFull(data.avgTicket)}</span>
                   </div>
                   {/* Mini-bar de intensidad */}
                   <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-alt">

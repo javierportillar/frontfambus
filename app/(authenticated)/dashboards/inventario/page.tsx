@@ -74,14 +74,15 @@ function InventarioInner(): JSX.Element {
         </p>
       </div>
 
-      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
-        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+      <div className="border-b border-border pb-2">
+        <div role="group" aria-label="Vistas de inventario" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {tabs.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              aria-pressed={tab === t.key}
+              className={`min-h-10 w-full whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:w-auto ${
                 tab === t.key
                   ? "bg-surface-dark text-text-inverse"
                   : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"

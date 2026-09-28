@@ -231,7 +231,61 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
         </div>
       ) : data && data.items.length > 0 ? (
         <>
-          <div className="overflow-x-auto">
+          <ul aria-label="Resultados del catálogo" className="space-y-2 lg:hidden">
+            {data.items.map((product) => (
+              <li key={product.cod_producto}>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(product.cod_producto)}?window=${window}`)}
+                  className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <AbcChip abc={product.abc} />
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nombre}</p>
+                        <p className="mt-0.5 break-all font-mono text-xs text-text-muted">
+                          {product.cod_producto}{product.rank_rev ? ` · #${product.rank_rev} en ventas` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0"><EstadoChip estado={product.estado} /></span>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
+                    <div>
+                      <dt className="text-text-muted">Stock</dt>
+                      <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{product.cantidad_actual.toLocaleString("es-CO")}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-text-muted">Vendido ({window}d)</dt>
+                      <dd className="mt-0.5 break-words font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.revenue_win)}</dd>
+                      <p className="text-[0.65rem] text-text-muted">{product.unidades_win.toLocaleString("es-CO")} u · {product.pct_revenue.toFixed(1)}%</p>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Velocidad</dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-text-primary">
+                        {product.velocidad_mensual.toLocaleString("es-CO", { maximumFractionDigits: 1 })}/mes
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Días de stock</dt>
+                      <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{diasStockLabel(product.dias_stock)}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-text-muted">Valor inventario</dt>
+                      <dd className="mt-0.5 break-words font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_inventario)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Siguiente paso</dt>
+                      <dd className="mt-1"><AccionChip accion={product.accion} /></dd>
+                    </div>
+                  </dl>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden overflow-x-auto lg:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">

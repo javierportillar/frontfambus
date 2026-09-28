@@ -159,7 +159,8 @@ describe("SupplierProfile", () => {
     render(<SupplierProfile nit={NIT} />);
 
     expect(screen.getByRole("heading", { name: "Productos más comprados" })).toBeInTheDocument();
-    expect(screen.getByText("Alpha product")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Productos más comprados al proveedor" }))
+      .toHaveTextContent("Alpha product");
     expect(screen.getByText("Ventas y margen estimados")).toBeInTheDocument();
   });
 

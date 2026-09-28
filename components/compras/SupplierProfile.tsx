@@ -191,7 +191,29 @@ export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
         </div>
         {data.compras.productos_top.length > 0 && (
           <Card header={<h3 className="font-semibold text-text-primary">Productos más comprados</h3>}>
-            <div className="overflow-x-auto">
+            <ul aria-label="Productos más comprados al proveedor" className="space-y-2 md:hidden">
+              {data.compras.productos_top.map((product) => (
+                <li key={product.cod_producto} className="min-w-0 rounded-lg border border-border p-3">
+                  <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nombre}</p>
+                  <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{product.cod_producto}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border/70 pt-2 text-xs">
+                    <div>
+                      <dt className="text-text-muted">Unidades</dt>
+                      <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{product.unidades.toLocaleString("es-CO")}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-text-muted">Documentos</dt>
+                      <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{product.documentos.toLocaleString("es-CO")}</dd>
+                    </div>
+                    <div className="col-span-2">
+                      <dt className="text-text-muted">Total comprado</dt>
+                      <dd className="mt-0.5 break-words font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.total_compras)}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[520px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
@@ -206,7 +228,7 @@ export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
                     <tr key={product.cod_producto} className="border-b border-border/60 last:border-0">
                       <td className="px-3 py-2">
                         <span className="block font-medium text-text-primary">{product.nombre}</span>
-                        <span className="text-xs text-text-muted">{product.cod_producto}</span>
+                  <span className="break-all text-xs text-text-muted">{product.cod_producto}</span>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{product.unidades.toLocaleString("es-CO")}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{product.documentos.toLocaleString("es-CO")}</td>
@@ -278,7 +300,7 @@ function ProfileFrame({
       <div>
         <Link href={PURCHASES_HREF} className="text-sm text-accent hover:underline">← Volver a compras</Link>
         <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">Perfil del proveedor</p>
-        <h1 className="mt-1 text-2xl font-bold text-text-primary">{name ?? "Proveedor"}</h1>
+        <h1 className="mt-1 break-words text-xl font-bold leading-tight text-text-primary sm:text-2xl">{name ?? "Proveedor"}</h1>
         <p className="mt-1 text-sm text-text-muted">NIT {nit}</p>
       </div>
       {children}
@@ -300,31 +322,33 @@ function DateFilters({
   onEndChange: ChangeEventHandler<HTMLInputElement>;
 }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <label className="text-xs font-medium text-text-muted">
-        Desde
-        <input
-          type="date"
-          aria-label="Desde"
-          value={fechaInicio}
-          max={fechaFin}
-          onChange={onStartChange}
-          className="mt-1 block rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
-        />
-      </label>
-      <label className="text-xs font-medium text-text-muted">
-        Hasta
-        <input
-          type="date"
-          aria-label="Hasta"
-          value={fechaFin}
-          min={fechaInicio}
-          max={today}
-          onChange={onEndChange}
-          className="mt-1 block rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
-        />
-      </label>
-      <p className="pb-2 text-xs text-text-muted">Rango predeterminado: últimos 12 meses.</p>
+    <div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="min-w-0 text-xs font-medium text-text-muted">
+          Desde
+          <input
+            type="date"
+            aria-label="Desde"
+            value={fechaInicio}
+            max={fechaFin}
+            onChange={onStartChange}
+            className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+          />
+        </label>
+        <label className="min-w-0 text-xs font-medium text-text-muted">
+          Hasta
+          <input
+            type="date"
+            aria-label="Hasta"
+            value={fechaFin}
+            min={fechaInicio}
+            max={today}
+            onChange={onEndChange}
+            className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+          />
+        </label>
+      </div>
+      <p className="mt-3 text-xs text-text-muted">Rango predeterminado: últimos 12 meses.</p>
     </div>
   );
 }
@@ -345,19 +369,19 @@ function DateFilterCard(props: {
 
 function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }): JSX.Element {
   return (
-    <Card hover={false}>
+    <Card hover={false} className="min-w-0">
       <p className="text-xs font-medium text-text-muted">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">{value}</p>
-      <p className="mt-1 text-[0.7rem] text-text-muted">{detail}</p>
+      <p className="mt-1 break-words text-base font-semibold leading-tight tabular-nums text-text-primary sm:text-lg">{value}</p>
+      <p className="mt-1 break-words text-[0.7rem] leading-snug text-text-muted">{detail}</p>
     </Card>
   );
 }
 
 function MetricValue({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-lg border border-amber-200 bg-white/70 px-3 py-2">
+    <div className="min-w-0 rounded-lg border border-amber-200 bg-white/70 px-3 py-2">
       <p className="text-xs text-amber-900/80">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-amber-950">{value}</p>
+      <p className="mt-1 break-words text-base font-semibold leading-tight tabular-nums text-amber-950 sm:text-lg">{value}</p>
     </div>
   );
 }
@@ -387,7 +411,44 @@ function DocumentHistory({
       {documents.length === 0 ? (
         <p role="status" className="py-8 text-center text-sm text-text-muted">No hay documentos de compra para este proveedor en el período.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <>
+        <ul aria-label="Historial de compras del proveedor" className="space-y-2 md:hidden">
+          {documents.map((document) => {
+            const href = purchaseDocumentHrefFromEntityId(
+              `${document.business_date}|${document.cod_clase}|${document.num_documento}`,
+            );
+            const content = (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-text-muted">{document.business_date}</p>
+                    <p className="mt-1 font-semibold text-text-primary">Factura {document.num_documento}</p>
+                    <p className="mt-0.5 text-xs text-text-muted">Clase {document.cod_clase} · {document.num_items} productos</p>
+                  </div>
+                  <p className="shrink-0 text-right text-sm font-bold tabular-nums text-text-primary">
+                    {formatMoneyFull(document.total_factura)}
+                  </p>
+                </div>
+              </>
+            );
+            return (
+              <li key={`${document.business_date}|${document.cod_clase}|${document.num_documento}`}>
+                {href ? (
+                  <Link
+                    href={href}
+                    aria-label={`Abrir factura ${document.num_documento} clase ${document.cod_clase}`}
+                    className="block rounded-lg border border-border bg-surface p-3 transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <article className="rounded-lg border border-border bg-surface p-3">{content}</article>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-alt text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
@@ -405,15 +466,16 @@ function DocumentHistory({
             </tbody>
           </table>
         </div>
+        </>
       )}
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-text-muted" aria-live="polite">Página {page} · {pageSize} por página</p>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto">
           <button
             type="button"
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50"
+            className="min-h-11 flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50 sm:flex-none"
           >
             Anterior
           </button>
@@ -421,7 +483,7 @@ function DocumentHistory({
             type="button"
             disabled={!hasMore}
             onClick={() => onPageChange(page + 1)}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50"
+            className="min-h-11 flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-secondary enabled:hover:bg-surface-alt disabled:opacity-50 sm:flex-none"
           >
             Siguiente
           </button>

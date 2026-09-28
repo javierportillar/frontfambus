@@ -257,9 +257,9 @@ export function VentasView(): JSX.Element {
         </div>
       )}
 
-      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0 md:border-b-0 md:pb-0">
-        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
-          {tabs.map(v=>(<button key={v} onClick={()=>setTab(v)} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${tab===v?"bg-surface-dark text-text-inverse":"bg-surface-alt text-text-secondary"}`}>{labels[v]}</button>))}
+      <div className="border-b border-border pb-2 md:border-b-0 md:pb-0">
+        <div role="group" aria-label="Vistas de ventas" className="grid grid-cols-[repeat(auto-fit,minmax(5.5rem,1fr))] gap-2 md:flex md:flex-wrap">
+          {tabs.map(v=>(<button key={v} type="button" aria-pressed={tab===v} onClick={()=>setTab(v)} className={`min-h-10 w-full whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium md:w-auto md:px-3 ${tab===v?"bg-surface-dark text-text-inverse":"bg-surface-alt text-text-secondary"}`}>{labels[v]}</button>))}
         </div>
       </div>
 

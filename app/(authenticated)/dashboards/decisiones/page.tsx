@@ -180,8 +180,8 @@ function DecisionesContent(): JSX.Element {
 
       <StaleDataBanner />
 
-      <div className="-mx-4 overflow-x-auto border-b border-border pb-2 md:mx-0">
-        <div className="flex gap-2 whitespace-nowrap px-4 md:flex-wrap md:px-0">
+      <div className="border-b border-border pb-2">
+        <div role="group" aria-label="Vistas de decisiones" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {VALID_TABS.map((t) => (
             <TabButton key={t} active={tab === t} onClick={() => selectTab(t)} label={TAB_LABELS[t]} />
           ))}
@@ -239,7 +239,8 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+      aria-pressed={active}
+      className={`min-h-10 w-full whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors sm:w-auto ${
         active
           ? "bg-surface-dark text-text-inverse"
           : "bg-surface-alt text-text-secondary hover:bg-surface-alt/70"

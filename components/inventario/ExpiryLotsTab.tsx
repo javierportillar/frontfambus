@@ -473,7 +473,71 @@ export function ExpiryLotsTab(): JSX.Element {
         ) : orderedLots.length === 0 ? (
           <p className="py-8 text-center text-sm text-text-muted">No hay caducidades activas. Si diste de baja lotes, revisá Bajas registradas.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <ul aria-label="Lotes activos por vencer" className="space-y-2 xl:hidden">
+              {orderedLots.map((lot) => {
+                const days = daysUntilExpiry(lot.expires_on);
+                const band = getExpiryBand(days);
+                return (
+                  <li key={lot.id} className="min-w-0 rounded-lg border border-border bg-surface p-3">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{lot.product_sku}</p>
+                        <p className="break-words text-xs text-text-muted">{lot.product_name || "Nombre no disponible en el registro"}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-[0.65rem] font-semibold ${band.className}`}>
+                        {band.label}
+                      </span>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
+                      <div className="min-w-0">
+                        <dt className="text-text-muted">Proveedor</dt>
+                        <dd className="mt-0.5 break-words font-medium text-text-primary">{lot.supplier || "Sin proveedor"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Documento</dt>
+                        <dd className="mt-0.5 font-mono text-text-primary">{lot.purchase_order_ref}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Lote</dt>
+                        <dd className="mt-0.5 break-all font-mono text-text-primary">{lot.lot_code}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Caducidad</dt>
+                        <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{formatExpiryDate(lot.expires_on)}</dd>
+                        <p className="text-[0.65rem] text-text-muted">
+                          {days < 0 ? `${Math.abs(days)} días vencido` : days === 0 ? "Vence hoy" : `${days} días restantes`}
+                        </p>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Cantidad restante</dt>
+                        <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{formatQuantity(lot.remaining_quantity)}</dd>
+                      </div>
+                    </dl>
+                    {canManage && (
+                      <div className="mt-3 flex gap-2 border-t border-border/70 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(lot)}
+                          className="min-h-11 flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-accent hover:bg-surface-alt"
+                        >
+                          Editar lote
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingLotId === lot.id}
+                          onClick={() => deleteLot(lot)}
+                          className="min-h-11 flex-1 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                        >
+                          {deletingLotId === lot.id ? "Dando de baja…" : "Dar de baja"}
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hidden overflow-x-auto xl:block">
             <table className="min-w-[960px] w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase tracking-wide text-text-muted">
                 <tr>
@@ -537,7 +601,8 @@ export function ExpiryLotsTab(): JSX.Element {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
 
@@ -563,7 +628,52 @@ export function ExpiryLotsTab(): JSX.Element {
         ) : orderedDepletedLots.length === 0 ? (
           <p className="py-8 text-center text-sm text-text-muted">Todavía no hay bajas por caducidad registradas.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <ul aria-label="Lotes dados de baja" className="space-y-2 lg:hidden">
+              {orderedDepletedLots.map((lot) => {
+                const days = daysUntilExpiry(lot.expires_on);
+                return (
+                  <li key={lot.id} className="min-w-0 rounded-lg border border-red-200 bg-red-50/40 p-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-semibold leading-snug text-text-primary">{lot.product_sku}</p>
+                      <p className="break-words text-xs text-text-muted">{lot.product_name || "Nombre no disponible en el registro"}</p>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-red-200/70 pt-2 text-xs">
+                      <div className="min-w-0">
+                        <dt className="text-text-muted">Proveedor</dt>
+                        <dd className="mt-0.5 break-words font-medium text-text-primary">{lot.supplier || "Sin proveedor"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Documento</dt>
+                        <dd className="mt-0.5 font-mono text-text-primary">{lot.purchase_order_ref}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Lote</dt>
+                        <dd className="mt-0.5 break-all font-mono text-text-primary">{lot.lot_code}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Caducidad</dt>
+                        <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{formatExpiryDate(lot.expires_on)}</dd>
+                        <p className="text-[0.65rem] text-text-muted">
+                          {days < 0 ? `${Math.abs(days)} días vencido` : days === 0 ? "Venció hoy" : `${days} días restantes`}
+                        </p>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Cantidad actual</dt>
+                        <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{formatQuantity(lot.remaining_quantity)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-text-muted">Última actualización</dt>
+                        <dd className="mt-0.5 font-medium tabular-nums text-text-primary">
+                          {new Date(lot.updated_at).toLocaleDateString("es-CO")}
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hidden overflow-x-auto lg:block">
             <table className="min-w-[860px] w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase tracking-wide text-text-muted">
                 <tr>
@@ -606,7 +716,8 @@ export function ExpiryLotsTab(): JSX.Element {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
     </div>

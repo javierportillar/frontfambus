@@ -38,11 +38,17 @@ export function formatMoneyFull(value: number | null | undefined): string {
  */
 export function formatMoney(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(1)}M`;
+  const absoluteValue = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (absoluteValue >= 1_000_000) {
+    return `$${sign}${(absoluteValue / 1_000_000).toFixed(1)}M`;
   }
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(1)}K`;
+  if (absoluteValue >= 1_000) {
+    const thousands = absoluteValue / 1_000;
+    if (Number(thousands.toFixed(1)) >= 1_000) {
+      return `$${sign}${(absoluteValue / 1_000_000).toFixed(1)}M`;
+    }
+    return `$${sign}${thousands.toFixed(1)}K`;
   }
-  return `$${Math.round(value).toLocaleString("es-CO")}`;
+  return `$${sign}${Math.round(absoluteValue).toLocaleString("es-CO")}`;
 }

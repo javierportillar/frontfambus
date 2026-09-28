@@ -44,7 +44,40 @@ function PurchaseDocument({ document }: { document: CompraDocumento }): JSX.Elem
       </div>
 
       <Card className="overflow-hidden p-0">
-        <div className="overflow-x-auto">
+        <ul aria-label="Productos de la factura" className="space-y-2 md:hidden">
+          {document.items.map((item, index) => (
+            <li key={`${item.cod_producto}-${index}`} className="min-w-0 rounded-lg border border-border p-3">
+              <Link
+                href={`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`}
+                className="block min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <span className="block break-words text-sm font-semibold leading-snug text-text-primary">{item.nom_producto}</span>
+                <span className="mt-0.5 block break-all font-mono text-xs text-text-muted">{item.cod_producto}</span>
+              </Link>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
+                <div>
+                  <dt className="text-text-muted">Cantidad</dt>
+                  <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">
+                    {item.cantidad.toLocaleString("es-CO")} {item.unidad_medida ?? "u"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-text-muted">Valor unitario</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{formatMoneyFull(item.valor_unitario)}</dd>
+                </div>
+                <div>
+                  <dt className="text-text-muted">Costo unitario</dt>
+                  <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{formatMoneyFull(item.costo_producto ?? 0)}</dd>
+                </div>
+                <div>
+                  <dt className="text-text-muted">Total</dt>
+                  <dd className="mt-0.5 break-words font-bold tabular-nums text-text-primary">{formatMoneyFull(item.total)}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[680px] text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-alt/40 text-left text-[0.65rem] uppercase tracking-wide text-text-muted">

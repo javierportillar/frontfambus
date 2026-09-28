@@ -232,11 +232,38 @@ export function DocumentoCard({
         </Link>
       </div>
       {doc.items.length > 0 && (
-        <div
-          id={panelId}
-          hidden={!open}
-          className="border-t border-border overflow-x-auto"
-        >
+        <div id={panelId} hidden={!open} className="border-t border-border">
+          <ul aria-label={`Productos de factura ${doc.num_documento}`} className="space-y-2 p-3 md:hidden">
+            {doc.items.map((item, index) => (
+              <li key={`${item.cod_producto}-${index}`} className="min-w-0 rounded-lg border border-border bg-surface p-3">
+                <Link
+                  href={`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`}
+                  className="block min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  onClick={onBeforeProductNavigation}
+                >
+                  <span className="block break-words text-xs font-semibold leading-snug text-text-primary">{item.nom_producto}</span>
+                  <span className="mt-0.5 block break-all font-mono text-[0.65rem] text-text-muted">{item.cod_producto}</span>
+                </Link>
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
+                  <div>
+                    <dt className="text-text-muted">Cantidad</dt>
+                    <dd className="mt-0.5 font-medium tabular-nums text-text-primary">
+                      {item.cantidad} {item.unidad_medida ?? "u"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-text-muted">Valor unitario</dt>
+                    <dd className="mt-0.5 font-medium tabular-nums text-text-primary">{formatMoneyFull(item.valor_unitario)}</dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="text-text-muted">Total del producto</dt>
+                    <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{formatMoneyFull(item.total)}</dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface-alt/40 text-left text-[0.65rem] uppercase tracking-wide text-text-muted">
@@ -282,6 +309,7 @@ export function DocumentoCard({
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
