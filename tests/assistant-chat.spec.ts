@@ -323,6 +323,8 @@ async function mockPurchaseProfileApis(page: Page) {
     ventas_estimadas: {
       revenue: 240000,
       revenue_with_cost: 240000,
+      lineas_venta: 1,
+      lineas_con_costo: 1,
       margen_cobertura_pct: 100,
       margen: 85000,
       margen_pct: 35.4,
@@ -396,5 +398,82 @@ for (const tenant of ["motoshop", "masvital"] as const) {
     await page.getByRole("link", { name: "Factura 9081" }).click();
     await expect(page).toHaveURL(/\/dashboards\/compras\/dia\/2026-09-10\/documento\/9081\?cod_clase=FV$/);
     await expect(page.getByRole("heading", { name: "Detalle de la compra" })).toBeVisible();
+  });
+
+  test(`${tenant} purchase search finds providers, products, and invoice numbers`, async ({ page }) => {
+    await seedSession(page, assistantReply, tenant);
+    await page.route("**/api/metrics/compras-buscar*", (route) => {
+      const url = new URL(route.request().url());
+      const query = url.searchParams.get("q") ?? "";
+      const tipo = query.toLowerCase().includes("mieli")
+        ? "proveedor"
+        : query.toLowerCase().includes("sku") || query.toLowerCase().includes("dulces")
+          ? "producto"
+          : "factura";
+      return route.fulfill({ json: {
+        query,
+        periodo: { fecha_inicio: "2025-09-27", fecha_fin: "2026-09-27" },
+        documentos: [{
+          business_date: "2026-09-01",
+          cod_clase: "FC",
+          num_documento: "194",
+          nit_proveedor: "1143934745",
+          nombre_proveedor: "MIELI",
+          total_factura: 32000,
+          num_items: 3,
+          productos_coincidentes: tipo === "producto" ? "Dulces de miel grandes" : "",
+          tipo_coincidencia: tipo,
+        }],
+        paginacion: { page: 1, page_size: 20, total_documentos: 1, has_more: false },
+      } });
+    });
+    await page.route("**/api/metrics/purchases-day-grouped*", (route) => route.fulfill({ json: {
+      date: "2026-09-01",
+      total_compras: 32000,
+      total_documentos: 1,
+      documentos: [{
+        num_documento: "194",
+        cod_clase: "FC",
+        nit_proveedor: "1143934745",
+        nombre_proveedor: "MIELI",
+        total_factura: 32000,
+        num_items: 3,
+        items: [],
+      }],
+    } }));
+
+    await page.goto("/dashboards/movimientos?modo=compras");
+    await page.getByRole("button", { name: /Buscar/ }).click();
+    const searchInput = page.getByRole("searchbox", {
+      name: "Buscar proveedor, producto, SKU o número de factura",
+    });
+    const searchCases: Array<[string, string]> = [
+      ["MIELI", "proveedor"],
+      ["SKU-1", "producto"],
+      ["194", "factura"],
+    ];
+    for (const [query, match] of searchCases) {
+      await searchInput.fill(query);
+      await page.getByRole("button", { name: "Buscar compras" }).click();
+      await expect(page.getByText(`Coincidencia por ${match}`)).toBeVisible();
+    }
+
+    const result = page.getByRole("link", {
+      name: "Abrir factura 194 clase FC de MIELI",
+    });
+    await expect(result).toHaveAttribute(
+      "href",
+      "/dashboards/compras/dia/2026-09-01/documento/194?cod_clase=FC",
+    );
+    await result.click();
+    await expect(page).toHaveURL(/\/dashboards\/compras\/dia\/2026-09-01\/documento\/194\?cod_clase=FC$/);
+    await expect(page.getByRole("heading", { name: "Detalle de la compra" })).toBeVisible();
+
+    await page.goto("/dashboards/compras/dia/2026-09-01");
+    const fullDocumentHeader = page.getByRole("link", {
+      name: "Abrir factura 194 clase FC de MIELI",
+    });
+    await fullDocumentHeader.getByText("3 productos").click();
+    await expect(page).toHaveURL(/\/dashboards\/compras\/dia\/2026-09-01\/documento\/194\?cod_clase=FC$/);
   });
 }

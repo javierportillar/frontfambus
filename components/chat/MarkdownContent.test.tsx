@@ -127,6 +127,24 @@ describe("MarkdownContent", () => {
 
     rerender(
       <MarkdownContent
+        content="Doc. 456 · total $7890"
+        entityRefs={[ref]}
+        accessContext={accessContext}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Ver factura 456" })).toHaveAttribute("href", ref.href);
+
+    rerender(
+      <MarkdownContent
+        content="Comprobante Nro. 456 · total $7890"
+        entityRefs={[ref]}
+        accessContext={accessContext}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Ver factura 456" })).toHaveAttribute("href", ref.href);
+
+    rerender(
+      <MarkdownContent
         content="[Factura 456](/dashboards/compras/dia/2026-07-20/documento/456?cod_clase=FC)"
         entityRefs={[ref]}
         accessContext={accessContext}
@@ -174,6 +192,101 @@ describe("MarkdownContent", () => {
     const amountCell = within(row).getByRole("cell", { name: "$456" });
     expect(within(documentCell).getByRole("link", { name: "Ver factura 456" })).toHaveAttribute("href", ref.href);
     expect(within(amountCell).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("links repeated document numbers to their own exact purchase identities", () => {
+    const august: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-08-03|FC|300",
+      label: "Factura 300",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-08-03/documento/300?cod_clase=FC",
+    };
+    const september: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-09-10|NC|300",
+      label: "Factura 300",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-09-10/documento/300?cod_clase=NC",
+    };
+    const accessContext: AccessContext = {
+      role: "admin",
+      enabledFeatures: ["ventas-summary"],
+      allowedModules: null,
+      currentTenant: "motoshop",
+    };
+    const content = [
+      "Documento: 300 · Clase: FC · Fecha: 2026-08-03 · Total $500",
+      "Documento: 300 · Clase: NC · Fecha: 2026-09-10 · Total $1300",
+    ].join("\n");
+
+    render(
+      <MarkdownContent content={content} entityRefs={[august, september]} accessContext={accessContext} />,
+    );
+
+    const links = screen.getAllByRole("link", { name: "Ver factura 300" });
+    expect(links).toHaveLength(2);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([august.href, september.href]);
+  });
+
+  it("links a document number without matching its digits inside a thousands-formatted total", () => {
+    const ref: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-09-10|FC|300",
+      label: "Factura 300",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-09-10/documento/300?cod_clase=FC",
+    };
+    render(
+      <MarkdownContent
+        content="Documento: 300 · Clase: FC · Fecha: 2026-09-10 · Total: $1.300 COP"
+        entityRefs={[ref]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary"], allowedModules: null }}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Ver factura 300" })).toHaveAttribute("href", ref.href);
+    expect(screen.getByText(/Total: \$1\.300 COP/)).toBeInTheDocument();
+    expect(screen.getByText(/Total: \$1\.300 COP/).closest("a")).toBeNull();
+  });
+
+  it("uses document table rows to disambiguate repeated numbers without linking totals", () => {
+    const august: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-08-03|FC|300",
+      label: "Factura 300",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-08-03/documento/300?cod_clase=FC",
+    };
+    const september: EntityRef = {
+      entity_type: "purchase_document",
+      entity_id: "2026-09-10|NC|300",
+      label: "Factura 300",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-09-10/documento/300?cod_clase=NC",
+    };
+    render(
+      <MarkdownContent
+        content={[
+          "| Documento | Clase | Fecha | Total |",
+          "| --- | --- | --- | --- |",
+          "| 300 | FC | 2026-08-03 | $500 |",
+          "| 300 | NC | 2026-09-10 | $1300 |",
+        ].join("\n")}
+        entityRefs={[august, september]}
+        accessContext={{ role: "admin", enabledFeatures: ["ventas-summary"], allowedModules: null }}
+      />,
+    );
+
+    const rows = screen.getAllByRole("row");
+    expect(within(rows[1]!).getByRole("link", { name: "Ver factura 300" })).toHaveAttribute(
+      "href", august.href,
+    );
+    expect(within(rows[2]!).getByRole("link", { name: "Ver factura 300" })).toHaveAttribute(
+      "href", september.href,
+    );
+    expect(within(rows[1]!).getByRole("cell", { name: "$500" }).querySelector("a")).toBeNull();
+    expect(within(rows[2]!).getByRole("cell", { name: "$1300" }).querySelector("a")).toBeNull();
   });
 
   it("links a supplier by its canonical unique name and explicit NIT", () => {

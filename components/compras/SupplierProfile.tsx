@@ -20,9 +20,9 @@ import { Skeleton } from "@/components/ui/Skeleton";
 const PAGE_SIZE = 20;
 const PURCHASES_HREF = "/dashboards/movimientos?modo=compras";
 
-function oneYearBefore(date: string): string {
+function yearsBefore(date: string, years: number): string {
   const [year = "0", month = "1", day = "1"] = date.split("-");
-  const targetYear = Number(year) - 1;
+  const targetYear = Number(year) - years;
   const monthIndex = Number(month) - 1;
   const lastDay = new Date(Date.UTC(targetYear, monthIndex + 1, 0)).getUTCDate();
   const targetDay = Math.min(Number(day), lastDay);
@@ -36,13 +36,14 @@ function errorStatus(error: Error): number | null {
 
 export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
   const today = businessDateISO();
-  const [fechaInicio, setFechaInicio] = useState(() => oneYearBefore(today));
+  const [fechaInicio, setFechaInicio] = useState(() => yearsBefore(today, 1));
   const [fechaFin, setFechaFin] = useState(today);
   const [page, setPage] = useState(1);
   const validNit = isValidSupplierNit(nit);
   const rangeIsValid = isValidBusinessDate(fechaInicio)
     && isValidBusinessDate(fechaFin)
     && fechaInicio <= fechaFin
+    && fechaInicio >= yearsBefore(fechaFin, 10)
     && fechaFin <= today;
   const { data, error, isLoading, mutate } = useComprasProveedorPerfil(
     validNit && rangeIsValid ? nit : null,
@@ -74,7 +75,7 @@ export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
       <ProfileFrame nit={nit}>
         <Card>
           <p role="alert" className="py-5 text-center text-sm text-error">
-            Elegí un rango de fechas válido, desde la fecha inicial hasta hoy.
+            Elegí un rango válido de hasta 10 años, sin fechas futuras.
           </p>
           <DateFilters
             fechaInicio={fechaInicio}
@@ -242,7 +243,7 @@ export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
               {data.ventas_estimadas.margen_cobertura_pct == null
                 ? " · cobertura no disponible"
                 : ` · cobertura ${data.ventas_estimadas.margen_cobertura_pct.toFixed(1)}% del revenue estimado`}
-              {` · costo disponible para ${data.ventas_estimadas.skus_con_costo} de ${data.ventas_estimadas.skus_vendidos} SKU`}
+              {` · costo conocido en ${data.ventas_estimadas.lineas_con_costo} de ${data.ventas_estimadas.lineas_venta} líneas y ${data.ventas_estimadas.skus_con_costo} de ${data.ventas_estimadas.skus_vendidos} SKU`}
             </p>
             <p className="mt-2 text-xs leading-relaxed">
               La estimación atribuye las ventas de cada SKU a su proveedor conocido más reciente. No representa ventas facturadas directamente por este proveedor.

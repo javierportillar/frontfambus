@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   useComprasProveedorPerfil,
@@ -34,6 +34,8 @@ function makeProfile(overrides: Partial<ComprasProveedorPerfilResponse> = {}): C
     ventas_estimadas: {
       revenue: 240000,
       revenue_with_cost: 240000,
+      lineas_venta: 3,
+      lineas_con_costo: 3,
       margen_cobertura_pct: 100,
       margen: 85000,
       margen_pct: 35.4,
@@ -88,6 +90,18 @@ describe("SupplierProfile", () => {
     expect(useProfileMock).toHaveBeenCalledWith(NIT, "2025-09-27", "2026-09-27", 1, 20);
 
     unmount();
+    vi.useRealTimers();
+  });
+
+  it("does not request profile data when the selected range exceeds ten years", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T18:00:00.000Z"));
+    render(<SupplierProfile nit={NIT} />);
+
+    fireEvent.change(screen.getByLabelText("Desde"), { target: { value: "2010-01-01" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("hasta 10 años");
+    expect(useProfileMock).toHaveBeenLastCalledWith(null, "2010-01-01", "2026-09-27", 1, 20);
     vi.useRealTimers();
   });
 

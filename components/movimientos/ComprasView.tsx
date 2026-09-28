@@ -14,6 +14,7 @@ import {
 } from "@/lib/api/hooks";
 import { isValidSupplierNit, supplierProfileHref } from "@/lib/compras/routes";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { BuscarComprasTab } from "@/components/compras/BuscarComprasTab";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -22,7 +23,7 @@ import {
   Bar, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
-type Tab = "mensual" | "proveedor" | "historico";
+type Tab = "mensual" | "proveedor" | "historico" | "buscar";
 
 const MONTHS_LABEL = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 function mesLabel(yyyymm: string): string {
@@ -59,7 +60,7 @@ export function ComprasView(): JSX.Element {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <p className="text-xs text-text-muted">Vista mensual, por proveedor e histórica de tus compras</p>
+        <p className="text-xs text-text-muted">Vista mensual, por proveedor, histórica y búsqueda de compras</p>
         {tab === "mensual" && (
           <label className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
             Mes a analizar
@@ -78,12 +79,14 @@ export function ComprasView(): JSX.Element {
           <TabPill active={tab === "mensual"} onClick={() => setTab("mensual")} label="📅 Mensual" />
           <TabPill active={tab === "proveedor"} onClick={() => setTab("proveedor")} label="🏷 Por proveedor" />
           <TabPill active={tab === "historico"} onClick={() => setTab("historico")} label="📈 Histórica" />
+          <TabPill active={tab === "buscar"} onClick={() => setTab("buscar")} label="🔎 Buscar" />
         </div>
       </div>
 
       {tab === "mensual" && <MensualTab mes={mes} />}
       {tab === "proveedor" && <ProveedorTab />}
       {tab === "historico" && <HistoricaTab onClickMes={(m) => { setMes(m); setTab("mensual"); }} />}
+      {tab === "buscar" && <BuscarComprasTab />}
     </div>
   );
 }

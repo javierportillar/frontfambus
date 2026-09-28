@@ -1843,6 +1843,72 @@ export function usePurchasesDayGrouped(date: string | null) {
   );
 }
 
+export interface ComprasBusquedaDocumento {
+  business_date: string;
+  cod_clase: string;
+  num_documento: string;
+  nit_proveedor: string | null;
+  nombre_proveedor: string;
+  total_factura: number;
+  num_items: number;
+  productos_coincidentes: string;
+  tipo_coincidencia: "factura" | "proveedor" | "producto";
+}
+
+export interface ComprasBusquedaResponse {
+  query: string;
+  periodo: { fecha_inicio: string; fecha_fin: string };
+  documentos: ComprasBusquedaDocumento[];
+  paginacion: {
+    page: number;
+    page_size: number;
+    total_documentos: number;
+    has_more: boolean;
+  };
+}
+
+export function buildComprasBuscarUrl(
+  query: string,
+  fechaInicio: string,
+  fechaFin: string,
+  page = 1,
+  pageSize = 20,
+): string {
+  const params = new URLSearchParams({
+    q: query.trim(),
+    fecha_inicio: fechaInicio,
+    fecha_fin: fechaFin,
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  return `/api/metrics/compras-buscar?${params.toString()}`;
+}
+
+export function useComprasBuscar(
+  query: string,
+  fechaInicio: string,
+  fechaFin: string,
+  page = 1,
+  pageSize = 20,
+) {
+  const normalizedQuery = query.trim();
+  const ok = normalizedQuery.length >= 2
+    && normalizedQuery.length <= 100
+    && !/[\u0000-\u001f\u007f]/.test(normalizedQuery)
+    && isValidBusinessDate(fechaInicio)
+    && isValidBusinessDate(fechaFin)
+    && fechaInicio <= fechaFin
+    && Number.isInteger(page)
+    && page >= 1
+    && Number.isInteger(pageSize)
+    && pageSize >= 1
+    && pageSize <= 100;
+  return useMetrics<ComprasBusquedaResponse>(
+    ok ? buildComprasBuscarUrl(normalizedQuery, fechaInicio, fechaFin, page, pageSize) : null,
+    { keepPreviousData: false },
+  );
+}
+
 export interface ProductoResumenProveedor {
   cod_producto: string;
   nom_producto: string;
@@ -1906,6 +1972,8 @@ export interface ComprasProveedorPerfilResponse {
   ventas_estimadas: {
     revenue: number;
     revenue_with_cost: number;
+    lineas_venta: number;
+    lineas_con_costo: number;
     margen_cobertura_pct: number | null;
     margen: number | null;
     margen_pct: number | null;
