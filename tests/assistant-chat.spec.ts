@@ -600,3 +600,258 @@ for (const tenant of ["motoshop", "masvital"] as const) {
     await expect(page).toHaveURL(/\/dashboards\/compras\/dia\/2026-09-01\/documento\/194\?cod_clase=FC$/);
   });
 }
+
+test("assistant renders custom month rankings and links the supplier-filtered invoice exactly", async ({ page }) => {
+  const productReply: TestReply = {
+    ...assistantReply,
+    text: [
+      "### Septiembre 2026",
+      "1. SKU-A · Kombucha Maracuyá · 5 UNIDAD · $37.500 COP",
+      "1. SKU-B · Kombucha Lulo · 5 UNIDAD · $37.500 COP",
+      "### Agosto 2026",
+      "1. SKU-A · Kombucha Maracuyá · 5 UNIDAD · $37.500 COP",
+    ].join("\n"),
+    tools_used: ["get_top_productos_periodo"],
+    entity_refs: [
+      {
+        entity_type: "product",
+        entity_id: "SKU-A",
+        label: "Kombucha Maracuyá",
+        domain: "inventory",
+        href: "/dashboards/productos/SKU-A",
+      },
+      {
+        entity_type: "product",
+        entity_id: "SKU-B",
+        label: "Kombucha Lulo",
+        domain: "inventory",
+        href: "/dashboards/productos/SKU-B",
+      },
+    ],
+    attachments: [],
+  };
+  const purchaseReplyWithMilis: TestReply = {
+    ...assistantReply,
+    text: "Top 1 de compras filtradas por MILIS · Agosto 2026\n"
+      + "1. Documento: 194 · Clase: FC · Fecha: 2026-08-10 · "
+      + "Proveedor: MILIS MARKET (NIT: 900444444-4) · Total: $3.000 COP",
+    tools_used: ["get_top_compras_periodos"],
+    entity_refs: [{
+      entity_type: "purchase_document",
+      entity_id: "2026-08-10|FC|194",
+      label: "194",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-08-10/documento/194?cod_clase=FC",
+    }],
+    attachments: [],
+  };
+  const replenishmentReply: TestReply = {
+    ...assistantReply,
+    text: "Candidatos a revisar · corte inventario 2026-09-26 · ventas hasta 2026-09-26.\n"
+      + "- SKU SKU-A · Kombucha Maracuyá: stock 0 UNIDAD; ventas 18 UNIDAD en 180 días; "
+      + "referencia 4.5 UNIDAD para 45 días.",
+    tools_used: ["get_productos_para_reponer"],
+    entity_refs: [{
+      entity_type: "product",
+      entity_id: "SKU-A",
+      label: "Kombucha Maracuyá",
+      domain: "inventory",
+      href: "/dashboards/productos/SKU-A",
+    }],
+    attachments: [],
+  };
+  const replies = [productReply, purchaseReplyWithMilis, replenishmentReply];
+  const sentMessages: string[] = [];
+  await seedSession(page, productReply);
+  let replyIndex = 0;
+  await page.route("**/api/llm/qa/chat", (route) => {
+    const body = route.request().postDataJSON() as { message?: string };
+    sentMessages.push(body.message ?? "");
+    const response = replies[Math.min(replyIndex, replies.length - 1)]!;
+    replyIndex += 1;
+    return route.fulfill({ json: response });
+  });
+  await page.goto("/chat");
+
+  await page.getByLabel("Pregunta al asistente").fill(
+    "¿Cuál es el producto más vendido de septiembre y agosto?",
+  );
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const productAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(productAnswer).toContainText("Septiembre 2026");
+  await expect(productAnswer).toContainText("Agosto 2026");
+  const maracuyaLinks = productAnswer.getByRole("link", {
+    name: "Ver ficha de Kombucha Maracuyá (SKU-A)",
+  });
+  await expect(maracuyaLinks).toHaveCount(2);
+  await expect(maracuyaLinks.first()).toHaveAttribute("href", "/dashboards/productos/SKU-A");
+  await expect(maracuyaLinks.last()).toHaveAttribute("href", "/dashboards/productos/SKU-A");
+  await expect(productAnswer.getByRole("link", {
+    name: "Ver ficha de Kombucha Lulo (SKU-B)",
+  })).toHaveAttribute("href", "/dashboards/productos/SKU-B");
+
+  await page.getByLabel("Pregunta al asistente").fill(
+    "¿Cuál es la compra más grande hecha hacia MILIS en agosto?",
+  );
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const invoiceAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(invoiceAnswer).toContainText("MILIS MARKET");
+  await expect(invoiceAnswer.getByRole("link", { name: "Ver factura 194" })).toHaveAttribute(
+    "href", "/dashboards/compras/dia/2026-08-10/documento/194?cod_clase=FC",
+  );
+
+  await page.getByLabel("Pregunta al asistente").fill(
+    "¿Qué productos no tengo en stock y debería enlistar para mi siguiente compra?",
+  );
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const replenishmentAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(replenishmentAnswer).toContainText("corte inventario 2026-09-26");
+  await expect(replenishmentAnswer.getByRole("link", {
+    name: "Ver ficha de Kombucha Maracuyá (SKU-A)",
+  })).toHaveAttribute("href", "/dashboards/productos/SKU-A");
+  expect(sentMessages).toEqual([
+    "¿Cuál es el producto más vendido de septiembre y agosto?",
+    "¿Cuál es la compra más grande hecha hacia MILIS en agosto?",
+    "¿Qué productos no tengo en stock y debería enlistar para mi siguiente compra?",
+  ]);
+});
+
+test("assistant lists the requested month's purchase invoices with supplier, total and exact links", async ({ page }) => {
+  const invoiceRefs: TestReply["entity_refs"] = [
+    {
+      entity_type: "purchase_document",
+      entity_id: "2026-08-10|FC|150",
+      label: "150",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-08-10/documento/150?cod_clase=FC",
+    },
+    {
+      entity_type: "purchase_document",
+      entity_id: "2026-08-18|FC|151",
+      label: "151",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-08-18/documento/151?cod_clase=FC",
+    },
+  ];
+  const invoiceListReply: TestReply = {
+    ...assistantReply,
+    text: [
+      "Compras registradas en agosto de 2026:",
+      "- Documento: 150 · Clase: FC · Fecha: 2026-08-10 · Proveedor: MILIS MARKET (NIT: 900444444-4) · Total: $800 COP",
+      "- Documento: 151 · Clase: FC · Fecha: 2026-08-18 · Proveedor: MIELI (NIT: 900555555-5) · Total: $400 COP",
+    ].join("\n"),
+    tools_used: ["get_compras_periodo"],
+    entity_refs: invoiceRefs,
+    attachments: [],
+  };
+  await seedSession(page, invoiceListReply);
+  await page.route("**/api/llm/qa/chat", (route) => route.fulfill({ json: invoiceListReply }));
+  await page.goto("/chat");
+
+  await page.getByLabel("Pregunta al asistente").fill("¿Cuáles son las compras realizadas en agosto?");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const answer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(answer).toContainText("MILIS MARKET");
+  await expect(answer).toContainText("$800 COP");
+  await expect(answer).toContainText("MIELI");
+  await expect(answer).toContainText("$400 COP");
+  await expect(answer.getByRole("link", { name: "Ver factura 150" })).toHaveAttribute(
+    "href", invoiceRefs[0]!.href,
+  );
+  await expect(answer.getByRole("link", { name: "Ver factura 151" })).toHaveAttribute(
+    "href", invoiceRefs[1]!.href,
+  );
+});
+
+test("assistant applies exact sales periods and keeps the supplier filter on invoice rankings", async ({ page }) => {
+  const productReply: TestReply = {
+    ...assistantReply,
+    text: [
+      "### Septiembre 2026",
+      "1. SKU-A · Kombucha Maracuyá · 5 UND · $37.500 COP",
+      "1. SKU-B · Kombucha Lulo · 5 UND · $37.500 COP",
+      "### Agosto 2026",
+      "1. SKU-A · Kombucha Maracuyá · 5 UND · $37.500 COP",
+    ].join("\n"),
+    tools_used: ["get_top_productos_periodo"],
+    entity_refs: [
+      {
+        entity_type: "product", entity_id: "SKU-A", label: "Kombucha Maracuyá",
+        domain: "inventory", href: "/dashboards/productos/SKU-A",
+      },
+      {
+        entity_type: "product", entity_id: "SKU-B", label: "Kombucha Lulo",
+        domain: "inventory", href: "/dashboards/productos/SKU-B",
+      },
+    ],
+    attachments: [],
+  };
+  const purchaseReply: TestReply = {
+    ...assistantReply,
+    text: "Agosto 2026 · proveedor MILIS\n1. Documento: 194 · Clase: FC · Fecha: 2026-08-10 · Total: $3.000 COP",
+    tools_used: ["get_top_compras_periodos"],
+    entity_refs: [{
+      entity_type: "purchase_document",
+      entity_id: "2026-08-10|FC|194",
+      label: "194",
+      domain: "purchases",
+      href: "/dashboards/compras/dia/2026-08-10/documento/194?cod_clase=FC",
+    }],
+    attachments: [],
+  };
+  const replies = [productReply, purchaseReply];
+  await seedSession(page, productReply);
+  const sentMessages: string[] = [];
+  let replyIndex = 0;
+  await page.route("**/api/llm/qa/chat", (route) => {
+    const body = route.request().postDataJSON() as { message?: string };
+    sentMessages.push(body.message ?? "");
+    const reply = replies[Math.min(replyIndex, replies.length - 1)]!;
+    replyIndex += 1;
+    return route.fulfill({ json: reply });
+  });
+  await page.goto("/chat");
+
+  await page.getByLabel("Pregunta al asistente").fill(
+    "¿Cuál es el producto más vendido de septiembre y agosto?",
+  );
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const salesAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(salesAnswer).toContainText("Septiembre 2026");
+  await expect(salesAnswer).toContainText("Agosto 2026");
+  const maracuyaLinks = salesAnswer.getByRole("link", {
+    name: "Ver ficha de Kombucha Maracuyá (SKU-A)",
+  });
+  await expect(maracuyaLinks).toHaveCount(2);
+  await expect(maracuyaLinks.first()).toHaveAttribute("href", "/dashboards/productos/SKU-A");
+  await expect(maracuyaLinks.last()).toHaveAttribute("href", "/dashboards/productos/SKU-A");
+  await expect(salesAnswer.getByRole("link", { name: "Ver ficha de Kombucha Lulo (SKU-B)" })).toHaveAttribute(
+    "href", "/dashboards/productos/SKU-B",
+  );
+
+  await page.getByLabel("Pregunta al asistente").fill(
+    "¿Cuál es la compra más grande hecha hacia MILIS en agosto?",
+  );
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const purchaseAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(purchaseAnswer).toContainText("MILIS");
+  await expect(purchaseAnswer.getByRole("link", { name: "Ver factura 194" })).toHaveAttribute(
+    "href", "/dashboards/compras/dia/2026-08-10/documento/194?cod_clase=FC",
+  );
+  expect(sentMessages).toEqual([
+    "¿Cuál es el producto más vendido de septiembre y agosto?",
+    "¿Cuál es la compra más grande hecha hacia MILIS en agosto?",
+  ]);
+});
