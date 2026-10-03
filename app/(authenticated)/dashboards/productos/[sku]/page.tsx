@@ -6,6 +6,12 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useProductDetail, type ProductMetric, type ProductMovimiento, type ProductTimelineMonth } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { diasStockLabel, estadoCfg, accionCfg } from "@/lib/productos/display";
+import {
+  calculateFifoFromMovements,
+  daysBetween,
+  type FifoLotAllocation,
+} from "@/lib/productos/fifo";
+import { productFreshnessLabel } from "@/lib/productos/freshness";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -62,6 +68,12 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
   const m = data.metrics!;
   const estado = estadoCfg(m.estado);
   const accion = accionCfg(m.accion);
+  const stockIsEstimated = (
+    data.data_freshness?.stock_source ?? m.stock_source
+  ) === "purchases_minus_sales_estimate";
+  const actionLabel = stockIsEstimated && m.accion === "ok"
+    ? "No comprar ahora"
+    : accion.label;
 
   // Timeline base con comprado/vendido por mes
   const timelineBase = (data.timeline ?? []).map((t: ProductTimelineMonth) => ({
@@ -118,21 +130,38 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
               {m.cod_producto}
               {m.rank_rev ? ` · #${m.rank_rev} en ventas (${m.pct_revenue.toFixed(1)}% del total)` : ""}
             </p>
+            {data.data_freshness && (
+              <p className="mt-1 text-[0.65rem] text-text-muted" aria-label="Actualidad de las métricas">
+                {productFreshnessLabel(data.data_freshness, data.window_days ?? window)}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <EstadoChip estado={m.estado} />
           {m.accion !== "n/a" && (
-            <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold" style={{ color: accion.color, background: accion.bg }}>
-              {accion.label}
+            <span
+              className="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold"
+              style={{ color: accion.color, background: accion.bg }}
+              title={stockIsEstimated ? "Sugerencia basada en un stock estimado, no en un conteo físico." : undefined}
+            >
+              {stockIsEstimated ? `Sugerencia estimada: ${actionLabel}` : actionLabel}
             </span>
           )}
         </div>
       </div>
 
+      {stockIsEstimated && (
+        <p className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="note">
+          La disponibilidad y el estado se estiman con compras menos ventas históricas; no confirman un conteo físico.
+        </p>
+      )}
+
       {/* Banner de recomendación */}
       <div className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: `${estado.color}40`, background: `${estado.color}0d` }}>
-        <span className="font-semibold" style={{ color: estado.color }}>{estado.label}.</span>{" "}
+        <span className="font-semibold" style={{ color: estado.color }}>
+          {stockIsEstimated ? `Estimación: ${estado.label}` : estado.label}.
+        </span>{" "}
         <span className="text-text-secondary">{recomendacion(m)}</span>
       </div>
 
@@ -140,7 +169,11 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>
           <div className="space-y-2">
-            <Stat label="Stock actual" value={m.cantidad_actual.toLocaleString("es-CO")} subtitle="unidades" />
+            <Stat
+              label={stockIsEstimated ? "Stock estimado" : "Stock en catálogo"}
+              value={m.cantidad_actual.toLocaleString("es-CO")}
+              subtitle={stockIsEstimated ? "unidades · compras menos ventas" : "unidades"}
+            />
             <div
               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.7rem] font-medium"
               style={{ background: estado.bg, color: estado.color }}
@@ -265,15 +298,6 @@ function Detail({ data, window }: { data: NonNullable<ReturnType<typeof useProdu
   );
 }
 
-/** Resultado FIFO por compra: cuántas unidades de esa tanda ya se vendieron y cuántas siguen en stock. */
-interface ComprasFifo {
-  index: number;       // posición en el array original `compras`
-  vendidas: number;    // unidades de esta compra ya consumidas por ventas posteriores
-  enStock: number;     // unidades restantes de esta compra
-  primeraVenta: string | null;
-  ultimaVenta: string | null;
-}
-
 interface DiaMovimientoGroup {
   fecha: string;
   movimientos: ProductMovimiento[];
@@ -333,76 +357,10 @@ function groupMovimientosByMonth(movimientos: ProductMovimiento[], order: "asc" 
     });
 }
 
-function daysBetween(start: string, end: string): number | null {
-  const startMs = new Date(`${start}T00:00:00`).getTime();
-  const endMs = new Date(`${end}T00:00:00`).getTime();
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
-  return Math.max(0, Math.round((endMs - startMs) / 86_400_000));
-}
-
-function calcularFifoDesdeMovimientos(
-  compras: ProductMovimiento[],
-  ventas: ProductMovimiento[],
-  stockActual: number,
-): ComprasFifo[] {
-  // FIFO: las ventas más antiguas consumen primero las compras más antiguas.
-  // Como product-detail ya trae el historial completo, esto permite estimar
-  // cuándo empezó y cuándo terminó de venderse cada compra.
-  const comprasAsc = compras
-    .map((mv, i) => ({ ...mv, _origIndex: i }))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.num_documento).localeCompare(String(b.num_documento), "es", { numeric: true }));
-  const ventasAsc = [...ventas].sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.num_documento).localeCompare(String(b.num_documento), "es", { numeric: true }));
-
-  const resultado = comprasAsc.map((compra) => ({
-    index: compra._origIndex,
-    vendidas: 0,
-    enStock: compra.cantidad,
-    primeraVenta: null as string | null,
-    ultimaVenta: null as string | null,
-  }));
-
-  for (const venta of ventasAsc) {
-    let porConsumir = venta.cantidad;
-    for (let i = 0; i < comprasAsc.length && porConsumir > 0; i++) {
-      const compra = comprasAsc[i];
-      const fifo = resultado[i];
-      if (!compra || !fifo || fifo.enStock <= 0) continue;
-      if (compra.fecha > venta.fecha) break;
-      const tomar = Math.min(fifo.enStock, porConsumir);
-      fifo.vendidas += tomar;
-      fifo.enStock -= tomar;
-      fifo.primeraVenta = fifo.primeraVenta ?? venta.fecha;
-      fifo.ultimaVenta = venta.fecha;
-      porConsumir -= tomar;
-    }
-  }
-
-  // Si por alguna inconsistencia el saldo FIFO no cuadra exacto con stock actual,
-  // mantenemos el stock canónico ajustando sólo el remanente desde compras recientes.
-  const saldoFifo = resultado.reduce((acc, f) => acc + f.enStock, 0);
-  if (Math.abs(saldoFifo - stockActual) > 0.001) {
-    let stockPorAsignar = Math.max(0, stockActual);
-    const comprasDesc = compras
-      .map((mv, i) => ({ ...mv, _origIndex: i }))
-      .sort((a, b) => b.fecha.localeCompare(a.fecha) || String(b.num_documento).localeCompare(String(a.num_documento), "es", { numeric: true }));
-    const byIndex = new Map(resultado.map((f) => [f.index, f]));
-    for (const compra of comprasDesc) {
-      const fifo = byIndex.get(compra._origIndex);
-      if (!fifo) continue;
-      const enStock = Math.min(compra.cantidad, stockPorAsignar);
-      stockPorAsignar -= enStock;
-      fifo.enStock = enStock;
-      fifo.vendidas = Math.max(0, compra.cantidad - enStock);
-    }
-  }
-
-  return resultado;
-}
-
 function summarizeFifo(
   movimientos: ProductMovimiento[],
   compras: ProductMovimiento[],
-  fifoPorIndex: Map<number, ComprasFifo> | undefined,
+  fifoPorIndex: Map<number, FifoLotAllocation> | undefined,
 ): FifoSummary {
   if (!fifoPorIndex) return { vendidas: 0, pendientes: 0 };
   return movimientos.reduce(
@@ -418,22 +376,37 @@ function summarizeFifo(
   );
 }
 
-function FifoSummaryBadges({ summary }: { summary: FifoSummary }): JSX.Element {
+function FifoSummaryBadges({ summary, reconciled }: {
+  summary: FifoSummary;
+  reconciled: boolean;
+}): JSX.Element {
   return (
-    <span className="inline-flex flex-wrap justify-end gap-1 text-[0.65rem] font-semibold">
+    <span
+      className="inline-flex flex-wrap justify-end gap-1 text-[0.65rem] font-semibold"
+      title={reconciled
+        ? "Estimación FIFO sobre movimientos válidos; coincide con el saldo usado para conciliar, no identifica un lote físico."
+        : "Los movimientos FIFO no cuadran con el saldo de inventario usado para conciliar; es solo una estimación."}
+    >
       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
-        {summary.vendidas.toLocaleString("es-CO")} vendidas
+        {summary.vendidas.toLocaleString("es-CO")} FIFO vendidas
       </span>
       {summary.pendientes > 0 && (
         <span className="rounded-full bg-orange-100 px-2 py-0.5 text-orange-700">
-          {summary.pendientes.toLocaleString("es-CO")} pendientes
+          {summary.pendientes.toLocaleString("es-CO")} restantes estimadas
         </span>
       )}
     </span>
   );
 }
 
-function FifoSaleTiming({ fifo, fechaCompra }: { fifo: ComprasFifo | undefined; fechaCompra: string }): JSX.Element {
+function FifoSaleTiming({ fifo, fechaCompra, reconciled }: {
+  fifo: FifoLotAllocation | undefined;
+  fechaCompra: string;
+  reconciled: boolean;
+}): JSX.Element {
+  if (!reconciled) {
+    return <span className="text-[0.65rem] text-amber-800">No conciliado</span>;
+  }
   if (!fifo || fifo.vendidas <= 0 || !fifo.ultimaVenta) {
     return <span className="text-[0.65rem] text-text-muted">Sin venta asignada</span>;
   }
@@ -450,7 +423,7 @@ function FifoSaleTiming({ fifo, fechaCompra }: { fifo: ComprasFifo | undefined; 
   return (
     <span
       className="inline-flex max-w-[10rem] flex-col items-end leading-tight"
-      title={`Primera venta FIFO: ${fifo.primeraVenta ?? "—"}${diasPrimeraVenta !== null ? ` (${diasPrimeraVenta} días)` : ""}. Última venta FIFO: ${fifo.ultimaVenta}${diasUltimaVenta !== null ? ` (${diasUltimaVenta} días)` : ""}.`}
+      title={`Estimación FIFO${reconciled ? " conciliada con el saldo usado para conciliar" : " no conciliada con el saldo usado para conciliar"}; no identifica un lote físico. Primera venta asignada: ${fifo.primeraVenta ?? "—"}${diasPrimeraVenta !== null ? ` (${diasPrimeraVenta} días)` : ""}. Última venta asignada: ${fifo.ultimaVenta}${diasUltimaVenta !== null ? ` (${diasUltimaVenta} días)` : ""}.`}
     >
       <span className="font-mono text-[0.65rem] text-text-primary">{rango}</span>
       <span className="text-[0.6rem] text-text-muted">{textoDias}</span>
@@ -483,9 +456,9 @@ function MovimientosSplit({
   const udsVentas = ventas.reduce((acc, mv) => acc + mv.cantidad, 0);
 
   // FIFO reconciliado con stock actual: por cada compra visible, cuánto saldo queda.
-  const fifoArr = calcularFifoDesdeMovimientos(compras, ventas, stockActual);
-  const fifoPorIndex = new Map(fifoArr.map((f) => [f.index, f]));
-  const stockFueraDeComprasVisibles = Math.max(0, stockActual - udsCompras);
+  const fifoReconciliation = calculateFifoFromMovements(compras, ventas, stockActual);
+  const stockIsEstimated = stockSource === "purchases_minus_sales_estimate";
+  const fifoPorIndex = new Map(fifoReconciliation.lots.map((lot) => [lot.index, lot]));
   const tieneTotalesHistoricos = Number.isFinite(compradoTotal) && Number.isFinite(vendidoTotal);
 
   return (
@@ -514,6 +487,7 @@ function MovimientosSplit({
           unidades={udsCompras}
           total={totalCompras}
           fifoPorIndex={fifoPorIndex}
+          fifoReconciled={fifoReconciliation.reconciled}
           order={order}
         />
         <div className="md:pl-4">
@@ -547,8 +521,13 @@ function MovimientosSplit({
         </div>
       )}
       <p className="mt-3 text-[0.65rem] text-text-muted">
-        Saldo por compra estimado con FIFO y anclado al stock actual ({stockActual.toLocaleString("es-CO")} u). Bajo FIFO, el stock restante se asigna a las compras más recientes.
-        {stockFueraDeComprasVisibles > 0 ? ` Hay ${stockFueraDeComprasVisibles.toLocaleString("es-CO")} u de stock que no se explican con las compras visibles.` : ""}
+        Saldo por compra estimado con FIFO; no equivale a trazabilidad física por lote.
+        {fifoReconciliation.reconciled
+          ? ` Los movimientos válidos cuadran con ${stockIsEstimated ? "el saldo estimado" : "el snapshot"} de ${stockActual.toLocaleString("es-CO")} u.`
+          : ` No conciliado: movimientos ${fifoReconciliation.movementBalance.toLocaleString("es-CO")} u, ${stockIsEstimated ? "saldo estimado" : "snapshot"} ${stockActual.toLocaleString("es-CO")} u, diferencia ${fifoReconciliation.discrepancy.toLocaleString("es-CO")} u.`}
+        {fifoReconciliation.unmatchedSales > 0
+          ? ` ${fifoReconciliation.unmatchedSales.toLocaleString("es-CO")} u vendidas no se pudieron asignar a compras visibles.`
+          : ""}
       </p>
     </Card>
   );
@@ -561,6 +540,7 @@ function MovimientoColumna({
   unidades,
   total,
   fifoPorIndex,
+  fifoReconciled = true,
   order,
 }: {
   tipo: "compra" | "venta";
@@ -568,7 +548,8 @@ function MovimientoColumna({
   movimientos: ProductMovimiento[];
   unidades: number;
   total: number;
-  fifoPorIndex?: Map<number, ComprasFifo>;
+          fifoPorIndex?: Map<number, FifoLotAllocation>;
+  fifoReconciled?: boolean;
   order: "asc" | "desc";
 }): JSX.Element {
   const esCompra = tipo === "compra";
@@ -604,6 +585,7 @@ function MovimientoColumna({
               mes={mes}
               hrefBase={hrefBase}
               fifoPorIndex={fifoPorIndex}
+              fifoReconciled={fifoReconciled}
               compras={comprasSafe(movimientos, esCompra)}
             />
           ))}
@@ -622,12 +604,14 @@ function MesMovimientos({
   mes,
   hrefBase,
   fifoPorIndex,
+  fifoReconciled,
   compras,
 }: {
   tipo: "compra" | "venta";
   mes: MesMovimientoGroup;
   hrefBase: string;
-  fifoPorIndex?: Map<number, ComprasFifo>;
+  fifoPorIndex?: Map<number, FifoLotAllocation>;
+  fifoReconciled: boolean;
   compras: ProductMovimiento[];
 }): JSX.Element {
   const [open, setOpen] = useState(false);
@@ -645,7 +629,7 @@ function MesMovimientos({
         <div className="text-right">
           <div className="text-sm font-bold tabular-nums">{mes.unidades.toLocaleString("es-CO")} u</div>
           <div className="text-[0.7rem] font-semibold tabular-nums">{formatMoneyFull(mes.total)}</div>
-          {fifoSummary && <div className="mt-1"><FifoSummaryBadges summary={fifoSummary} /></div>}
+          {fifoSummary && <div className="mt-1"><FifoSummaryBadges summary={fifoSummary} reconciled={fifoReconciled} /></div>}
         </div>
       </button>
       {open && (
@@ -657,6 +641,7 @@ function MesMovimientos({
               esCompra={esCompra}
               hrefBase={hrefBase}
               fifoPorIndex={fifoPorIndex}
+              fifoReconciled={fifoReconciled}
               compras={compras}
             />
           ))}
@@ -671,12 +656,14 @@ function DiaMovimientos({
   esCompra,
   hrefBase,
   fifoPorIndex,
+  fifoReconciled,
   compras,
 }: {
   dia: DiaMovimientoGroup;
   esCompra: boolean;
   hrefBase: string;
-  fifoPorIndex?: Map<number, ComprasFifo>;
+  fifoPorIndex?: Map<number, FifoLotAllocation>;
+  fifoReconciled: boolean;
   compras: ProductMovimiento[];
 }): JSX.Element {
   const [open, setOpen] = useState(false);
@@ -688,7 +675,7 @@ function DiaMovimientos({
         <span className="font-medium text-text-primary">{open ? "▾" : "▸"} {dia.fecha}</span>
         <span className="flex flex-col items-end gap-1 tabular-nums text-text-muted sm:flex-row sm:items-center">
           <span>{dia.unidades.toLocaleString("es-CO")} u · {formatMoneyFull(dia.total)}</span>
-          {fifoSummary && <FifoSummaryBadges summary={fifoSummary} />}
+          {fifoSummary && <FifoSummaryBadges summary={fifoSummary} reconciled={fifoReconciled} />}
         </span>
       </button>
       {open && (
@@ -720,12 +707,12 @@ function DiaMovimientos({
                   <td className="py-1.5 px-2 text-right tabular-nums font-medium">{formatMoneyFull(mv.valor)}</td>
                   {esCompra && (
                     <td className="py-1.5 px-2 text-right">
-                      <EstadoCompraBadge fifo={fifo} cantidad={mv.cantidad} />
+                      <EstadoCompraBadge fifo={fifo} cantidad={mv.cantidad} reconciled={fifoReconciled} />
                     </td>
                   )}
                   {esCompra && (
                     <td className="py-1.5 px-2 text-right">
-                      <FifoSaleTiming fifo={fifo} fechaCompra={mv.fecha} />
+                      <FifoSaleTiming fifo={fifo} fechaCompra={mv.fecha} reconciled={fifoReconciled} />
                     </td>
                   )}
                 </tr>
@@ -738,18 +725,36 @@ function DiaMovimientos({
   );
 }
 
-function EstadoCompraBadge({ fifo, cantidad }: { fifo: ComprasFifo | undefined; cantidad: number }): JSX.Element {
+function EstadoCompraBadge({
+  fifo,
+  cantidad,
+  reconciled,
+}: {
+  fifo: FifoLotAllocation | undefined;
+  cantidad: number;
+  reconciled: boolean;
+}): JSX.Element {
   if (!fifo) {
     return <span className="text-[0.65rem] text-text-muted">—</span>;
+  }
+  if (!reconciled) {
+    return (
+      <span
+        className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-800"
+        title="El saldo estimado por movimientos no coincide con el saldo de inventario usado para conciliar."
+      >
+        No conciliado
+      </span>
+    );
   }
   if (fifo.enStock <= 0) {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
         style={{ background: "#DCFCE7", color: "#15803D" }}
-        title={`Según FIFO y stock actual, las ${cantidad} unidades visibles de esta compra ya salieron`}
+        title={`Según la asignación FIFO estimada, las ${cantidad} unidades de este documento se consumieron.`}
       >
-        ✓ Vendido
+        ✓ FIFO agotada
       </span>
     );
   }
@@ -758,9 +763,9 @@ function EstadoCompraBadge({ fifo, cantidad }: { fifo: ComprasFifo | undefined; 
       <span
         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
         style={{ background: "#FEE2E2", color: "#B91C1C" }}
-        title={`Según FIFO y stock actual, las ${cantidad} unidades visibles de esta compra siguen en stock`}
+        title={`Según la asignación FIFO estimada, las ${cantidad} unidades de este documento siguen en el saldo.`}
       >
-        ● En stock
+        ● Saldo FIFO
       </span>
     );
   }
@@ -768,7 +773,7 @@ function EstadoCompraBadge({ fifo, cantidad }: { fifo: ComprasFifo | undefined; 
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold"
       style={{ background: "#FFEDD5", color: "#C2410C" }}
-      title={`Según FIFO y stock actual: ${fifo.vendidas} vendidas · ${fifo.enStock} en stock`}
+      title={`Asignación FIFO estimada: ${fifo.vendidas} consumidas · ${fifo.enStock} en el saldo.`}
     >
       ◐ {fifo.vendidas}/{cantidad}
     </span>

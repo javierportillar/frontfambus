@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useProductAnalytics, type ProductMetric } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { diasStockLabel } from "@/lib/productos/display";
+import { productFreshnessLabel } from "@/lib/productos/freshness";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EstadoChip, AbcChip, AccionChip } from "@/components/productos/Chips";
@@ -93,6 +94,8 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
   }
 
   const hasFilter = Boolean(normalizedQ || estado || abc);
+  const stockIsEstimated = data?.data_freshness?.stock_source === "purchases_minus_sales_estimate";
+  const stockLabel = stockIsEstimated ? "Stock estimado" : "Stock";
   const scopeNote = hasFilter
     ? "resultado del filtro aplicado"
     : "TODOS los SKUs del catálogo (con y sin stock, incluye servicios y descatalogados)";
@@ -120,6 +123,11 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
     >
       {/* Controles */}
       <div className="mb-3 flex flex-col gap-2">
+        {data?.data_freshness && (
+          <p className="text-[0.65rem] text-text-muted" aria-label="Actualidad del catálogo">
+            {productFreshnessLabel(data.data_freshness, data.window_days)}
+          </p>
+        )}
         {/* Presets de "universo" — aclaran cuántos hay en cada corte */}
         <div className="flex flex-wrap gap-2">
           {UNIVERSO_PRESETS.map((p) => {
@@ -253,7 +261,7 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
                   </div>
                   <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-2 text-xs">
                     <div>
-                      <dt className="text-text-muted">Stock</dt>
+                      <dt className="text-text-muted">{stockLabel}</dt>
                       <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">{product.cantidad_actual.toLocaleString("es-CO")}</dd>
                     </div>
                     <div className="min-w-0">
@@ -291,7 +299,7 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
                 <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-wide text-text-muted">
                   <th className="py-2 pr-2">Producto</th>
                   <th className="px-2 text-center">ABC</th>
-                  <th className="px-2 text-right">Stock</th>
+                  <th className="px-2 text-right">{stockLabel}</th>
                   <th className="px-2 text-right">Vendido ({window}d)</th>
                   <th className="px-2 text-right">Velocidad</th>
                   <th className="px-2 text-right">Días stock</th>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { LogoMark } from "@/components/Logo";
 import { useAuthStore } from "@/lib/auth/store";
 import { useUIStore } from "@/lib/ui/store";
@@ -21,6 +21,25 @@ export interface NavItem {
   adminOnly?: boolean;
 }
 
+function NavLink({
+  href,
+  className,
+  title,
+  onClick,
+  children,
+}: {
+  href: string;
+  className: string;
+  title?: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  children: ReactNode;
+}): JSX.Element {
+  if (href === "/chat") {
+    return <a href={href} className={className} title={title} onClick={onClick}>{children}</a>;
+  }
+  return <Link href={href} className={className} title={title} onClick={onClick}>{children}</Link>;
+}
+
 interface NavigationProps {
   /** Items de navegación (ya filtrados por enabledFeatures fuera de este componente) */
   items: NavItem[];
@@ -29,6 +48,7 @@ interface NavigationProps {
   /** Acción de logout */
   onLogout?: () => void;
   className?: string;
+  hideBottomNav?: boolean;
 }
 
 // ─── Iconos inline SVG — sin dependencia de librería ────────────
@@ -158,7 +178,7 @@ function Sidebar({
   items: NavItem[];
   role?: string;
   onLogout?: () => void;
-  isActive: (href: string) => boolean;
+  isActive: (_href: string) => boolean;
   collapsed: boolean;
   onToggle: () => void;
 }): JSX.Element {
@@ -230,7 +250,7 @@ function Sidebar({
           {items.map((item) => {
             const active = isActive(item.href);
             return (
-              <Link
+              <NavLink
                 key={item.href}
                 href={item.href}
                 title={!expanded ? item.label : undefined}
@@ -258,7 +278,7 @@ function Sidebar({
                     )}
                   </>
                 )}
-              </Link>
+              </NavLink>
             );
           })}
         </nav>
@@ -329,7 +349,7 @@ function BottomNav({
   onLogout,
 }: {
   items: NavItem[];
-  isActive: (href: string) => boolean;
+  isActive: (_href: string) => boolean;
   onLogout?: () => void;
 }): JSX.Element {
   const router = useRouter();
@@ -388,10 +408,12 @@ function BottomNav({
                 {menuItems.map((item) => {
                   const active = isActive(item.href);
                   return (
-                    <Link
+                    <NavLink
                       key={item.href}
                       href={item.href}
-                      onClick={() => setOpen(false)}
+                      onClick={() => {
+                        setOpen(false);
+                      }}
                       className={`flex min-h-[4.75rem] flex-col justify-between rounded-2xl border px-3 py-3 transition-all ${
                         active
                           ? "border-primary bg-primary/15 text-primary"
@@ -400,7 +422,7 @@ function BottomNav({
                     >
                       <span>{item.icon}</span>
                       <span className="text-sm font-bold leading-tight">{item.label}</span>
-                    </Link>
+                    </NavLink>
                   );
                 })}
               </div>
@@ -469,7 +491,7 @@ function BottomNav({
             {primaryItems.map((item) => {
               const active = isActive(item.href);
               return (
-                <Link
+                <NavLink
                   key={item.href}
                   href={item.href}
                   className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 transition-all ${
@@ -487,7 +509,7 @@ function BottomNav({
                   {active && (
                     <span className="absolute top-0 left-1/2 h-0.5 w-7 -translate-x-1/2 rounded-full bg-primary" />
                   )}
-                </Link>
+                </NavLink>
               );
             })}
             {showMasButton && (
@@ -536,6 +558,7 @@ export function Navigation({
   role = "gerente",
   onLogout,
   className = "",
+  hideBottomNav = false,
 }: NavigationProps): JSX.Element {
   const pathname = usePathname();
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
@@ -565,7 +588,7 @@ export function Navigation({
       />
 
       {/* Bottom nav mobile */}
-      <BottomNav items={enrichedItems} isActive={isActive} onLogout={onLogout} />
+      {!hideBottomNav && <BottomNav items={enrichedItems} isActive={isActive} onLogout={onLogout} />}
     </div>
   );
 }

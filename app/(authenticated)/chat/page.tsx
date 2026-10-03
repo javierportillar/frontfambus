@@ -101,44 +101,72 @@ export default function ChatPage(): JSX.Element {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [conversationError, setConversationError] = useState<string>();
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [greeting, setGreeting] = useState("Buenas tardes");
   const abortRef = useRef<AbortController>();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const conversationActionIdRef = useRef(0);
+  const conversationsRefreshIdRef = useRef(0);
+  const conversationsRefreshAbortRef = useRef<AbortController>();
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const keepMessagesAtBottomRef = useRef(true);
 
   const refreshConversations = useCallback(async () => {
     const requestedTenant = useAuthStore.getState().currentTenant;
     const requestedUser = useAuthStore.getState().user;
+    const refreshId = ++conversationsRefreshIdRef.current;
+    conversationsRefreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    conversationsRefreshAbortRef.current = controller;
 
     try {
-      const rows = await listConversations();
+      const rows = await listConversations(controller.signal);
       if (
+        refreshId === conversationsRefreshIdRef.current &&
         useAuthStore.getState().currentTenant === requestedTenant &&
         useAuthStore.getState().user === requestedUser
       ) {
         setConversations(rows);
+        setConversationError(undefined);
       }
     } catch {
-      setError("No pudimos cargar tus conversaciones.");
+      if (
+        refreshId === conversationsRefreshIdRef.current &&
+        !controller.signal.aborted &&
+        useAuthStore.getState().currentTenant === requestedTenant &&
+        useAuthStore.getState().user === requestedUser
+      ) {
+        setConversationError("No pudimos cargar tus conversaciones.");
+      }
+    } finally {
+      if (conversationsRefreshAbortRef.current === controller) {
+        conversationsRefreshAbortRef.current = undefined;
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (currentTenant) void refreshConversations();
-  }, [currentTenant, refreshConversations]);
+    if (currentTenant && user) void refreshConversations();
+  }, [currentTenant, user, refreshConversations]);
 
   useEffect(() => {
+    conversationActionIdRef.current += 1;
     abortRef.current?.abort();
+    abortRef.current = undefined;
     setConversations([]);
     setConversationId(undefined);
     setMessages([]);
     setInput("");
     setError(undefined);
+    setConversationError(undefined);
+    setIsLoading(false);
     setMobileHistoryOpen(false);
   }, [currentTenant, user]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const messagesRegion = messagesScrollRef.current;
+    if (!messagesRegion || !keepMessagesAtBottomRef.current) return;
+    messagesRegion.scrollTop = messagesRegion.scrollHeight;
   }, [messages, isLoading]);
 
   useEffect(() => {
@@ -149,33 +177,63 @@ export default function ChatPage(): JSX.Element {
   const selectConversation = async (id: string) => {
     const requestedTenant = currentTenant;
     const requestedUser = user;
+    const actionId = ++conversationActionIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsLoading(false);
     setConversationId(id);
+    keepMessagesAtBottomRef.current = true;
     setError(undefined);
     setMobileHistoryOpen(false);
+    setMessages([]);
 
     try {
-      const rows = await listMessages(id);
+      const rows = await listMessages(id, controller.signal);
       if (
+        actionId === conversationActionIdRef.current &&
         useAuthStore.getState().currentTenant === requestedTenant &&
         useAuthStore.getState().user === requestedUser
       ) {
         setMessages(rows.map((row) => ({ ...row, tenant_id: requestedTenant ?? "" })));
       }
     } catch {
-      setError("No pudimos cargar este historial.");
+      if (actionId === conversationActionIdRef.current && !controller.signal.aborted) {
+        setError("No pudimos cargar este historial.");
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = undefined;
     }
   };
 
   const newConversation = async () => {
+    const requestedTenant = currentTenant;
+    const requestedUser = user;
+    const actionId = ++conversationActionIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsLoading(false);
     setError(undefined);
     setMobileHistoryOpen(false);
+    keepMessagesAtBottomRef.current = true;
+    setConversationId(undefined);
+    setMessages([]);
     try {
-      const row = await createConversation();
+      const row = await createConversation(controller.signal);
+      if (
+        actionId !== conversationActionIdRef.current ||
+        useAuthStore.getState().currentTenant !== requestedTenant ||
+        useAuthStore.getState().user !== requestedUser
+      ) return;
       setConversations((previous) => [row, ...previous.filter((item) => item.id !== row.id)]);
       setConversationId(row.id);
-      setMessages([]);
     } catch {
-      setError("No pudimos crear la conversación.");
+      if (actionId === conversationActionIdRef.current && !controller.signal.aborted) {
+        setError("No pudimos crear la conversación.");
+      }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = undefined;
     }
   };
 
@@ -187,9 +245,14 @@ export default function ChatPage(): JSX.Element {
 
     if (!text || isLoading || turnCount >= MAX_TURNS || !requestedTenant || !requestedUser) return;
 
+    const actionId = ++conversationActionIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setInput("");
     setError(undefined);
     setIsLoading(true);
+    keepMessagesAtBottomRef.current = true;
     const requestId = crypto.randomUUID();
     const optimistic = normalizeChatMessage({
       id: requestId,
@@ -200,18 +263,23 @@ export default function ChatPage(): JSX.Element {
       created_at: new Date().toISOString(),
     });
     setMessages((previous) => [...previous, optimistic]);
-    abortRef.current = new AbortController();
 
     try {
       let activeConversationId = conversationId;
       if (!activeConversationId) {
-        const created = await createConversation(abortRef.current.signal);
+        const created = await createConversation(controller.signal);
+        if (
+          actionId !== conversationActionIdRef.current ||
+          useAuthStore.getState().currentTenant !== requestedTenant ||
+          useAuthStore.getState().user !== requestedUser
+        ) return;
         activeConversationId = created.id;
         setConversationId(created.id);
-        setConversations((previous) => [created, ...previous]);
+        setConversations((previous) => [created, ...previous.filter((item) => item.id !== created.id)]);
       }
 
       if (
+        actionId !== conversationActionIdRef.current ||
         useAuthStore.getState().currentTenant !== requestedTenant ||
         useAuthStore.getState().user !== requestedUser
       ) return;
@@ -220,10 +288,12 @@ export default function ChatPage(): JSX.Element {
         text,
         activeConversationId,
         requestId,
-        abortRef.current.signal,
+        controller.signal,
       );
       if (
+        actionId !== conversationActionIdRef.current ||
         reply.tenant_id !== requestedTenant ||
+        reply.conversation_id !== activeConversationId ||
         useAuthStore.getState().currentTenant !== requestedTenant ||
         useAuthStore.getState().user !== requestedUser
       ) return;
@@ -248,14 +318,25 @@ export default function ChatPage(): JSX.Element {
       ]);
       void refreshConversations();
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+      if (
+        actionId === conversationActionIdRef.current &&
+        !controller.signal.aborted &&
+        !(cause instanceof DOMException && cause.name === "AbortError")
+      ) {
         setError("No pudimos procesar tu consulta. Intentá de nuevo.");
       }
     } finally {
-      setIsLoading(false);
-      abortRef.current = undefined;
+      if (actionId === conversationActionIdRef.current) setIsLoading(false);
+      if (abortRef.current === controller) abortRef.current = undefined;
     }
   };
+
+  const handleMessagesScroll = useCallback(() => {
+    const region = messagesScrollRef.current;
+    if (!region) return;
+    keepMessagesAtBottomRef.current =
+      region.scrollHeight - region.scrollTop - region.clientHeight < 80;
+  }, []);
 
   const turnCount = messages.filter((message) => message.role === "user").length;
   const accessContext: AccessContext = {
@@ -269,7 +350,7 @@ export default function ChatPage(): JSX.Element {
 
 
   return (
-    <div data-testid="assistant-workspace" className="assistant-workspace -mx-4 -mt-4 flex h-[calc(100dvh-5rem)] overflow-hidden bg-background text-text-primary lg:-mx-6 lg:h-[calc(100dvh-2rem)]">
+    <div data-testid="assistant-workspace" className="assistant-workspace flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-background text-text-primary">
       <aside aria-label="Historial de conversaciones" className="hidden min-h-0 w-72 shrink-0 flex-col border-r border-border bg-surface-alt px-4 py-5 lg:flex">
         <div className="flex items-center justify-between px-2">
           <Link href="/" className="flex items-center gap-2 text-text-primary" aria-label="Volver al inicio">
@@ -302,6 +383,7 @@ export default function ChatPage(): JSX.Element {
 
         <div className="mt-8 flex min-h-0 flex-1 flex-col">
           <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Recientes</p>
+          {conversationError && <p role="alert" className="px-3 pb-2 text-xs text-warning">{conversationError}</p>}
           <ConversationList conversations={conversations} conversationId={conversationId} onSelect={(id) => void selectConversation(id)} />
         </div>
 
@@ -309,13 +391,28 @@ export default function ChatPage(): JSX.Element {
           <button
             type="button"
             onClick={async () => {
+              const archivedConversationId = conversationId;
+              const requestedTenant = currentTenant;
+              const requestedUser = user;
+              const actionId = ++conversationActionIdRef.current;
+              abortRef.current?.abort();
+              abortRef.current = undefined;
+              setIsLoading(false);
               try {
-                await archiveConversation(conversationId);
+                await archiveConversation(archivedConversationId);
+                if (
+                  actionId !== conversationActionIdRef.current ||
+                  useAuthStore.getState().currentTenant !== requestedTenant ||
+                  useAuthStore.getState().user !== requestedUser
+                ) return;
+                keepMessagesAtBottomRef.current = true;
                 setConversationId(undefined);
                 setMessages([]);
                 void refreshConversations();
               } catch {
-                setError("No pudimos archivar la conversación.");
+                if (actionId === conversationActionIdRef.current) {
+                  setError("No pudimos archivar la conversación.");
+                }
               }
             }}
             className="mt-4 border-t border-border pt-3 text-left text-xs text-text-muted transition-colors hover:text-warning"
@@ -353,6 +450,7 @@ export default function ChatPage(): JSX.Element {
             <button type="button" onClick={() => void newConversation()} className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-primary-fg">
               <span aria-hidden="true">+</span> Nueva conversación
             </button>
+            {conversationError && <p role="alert" className="pb-2 text-xs text-warning">{conversationError}</p>}
             <ConversationList
               conversations={conversations}
               conversationId={conversationId}
@@ -363,10 +461,12 @@ export default function ChatPage(): JSX.Element {
         )}
 
         <div
+          ref={messagesScrollRef}
           role="region"
           aria-label="Mensajes de la conversación"
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-background px-5 py-8 lg:px-10 lg:py-10"
           aria-live="polite"
+          onScroll={handleMessagesScroll}
         >
           {messages.length === 0 ? (
             <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center text-center">
@@ -417,7 +517,6 @@ export default function ChatPage(): JSX.Element {
                 </div>
               )}
               {error && <p role="alert" className="rounded-xl bg-warning/10 p-3 text-sm text-warning">{error}</p>}
-              <div ref={messagesEndRef} />
             </div>
           )}
         </div>
@@ -445,7 +544,7 @@ export default function ChatPage(): JSX.Element {
               rows={1}
               disabled={isLoading || turnCount >= MAX_TURNS}
               placeholder={turnCount >= MAX_TURNS ? "Límite de turnos alcanzado" : "Chat con el asistente"}
-              className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-50"
+              className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-base text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-50"
             />
             <button
               type="submit"

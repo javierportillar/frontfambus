@@ -758,6 +758,14 @@ export interface ProductMetric {
   accion: ProductAccion;
 }
 
+export interface ProductDataFreshness {
+  sales_cutoff: string | null;
+  purchase_cutoff: string | null;
+  inventory_snapshot: string | null;
+  snapshot_generation: number;
+  stock_source: "catalog_snapshot" | "purchases_minus_sales_estimate";
+}
+
 export interface DecisionList {
   total: number;
   valor: number;
@@ -800,6 +808,7 @@ export function useInventoryOverview(window = 180) {
 
 export interface ProductAnalyticsResponse {
   window_days: number;
+  data_freshness?: ProductDataFreshness;
   page: number;
   page_size: number;
   total: number;
@@ -849,12 +858,14 @@ export interface ProductMovimiento {
   cantidad: number;
   valor: number;
   num_documento: string;
+  cod_clase?: string | null;
 }
 
 export interface ProductDetailResponse {
   found: boolean;
   sku?: string;
   window_days?: number;
+  data_freshness?: ProductDataFreshness;
   metrics?: ProductMetric;
   timeline?: ProductTimelineMonth[];
   movimientos?: ProductMovimiento[];

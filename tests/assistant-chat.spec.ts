@@ -173,7 +173,7 @@ async function seedLongConversationHistory(page: Page): Promise<void> {
 }
 
 test.describe("Governed assistant cross-repository contract", () => {
-  test("opens the dedicated assistant module and downloads an authorized report", async ({ page }) => {
+  test("opens the full-page assistant from navigation and downloads an authorized report", async ({ page }) => {
     await seedSession(page);
     await page.route("**/api/reports/download/rep-1", (route) => route.fulfill({
       status: 200,
@@ -182,8 +182,9 @@ test.describe("Governed assistant cross-repository contract", () => {
     }));
 
     await page.goto("/");
-    await page.getByRole("link", { name: "Abrir asistente de negocio" }).click();
+    await page.getByRole("link", { name: "Asistente IA" }).click();
     await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.getByRole("dialog", { name: "Asistente de negocio" })).toHaveCount(0);
     await page.getByLabel("Pregunta al asistente").fill("¿Cómo están las ventas?");
     await page.getByRole("button", { name: "Enviar" }).click();
     const fullPageMessage = page.getByRole("article", { name: "Mensaje del asistente: Respuesta parcial" });
@@ -200,18 +201,126 @@ test.describe("Governed assistant cross-repository contract", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
-  test("opens the dedicated assistant module from the mobile launcher", async ({ page }) => {
+  test("opens the full-page assistant from mobile navigation", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await seedSession(page);
     await page.goto("/");
 
-    const launcher = page.getByRole("link", { name: "Abrir asistente de negocio" });
-    await expect(launcher).toBeVisible();
-    await launcher.click();
+    const assistantNav = page.getByRole("link", { name: "Asistente IA" });
+    await expect(assistantNav).toBeVisible();
+    await assistantNav.click();
 
     await expect(page).toHaveURL(/\/chat$/);
+    await expect(page.getByRole("dialog", { name: "Asistente de negocio" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /(?:Buenos días|Buenas tardes|Buenas noches), Admin/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Asistente IA" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Volver al inicio" })).toBeVisible();
+    await expect(page.getByLabel("Pregunta al asistente")).toHaveCSS("font-size", "16px");
+    const mobilePageHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    const visibleHeight = await page.evaluate(() => window.visualViewport?.height ?? window.innerHeight);
+    expect(mobilePageHeight).toBeLessThanOrEqual(visibleHeight + 1);
+  });
+
+  test("floating assistant opens a locked drawer without navigating", async ({ page }) => {
+    await seedSession(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Abrir asistente flotante" }).click();
+    const drawer = page.getByRole("dialog", { name: "Asistente de negocio" });
+    await expect(drawer).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect.poll(() => page.evaluate(() => document.body.style.position)).toBe("fixed");
+
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => document.body.style.position)).not.toBe("fixed");
+  });
+
+  test("mobile drawer exposes history errors when no saved conversations load", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedSession(page);
+    await page.route("**/api/llm/chat/conversations", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({ status: 503, json: { detail: "Conversation history unavailable" } })
+        : route.continue(),
+    );
+    await page.goto("/");
+    await page.getByRole("button", { name: "Abrir asistente flotante" }).click();
+
+    const historyButton = page.getByRole("button", { name: "Historial de conversaciones" });
+    await expect(historyButton).toBeVisible();
+    await historyButton.click();
+    await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+      "No pudimos cargar tus conversaciones.",
+    );
+  });
+
+  test("selecting another drawer conversation scrolls its latest messages into view", async ({ page }) => {
+    const conversations = ["thread-1", "thread-2"].map((id, index) => ({
+      id,
+      tenant_id: "motoshop",
+      user_id: "admin",
+      title: `Drawer thread ${index + 1}`,
+      status: "active",
+      created_at: "2026-09-15T10:00:00Z",
+      updated_at: "2026-09-15T10:00:00Z",
+      last_message_at: "2026-09-15T10:00:00Z",
+      message_count: 40,
+    }));
+    await seedSession(page);
+    await page.route("**/api/llm/chat/conversations", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({ json: conversations })
+        : route.continue(),
+    );
+    await page.route("**/api/llm/chat/conversations/*/messages", (route) => {
+      const conversationId = route.request().url().split("/").at(-2);
+      const threadNumber = conversationId === "thread-1" ? 1 : 2;
+      return route.fulfill({ json: Array.from({ length: 40 }, (_, index) => ({
+        id: `${conversationId}-message-${index}`,
+        conversation_id: conversationId,
+        tenant_id: "motoshop",
+        user_id: "admin",
+        role: "user",
+        content: `Drawer thread ${threadNumber} message ${index}`,
+        created_at: "2026-09-15T10:00:00Z",
+      })) });
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Abrir asistente flotante" }).click();
+
+    const drawer = page.getByRole("dialog", { name: "Asistente de negocio" });
+    const messages = drawer.getByRole("region", { name: "Mensajes de la conversación" });
+    await drawer.getByRole("button", { name: "Drawer thread 1" }).click();
+    await expect(messages.getByText("Drawer thread 1 message 39")).toBeVisible();
+    await messages.evaluate((element) => {
+      element.scrollTop = 0;
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect.poll(() => messages.evaluate((element) => element.scrollTop)).toBe(0);
+
+    await drawer.getByRole("button", { name: "Drawer thread 2" }).click();
+    await expect(messages.getByText("Drawer thread 2 message 39")).toBeVisible();
+    await expect.poll(() => messages.evaluate((element) => (
+      element.scrollHeight - element.scrollTop - element.clientHeight
+    ))).toBeLessThan(80);
+  });
+
+  test("mobile drawer keeps the composer at a non-zooming text size", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedSession(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Abrir asistente flotante" }).click();
+    const drawer = page.getByRole("dialog", { name: "Asistente de negocio" });
+    await expect(drawer).toBeVisible();
+    await expect.poll(() => drawer.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Shift+Tab");
+    expect(await drawer.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Tab");
+    expect(await drawer.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
+    const composer = drawer.getByLabel("Pregunta al asistente");
+    await expect(composer).toHaveCSS("font-size", "16px");
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test("marks expired reports unavailable and clears assistant state after tenant switch", async ({ page }) => {
@@ -286,6 +395,64 @@ test.describe("Governed assistant cross-repository contract", () => {
     expect(scrollPositions.pageTop).toBe(0);
   });
 
+  test("full-page assistant ignores a late history response after switching conversations", async ({ page }) => {
+    const conversations = ["thread-1", "thread-2"].map((id, index) => ({
+      id,
+      tenant_id: "motoshop",
+      user_id: "admin",
+      title: `Delayed thread ${index + 1}`,
+      status: "active",
+      created_at: "2026-09-15T10:00:00Z",
+      updated_at: "2026-09-15T10:00:00Z",
+      last_message_at: "2026-09-15T10:00:00Z",
+      message_count: 1,
+    }));
+    await seedSession(page);
+    await page.route("**/api/llm/chat/conversations", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({ json: conversations })
+        : route.continue(),
+    );
+    let releaseFirstHistory!: () => void;
+    let markFirstHistoryStarted!: () => void;
+    const firstHistoryGate = new Promise<void>((resolve) => { releaseFirstHistory = resolve; });
+    const firstHistoryStarted = new Promise<void>((resolve) => { markFirstHistoryStarted = resolve; });
+    const messagesFor = (conversationId: string, content: string) => [{
+      id: `${conversationId}-message`,
+      conversation_id: conversationId,
+      tenant_id: "motoshop",
+      user_id: "admin",
+      role: "user",
+      content,
+      created_at: "2026-09-15T10:00:00Z",
+    }];
+    await page.route("**/api/llm/chat/conversations/thread-1/messages", async (route) => {
+      markFirstHistoryStarted();
+      await firstHistoryGate;
+      try {
+        await route.fulfill({ json: messagesFor("thread-1", "Late message from first thread") });
+      } catch {
+        // The request may have been aborted when the user switched threads.
+      }
+    });
+    await page.route("**/api/llm/chat/conversations/thread-2/messages", (route) =>
+      route.fulfill({ json: messagesFor("thread-2", "Latest message in second thread") }),
+    );
+    await page.goto("/chat");
+
+    const firstThread = page.getByRole("button", { name: "Delayed thread 1" });
+    await firstThread.focus();
+    await firstThread.press("Enter");
+    await firstHistoryStarted;
+    const secondThread = page.getByRole("button", { name: "Delayed thread 2" });
+    await secondThread.focus();
+    await secondThread.press("Enter");
+    await expect(page.getByText("Latest message in second thread")).toBeVisible();
+    releaseFirstHistory();
+    await expect(page.getByText("Late message from first thread")).toHaveCount(0);
+    await expect(page.getByText("Latest message in second thread")).toBeVisible();
+  });
+
   test("keeps mobile conversation history scrollable without pushing the current chat away", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await seedSession(page);
@@ -341,6 +508,13 @@ test.describe("Governed assistant cross-repository contract", () => {
         found: true,
         sku: "BONNAT001",
         window_days: 180,
+        data_freshness: {
+          sales_cutoff: "2026-09-20",
+          purchase_cutoff: "2026-09-18",
+          inventory_snapshot: "2026-09-20",
+          snapshot_generation: 1,
+          stock_source: tenant === "masvital" ? "catalog_snapshot" : "purchases_minus_sales_estimate",
+        },
         metrics: {
           cod_producto: "BONNAT001",
           nombre: "SALSAS MRS TASTE",
@@ -396,8 +570,12 @@ test.describe("Governed assistant cross-repository contract", () => {
       await expect(page.getByRole("heading", { name: "SALSAS MRS TASTE" })).toBeVisible();
       if (tenant === "masvital") {
         await expect(page.getByText(/snapshot vigente del catálogo de MasVital/)).toBeVisible();
+        await expect(page.getByText("Stock en catálogo")).toBeVisible();
       } else {
         await expect(page.getByText(/compradas históricas − 3 u vendidas históricas/)).toBeVisible();
+        await expect(page.getByText("Stock estimado", { exact: true })).toBeVisible();
+        await expect(page.getByText("Sugerencia estimada: No comprar ahora")).toBeVisible();
+        await expect(page.getByRole("note")).toContainText("no confirman un conteo físico");
       }
     });
   }
@@ -853,5 +1031,75 @@ test("assistant applies exact sales periods and keeps the supplier filter on inv
   expect(sentMessages).toEqual([
     "¿Cuál es el producto más vendido de septiembre y agosto?",
     "¿Cuál es la compra más grande hecha hacia MILIS en agosto?",
+  ]);
+});
+
+test("assistant lists ABC-A catalog products with stock, action, and a next-page follow-up", async ({ page }) => {
+  const pageReplies: TestReply[] = [
+    {
+      ...assistantReply,
+      text: "Catálogo ABC A · últimos 180 días · página 1/2 · 51 productos en total.\n"
+        + "- SKU MINI-01 · Mini Brownie: stock 5; vendido 14 u; 64 días; acción no comprar ahora.\n"
+        + "- SKU MINI-02 · Mini Cake: stock 0; vendido 8 u; agotado; acción reabastecer.",
+      tools_used: ["get_productos_catalogo"],
+      entity_refs: [
+        {
+          entity_type: "product", entity_id: "MINI-01", label: "Mini Brownie",
+          domain: "inventory", href: "/dashboards/productos/MINI-01",
+        },
+        {
+          entity_type: "product", entity_id: "MINI-02", label: "Mini Cake",
+          domain: "inventory", href: "/dashboards/productos/MINI-02",
+        },
+      ],
+      attachments: [],
+    },
+    {
+      ...assistantReply,
+      text: "Catálogo ABC A · últimos 180 días · página 2/2 · 51 productos en total.\n"
+        + "- SKU MINI-03 · Granola Mini: stock 7; vendido 12 u; 105 días; sobrestock; acción liquidar.",
+      tools_used: ["get_productos_catalogo"],
+      entity_refs: [{
+        entity_type: "product", entity_id: "MINI-03", label: "Granola Mini",
+        domain: "inventory", href: "/dashboards/productos/MINI-03",
+      }],
+      attachments: [],
+    },
+  ];
+  const sentMessages: string[] = [];
+  let replyIndex = 0;
+  await seedSession(page, pageReplies[0]!);
+  await page.route("**/api/llm/qa/chat", (route) => {
+    const body = route.request().postDataJSON() as { message?: string };
+    sentMessages.push(body.message ?? "");
+    const reply = pageReplies[Math.min(replyIndex, pageReplies.length - 1)]!;
+    replyIndex += 1;
+    return route.fulfill({ json: reply });
+  });
+  await page.goto("/chat");
+
+  await page.getByLabel("Pregunta al asistente").fill(
+    "Lista los productos de categoría A con stock y acción",
+  );
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const firstAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(firstAnswer).toContainText("51 productos en total");
+  await expect(firstAnswer).toContainText("acción no comprar ahora");
+  await expect(firstAnswer.getByRole("link", {
+    name: "Ver ficha de Mini Brownie (MINI-01)",
+  })).toHaveAttribute("href", "/dashboards/productos/MINI-01");
+
+  await page.getByLabel("Pregunta al asistente").fill("Siguiente página");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  const nextAnswer = page.getByRole("article", {
+    name: "Mensaje del asistente: Respuesta parcial",
+  }).last();
+  await expect(nextAnswer).toContainText("página 2/2");
+  await expect(nextAnswer).toContainText("acción liquidar");
+  expect(sentMessages).toEqual([
+    "Lista los productos de categoría A con stock y acción",
+    "Siguiente página",
   ]);
 });

@@ -12,8 +12,10 @@ import { TenantTheme } from "@/components/TenantTheme";
 import { ServerLoadingBanner } from "@/components/ServerLoadingBanner";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { AssistantLauncher } from "@/components/chat/AssistantLauncher";
+import { ChatDrawer } from "@/components/chat/ChatDrawer";
 import { fetchMe } from "@/lib/api/hooks";
 import { canAccessPath, resolvePathAccess } from "@/lib/auth/access";
+import { useVisualViewport } from "@/lib/hooks/useVisualViewport";
 
 function filterNavItems(
   items: NavItem[],
@@ -46,6 +48,9 @@ export default function AuthenticatedLayout({
   const hydrateSession = useAuthStore((s) => s.hydrateSession);
   const [permissionsError, setPermissionsError] = useState(false);
   const [permissionsAttempt, setPermissionsAttempt] = useState(0);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
+  const viewport = useVisualViewport();
+  const fullPageAssistant = pathname === "/chat";
 
   const items = useMemo(() => {
     // Todos los no-admin usan el mismo menú completo; los módulos del usuario
@@ -169,13 +174,29 @@ export default function AuthenticatedLayout({
     <>
       <TenantTheme />
       <ServerLoadingBanner />
-      <Navigation items={items} role={(role as "vendedor" | "admin" | "gerente") ?? "gerente"} onLogout={handleLogout} />
-      <main className="mx-auto w-full max-w-[1800px] px-4 pb-20 pt-4 transition-all duration-200 lg:pb-8 lg:ml-16">
+      <Navigation
+        items={items}
+        role={(role as "vendedor" | "admin" | "gerente") ?? "gerente"}
+        onLogout={handleLogout}
+        hideBottomNav={fullPageAssistant}
+      />
+      <main
+        className={fullPageAssistant
+          ? "fixed inset-x-0 top-0 z-30 h-[100dvh] overflow-hidden bg-background p-0 lg:left-16"
+          : "mx-auto w-full max-w-[1800px] px-4 pb-20 pt-4 transition-all duration-200 lg:pb-8 lg:ml-16"}
+        style={fullPageAssistant && viewport.height > 0
+          ? { top: `${viewport.offsetTop}px`, height: `${viewport.height}px` }
+          : undefined}
+      >
         {content}
       </main>
       <OfflineQueueBadge />
       <QueueScheduler />
-      <AssistantLauncher key={`${currentTenant ?? "no-tenant"}:${user ?? "anonymous"}`} />
+      <AssistantLauncher
+        key={`${currentTenant ?? "no-tenant"}:${user ?? "anonymous"}`}
+        onOpen={() => setAssistantDrawerOpen(true)}
+      />
+      <ChatDrawer open={assistantDrawerOpen} onClose={() => setAssistantDrawerOpen(false)} />
     </>
   );
 }
