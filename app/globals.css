@@ -206,3 +206,12 @@
     opacity: 0.6;
   }
 }
+
+/* Prevent iOS Safari's automatic focus zoom on controls with small text. */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="hidden"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

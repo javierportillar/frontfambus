@@ -9,7 +9,7 @@ const VIEWPORTS = {
 
 /** Inyecta un JWT falso y role en el store para saltar login en dev */
 async function bypassAuth(page: Page, role: string): Promise<void> {
-  // Cookie falsa — la middleware solo chequea existencia
+  const features = ["chat-ia", "ventas-summary", "inventario", "alerts", "dormidos", "abc", "analisis", "forecast", "decisiones"];
   await page.context().addCookies([
     {
       name: "motoshop_token",
@@ -17,17 +17,37 @@ async function bypassAuth(page: Page, role: string): Promise<void> {
       domain: "localhost",
       path: "/",
     },
+    {
+      name: "motoshop_tenant",
+      value: "motoshop",
+      domain: "localhost",
+      path: "/",
+    },
   ]);
-  // Navegar primero para que los módulos JS se carguen
-  await page.goto("/login", { waitUntil: "networkidle" });
-  // Ahora sí, el bridge debería estar disponible
-  await page.evaluate((r) => {
-    const win = window as unknown as Record<string, unknown>;
-    const fn = win.__setAuthRole as ((role: string | null) => void) | undefined;
-    if (fn) {
-      fn(r);
-    }
-  }, role);
+  await page.addInitScript(({ activeRole, enabledFeatures }) => {
+    window.localStorage.setItem("motoshop_auth", JSON.stringify({
+      state: {
+        user: "admin",
+        role: activeRole,
+        isAuthenticated: true,
+        currentTenant: "motoshop",
+        availableTenants: ["motoshop"],
+        enabledFeatures,
+        allowedModules: null,
+        returnUrl: null,
+      },
+      version: 0,
+    }));
+  }, { activeRole: role, enabledFeatures: features });
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: {
+    username: "admin",
+    role,
+    tenants_allowed: ["motoshop"],
+    current_tenant: "motoshop",
+    enabled_features: features,
+    allowed_modules: null,
+  } }));
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 204 }));
 }
 
 // ── Rutas a testear ──────────────────────────────────────────
