@@ -2,15 +2,20 @@ import { test, expect, type Page } from "@playwright/test";
 
 const enabledFeatures = ["chat-ia", "ventas-summary", "inventario", "alerts", "dormidos", "abc", "analisis", "forecast", "decisiones"];
 
-test("mobile viewport disables page zoom and form controls stay at a non-zooming text size", async ({ page }) => {
+test("mobile viewport blocks pinch zoom, keeps scrolling, and avoids input focus zoom", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/login");
 
   const viewportContent = await page.locator('meta[name="viewport"]').getAttribute("content");
   expect(viewportContent).toContain("maximum-scale=1");
   expect(viewportContent).toContain("user-scalable=no");
+  await expect(page.locator("html")).toHaveCSS("touch-action", "pan-x pan-y");
+  await expect(page.locator("body")).toHaveCSS("touch-action", "pan-x pan-y");
   await expect(page.locator('input[placeholder="Tu usuario"]')).toHaveCSS("font-size", "16px");
   await expect(page.locator('input[placeholder="Tu contraseña"]')).toHaveCSS("font-size", "16px");
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator("body")).toHaveCSS("touch-action", "auto");
 });
 
 const providerResponse = {

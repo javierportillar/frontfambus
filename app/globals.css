@@ -207,8 +207,13 @@
   }
 }
 
-/* Prevent iOS Safari's automatic focus zoom on controls with small text. */
+/* Block mobile browser zoom gestures while keeping one-finger panning enabled. */
 @media (max-width: 768px) {
+  html,
+  body {
+    touch-action: pan-x pan-y;
+  }
+
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="hidden"]),
   select,
   textarea {
