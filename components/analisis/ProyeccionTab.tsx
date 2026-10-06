@@ -1,10 +1,14 @@
 "use client";
 
-import { useSalesForecastMonthly } from "@/lib/api/hooks";
+import { usePurchaseAssessments, useSalesForecastMonthly } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { canAccessFeature, type AccessContext } from "@/lib/auth/access";
+import { useAuthStore } from "@/lib/auth/store";
+import { shiftDateISO } from "@/lib/date/business";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
+import Link from "next/link";
 import {
   Bar,
   BarChart,
@@ -21,6 +25,7 @@ const CONFIDENCE_LABELS: Record<string, string> = {
   medium: "media",
   low: "baja",
 };
+const PURCHASE_ASSESSMENT_START = "2026-09-01";
 
 function monthLabel(month: string): string {
   const [year, rawMonth] = month.split("-");
@@ -29,6 +34,31 @@ function monthLabel(month: string): string {
 
 export function ProyeccionTab(): JSX.Element {
   const { data, error, isLoading, mutate } = useSalesForecastMonthly();
+  const role = useAuthStore((state) => state.role);
+  const enabledFeatures = useAuthStore((state) => state.enabledFeatures);
+  const allowedModules = useAuthStore((state) => state.allowedModules);
+  const currentTenant = useAuthStore((state) => state.currentTenant);
+  const purchaseAccessContext: AccessContext = {
+    role,
+    enabledFeatures,
+    allowedModules,
+    currentTenant,
+  };
+  const canViewPurchaseEvidence = canAccessFeature("ventas-summary", purchaseAccessContext);
+  const purchaseCutoff = data?.source_cutoffs.purchases_date ?? null;
+  const candidatePurchaseRangeStart = purchaseCutoff
+    ? shiftDateISO(purchaseCutoff, -89)
+    : null;
+  const purchaseRangeStart = purchaseCutoff && purchaseCutoff >= PURCHASE_ASSESSMENT_START
+    ? candidatePurchaseRangeStart && candidatePurchaseRangeStart > PURCHASE_ASSESSMENT_START
+      ? candidatePurchaseRangeStart
+      : PURCHASE_ASSESSMENT_START
+    : null;
+  const purchaseEvidence = usePurchaseAssessments(
+    canViewPurchaseEvidence ? purchaseRangeStart : null,
+    canViewPurchaseEvidence ? purchaseCutoff : null,
+    10,
+  );
 
   if (isLoading && !data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
   if (error && !data) {
@@ -52,32 +82,40 @@ export function ProyeccionTab(): JSX.Element {
 
   const current = data.current_month;
   const next = data.next_month;
+  const stockCurrent = data.stock_adjusted.current_month;
+  const stockNext = data.stock_adjusted.next_month;
   const confidenceNote = data.backtest_accuracy?.note;
   const observed = current.observed_amount ?? 0;
-  const pendingCurrent = Math.max(0, current.projected_amount - observed);
   const projectionRows = [
     {
       month: current.month,
       status: "Mes en curso",
       observed,
-      pending: pendingCurrent,
-      total: current.projected_amount,
-      confidence: current.confidence,
+      base: current.projected_amount,
+      stockAdjusted: stockCurrent.projected_amount,
+      baseConfidence: current.confidence,
     },
     {
       month: next.month,
       status: "Próximo mes",
       observed: null,
-      pending: next.projected_amount,
-      total: next.projected_amount,
-      confidence: next.confidence,
+      base: next.projected_amount,
+      stockAdjusted: stockNext.projected_amount,
+      baseConfidence: next.confidence,
     },
   ];
   const barData = projectionRows.map((row) => ({
     label: monthLabel(row.month),
     real: row.observed ?? 0,
-    proy: row.pending,
+    base: row.base,
+    stockAdjusted: row.stockAdjusted,
   }));
+  const cutoffLabel = (value: string | null): string => value ?? "sin datos";
+  const staleSources = [
+    data.staleness.sales_is_stale ? "ventas" : null,
+    data.staleness.inventory_is_stale ? "inventario" : null,
+    data.staleness.purchases_are_stale ? "compras" : null,
+  ].filter(Boolean);
 
   return (
     <div className="space-y-4">
@@ -86,11 +124,11 @@ export function ProyeccionTab(): JSX.Element {
           <div className="space-y-2 text-xs leading-relaxed text-text-muted">
             <p>
               <strong className="text-text-primary">Cómo se calcula:</strong>{" "}
-              el ritmo diario usa los <strong>últimos 90 días completos</strong>, excluye el mes en curso y proyecta el saldo del mes actual y todo el siguiente.
+              el modelo base aplica el ritmo de ventas de los 90 días calendario previos al mes actual. Su cobertura real depende del corte de ventas indicado abajo.
             </p>
             <p>
-              <strong className="text-text-primary">Por qué el ritmo es estable:</strong>{" "}
-              se congela sobre datos cerrados; el total del mes actual se mueve por la venta observada, no por recalcular la base cada día.
+              <strong className="text-text-primary">Escenario con stock:</strong>{" "}
+              limita la demanda histórica por el inventario disponible y lleva el saldo al mes siguiente, sin sumar compras futuras. Es una comparación de escenarios, no una relación causal entre comprar y vender.
             </p>
           </div>
           <div className="rounded-xl border border-border bg-surface-dark px-4 py-3 text-text-inverse shadow-sm">
@@ -103,6 +141,12 @@ export function ProyeccionTab(): JSX.Element {
             El modelo está usando una base alternativa ({data.rate_basis}) porque todavía no hay 90 días completos.
           </p>
         )}
+        <p
+          role="status"
+          className={`mt-3 rounded-lg border px-3 py-2 text-xs ${staleSources.length ? "border-warning/40 bg-warning/10 text-warning" : "border-border bg-surface-alt text-text-secondary"}`}
+        >
+          Cortes de fuente — ventas: {cutoffLabel(data.source_cutoffs.sales_date)} · inventario: {cutoffLabel(data.source_cutoffs.inventory_date)} · compras: {cutoffLabel(data.source_cutoffs.purchases_date)}. A fecha {data.staleness.as_of_date} ({data.business_timezone}){staleSources.length ? `; fuentes desactualizadas: ${staleSources.join(", ")}` : "; fuentes al día"}.
+        </p>
         {confidenceNote && (
           <p
             role="status"
@@ -111,63 +155,156 @@ export function ProyeccionTab(): JSX.Element {
             Confianza {CONFIDENCE_LABELS[data.backtest_accuracy?.confidence ?? "low"] ?? "baja"} según backtest: {confidenceNote}
           </p>
         )}
+        <p role="status" className="mt-3 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary">
+          Escenario con stock: confianza baja y sin backtest por falta de snapshots históricos. Fuente: {data.stock_adjusted.inventory_source}. SKUs con stock controlado: {data.stock_adjusted.inventory_controlled_skus}; servicios sin límite: {data.stock_adjusted.uncapped_service_skus}; evidencia insuficiente: {data.stock_adjusted.insufficient_evidence_skus}. {data.stock_adjusted.confidence_note}
+        </p>
       </Card>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <Stat
-            label={`Mes en curso — ${monthLabel(current.month)}`}
+            label={`Base run-rate — ${monthLabel(current.month)}`}
             value={formatMoneyFull(current.projected_amount)}
-            subtitle={`Real: ${formatMoneyFull(observed)} · restante: ${formatMoneyFull(pendingCurrent)} · confianza ${CONFIDENCE_LABELS[current.confidence] ?? current.confidence}`}
+            subtitle={`Observado: ${formatMoneyFull(observed)} · confianza ${CONFIDENCE_LABELS[current.confidence] ?? current.confidence}`}
           />
         </Card>
         <Card>
           <Stat
-            label={`Próximo mes — ${monthLabel(next.month)}`}
+            label={`Stock ajustado — ${monthLabel(current.month)}`}
+            value={formatMoneyFull(stockCurrent.projected_amount)}
+            subtitle={`Mismo observado: ${formatMoneyFull(stockCurrent.observed_amount)} · confianza baja · sin reposición futura`}
+          />
+        </Card>
+        <Card>
+          <Stat
+            label={`Base run-rate — ${monthLabel(next.month)}`}
             value={formatMoneyFull(next.projected_amount)}
             subtitle={`${next.days_total} días · confianza ${CONFIDENCE_LABELS[next.confidence] ?? next.confidence}${
               next.last_year_same_month ? ` · mismo mes anterior: ${formatMoneyFull(next.last_year_same_month)}` : ""
             }`}
           />
         </Card>
+        <Card>
+          <Stat
+            label={`Stock ajustado — ${monthLabel(next.month)}`}
+            value={formatMoneyFull(stockNext.projected_amount)}
+            subtitle={`${stockNext.days_total} días · confianza baja · inventario remanente del mes actual`}
+          />
+        </Card>
       </div>
 
-      <Card header={<h2 className="font-semibold text-text-primary">Mes actual y siguiente</h2>}>
+      <Card header={<h2 className="font-semibold text-text-primary">Comparación de escenarios — mes actual y siguiente</h2>}>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={barData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.55} />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="var(--color-text-muted)" />
             <YAxis tick={{ fontSize: 10 }} stroke="var(--color-text-muted)" tickFormatter={(value: number) => `$${(value / 1e6).toFixed(1)}M`} />
             <Tooltip
-              formatter={(value, name) => [formatMoneyFull(Number(value)), name === "real" ? "Real observado" : "Proyectado restante"]}
+              formatter={(value, name) => [
+                formatMoneyFull(Number(value)),
+                name === "real" ? "Real observado" : name === "base" ? "Base run-rate" : "Escenario con stock",
+              ]}
               contentStyle={{ borderRadius: "10px", border: "1px solid var(--color-border)", fontSize: "12px" }}
             />
             <Bar dataKey="real" fill="var(--color-primary)" stackId="projection" name="real" />
-            <Bar dataKey="proy" fill="#D7A928" stackId="projection" radius={[5, 5, 0, 0]} name="proy" />
+            <Bar dataKey="base" fill="#2563EB" radius={[5, 5, 0, 0]} name="base" />
+            <Bar dataKey="stockAdjusted" fill="#D7A928" radius={[5, 5, 0, 0]} name="stockAdjusted" />
           </BarChart>
         </ResponsiveContainer>
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-text-muted" aria-label="Leyenda de la gráfica">
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-primary" /> Real observado</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#D7A928]" /> Proyectado restante</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#2563EB]" /> Base run-rate</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#D7A928]" /> Escenario con stock</span>
         </div>
       </Card>
+
+      {canViewPurchaseEvidence && (
+        <Card
+          header={(
+            <div>
+              <h2 className="font-semibold text-text-primary">Compras relacionadas con este horizonte</h2>
+              <p className="text-xs text-text-muted">
+                Evaluaciones de facturas recientes que aportan contexto a la disponibilidad de inventario.
+              </p>
+            </div>
+          )}
+        >
+          {purchaseEvidence.isLoading && !purchaseEvidence.data ? (
+            <div role="status" className="space-y-2">
+              <Skeleton className="h-12 rounded-lg" />
+              <Skeleton className="h-12 rounded-lg" />
+            </div>
+          ) : purchaseEvidence.error ? (
+            <p role="status" className="text-sm text-text-muted">
+              Las evaluaciones de compras no están disponibles en este momento.
+            </p>
+          ) : !purchaseEvidence.data?.items.length ? (
+            <p className="text-sm text-text-muted">
+              No hay evaluaciones guardadas para el rango con datos de compras.
+            </p>
+          ) : (
+            <ul aria-label="Evaluaciones de compras recientes" className="space-y-2">
+              {purchaseEvidence.data.items.map((evaluation) => {
+                const summary = evaluation.deterministic_metrics.assessment_summary;
+                const label = summary?.senal_global.replaceAll("_", " ")
+                  ?? (evaluation.status === "pending" || evaluation.status === "processing"
+                    ? "en evaluación"
+                    : evaluation.status);
+                const href = `/dashboards/compras/dia/${encodeURIComponent(evaluation.business_date)}`
+                  + `/documento/${encodeURIComponent(evaluation.num_documento)}`
+                  + `?cod_clase=${encodeURIComponent(evaluation.cod_clase)}`;
+                return (
+                  <li key={evaluation.id}>
+                    <Link
+                      href={href}
+                      className="flex min-h-12 flex-col justify-between gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:flex-row sm:items-center"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-text-primary">
+                          {evaluation.nombre_proveedor || "Proveedor sin identificar"}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {evaluation.business_date} · {evaluation.cod_clase} {evaluation.num_documento}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-full border border-border bg-surface-alt px-2 py-1 text-text-secondary">
+                          {label}
+                        </span>
+                        {summary?.porcentaje_valor_en_senales_de_revision != null && (
+                          <span className="text-text-muted">
+                            {summary.porcentaje_valor_en_senales_de_revision}% para revisar
+                          </span>
+                        )}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="mt-3 text-[0.65rem] text-text-muted">
+            Estas evaluaciones describen evidencia de compra y stock; no demuestran que una factura haya causado ventas.
+          </p>
+        </Card>
+      )}
 
       <Card header={
         <div>
           <h2 className="font-semibold text-text-primary">Detalle de proyección</h2>
-          <p className="text-xs text-text-muted">Los mismos dos meses mostrados en la gráfica, con sus componentes separados.</p>
+          <p className="text-xs text-text-muted">Totales del mismo horizonte; el valor observado se identifica por separado del pronóstico.</p>
         </div>
       }>
         <div className="-mx-4 overflow-x-auto md:mx-0">
           <table className="w-full min-w-[680px] text-sm">
-            <caption className="sr-only">Detalle del mes actual y el mes siguiente mostrados en la gráfica</caption>
+            <caption className="sr-only">Comparación del mes actual y el mes siguiente entre run-rate y stock ajustado</caption>
             <thead>
               <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-[0.12em] text-text-muted">
                 <th scope="col" className="px-4 py-2 md:pl-2">Mes</th>
                 <th scope="col" className="px-2 py-2">Etapa</th>
                 <th scope="col" className="px-2 py-2 text-right">Real observado</th>
-                <th scope="col" className="px-2 py-2 text-right">Proyectado restante</th>
-                <th scope="col" className="px-2 py-2 text-right">Total proyectado</th>
+                <th scope="col" className="px-2 py-2 text-right">Base run-rate</th>
+                <th scope="col" className="px-2 py-2 text-right">Escenario con stock</th>
                 <th scope="col" className="px-4 py-2 text-right md:pr-2">Confianza</th>
               </tr>
             </thead>
@@ -177,10 +314,10 @@ export function ProyeccionTab(): JSX.Element {
                   <th scope="row" className="px-4 py-3 text-left font-semibold text-text-primary md:pl-2">{monthLabel(row.month)}</th>
                   <td className="px-2 py-3 text-text-muted">{row.status}</td>
                   <td className="px-2 py-3 text-right tabular-nums">{row.observed === null ? "—" : formatMoneyFull(row.observed)}</td>
-                  <td className="px-2 py-3 text-right tabular-nums text-[#9A7414]">{formatMoneyFull(row.pending)}</td>
-                  <td className="px-2 py-3 text-right font-semibold tabular-nums text-text-primary">{formatMoneyFull(row.total)}</td>
+                  <td className="px-2 py-3 text-right tabular-nums text-[#2563EB]">{formatMoneyFull(row.base)}</td>
+                  <td className="px-2 py-3 text-right font-semibold tabular-nums text-[#9A7414]">{formatMoneyFull(row.stockAdjusted)}</td>
                   <td className="px-4 py-3 text-right md:pr-2">
-                    <span className="inline-flex rounded-full border border-border bg-surface-alt px-2 py-1 text-xs font-semibold text-text-secondary">{CONFIDENCE_LABELS[row.confidence] ?? "—"}</span>
+                    <span className="inline-flex rounded-full border border-border bg-surface-alt px-2 py-1 text-xs font-semibold text-text-secondary">Base {CONFIDENCE_LABELS[row.baseConfidence] ?? "—"} · stock baja</span>
                   </td>
                 </tr>
               ))}

@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { usePurchasesDayGrouped, type CompraDocumento } from "@/lib/api/hooks";
+import {
+  usePurchaseAssessment,
+  usePurchasesDayGrouped,
+  type CompraDocumento,
+  type PurchaseAssessment,
+} from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 
@@ -22,6 +28,11 @@ export function CompraDetalleContent({ date, documentNumber, classCode }: Props)
     ),
     [classCode, data?.documentos, documentNumber],
   );
+  const evaluation = usePurchaseAssessment(
+    date,
+    classCode || document?.cod_clase || null,
+    documentNumber,
+  );
 
   if (isLoading && !data) return <Skeleton className="h-96 rounded-xl" />;
   if (error) {
@@ -31,7 +42,108 @@ export function CompraDetalleContent({ date, documentNumber, classCode }: Props)
     return <Card><p className="py-10 text-center text-sm text-text-muted">Compra no encontrada para esa fecha.</p></Card>;
   }
 
-  return <PurchaseDocument document={document} />;
+  return (
+    <div className="space-y-4">
+      <PurchaseDocument document={document} />
+      <PurchaseAssessmentPanel
+        assessment={evaluation.data}
+        error={evaluation.error}
+        isLoading={evaluation.isLoading}
+        onRetry={() => void evaluation.mutate()}
+      />
+    </div>
+  );
+}
+
+function PurchaseAssessmentPanel({
+  assessment,
+  error,
+  isLoading,
+  onRetry,
+}: {
+  assessment: PurchaseAssessment | undefined;
+  error: Error | undefined;
+  isLoading: boolean;
+  onRetry: () => void;
+}): JSX.Element {
+  const missing = error?.message.includes("API error 404") ?? false;
+  const cutoffs = assessment?.source_cutoffs;
+  const rating = assessment?.deterministic_metrics.assessment_summary?.senal_global;
+
+  return (
+    <Card
+      header={(
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold text-text-primary">Evaluación automática de la compra</h2>
+          {rating && (
+            <span className="rounded-full border border-border bg-surface-alt px-2 py-1 text-[0.65rem] font-semibold text-text-secondary">
+              {rating.replaceAll("_", " ")}
+            </span>
+          )}
+        </div>
+      )}
+    >
+      {isLoading && !assessment ? (
+        <div role="status" className="space-y-2">
+          <Skeleton className="h-4 w-1/2 rounded" />
+          <Skeleton className="h-24 rounded-lg" />
+        </div>
+      ) : missing || (!assessment && !error) ? (
+        <p role="status" className="text-sm text-text-muted">
+          Esta factura aún no tiene una evaluación guardada. Se procesará automáticamente después de una actualización exitosa del pipeline.
+        </p>
+      ) : error && !assessment ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-warning">No se pudo consultar la evaluación automática.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : assessment?.markdown ? (
+        <div>
+          {assessment.status === "fallback" && (
+            <p role="status" className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+              Respaldo determinístico: el proveedor LLM no estuvo disponible al generar esta evaluación.
+            </p>
+          )}
+          {assessment.status === "processing" && (
+            <p role="status" className="mb-3 rounded-md border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary">
+              Se está actualizando la evaluación con el último snapshot del pipeline.
+            </p>
+          )}
+          {cutoffs && (
+            <p className="mb-3 text-[0.65rem] text-text-muted">
+              Cortes — compras {cutoffs.purchases ?? "sin datos"} · ventas {cutoffs.sales ?? "sin datos"} ·
+              {" "}inventario {cutoffs.inventory ?? "sin datos"} · ABC {cutoffs.abc ?? "sin clasificación"}.
+              {assessment.completed_at && ` Evaluada ${assessment.completed_at.slice(0, 16).replace("T", " ")} UTC.`}
+            </p>
+          )}
+          <div className="text-sm text-text-secondary">
+            <MarkdownContent content={assessment.markdown} />
+          </div>
+        </div>
+      ) : assessment?.status === "pending" || assessment?.status === "processing" ? (
+        <p role="status" className="text-sm text-text-muted">
+          La evaluación está en cola y aparecerá aquí cuando termine el análisis de esta factura y sus productos.
+        </p>
+      ) : (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-warning">La evaluación no pudo completarse todavía.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs font-semibold text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function PurchaseDocument({ document }: { document: CompraDocumento }): JSX.Element {

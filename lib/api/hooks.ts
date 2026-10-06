@@ -302,9 +302,50 @@ interface SalesForecastHistoryItem {
   days_total: number;
 }
 
+interface SalesForecastStockAdjustedMonth {
+  month: string;
+  observed_amount: number;
+  projected_amount: number;
+  days_total: number;
+}
+
+interface SalesForecastDailyPoint {
+  date: string;
+  actual_amount: number | null;
+  base_projected_amount: number | null;
+  stock_adjusted_projected_amount: number | null;
+}
+
 interface SalesForecastMonthly {
   current_month: SalesForecastMonth;
   next_month: SalesForecastMonth;
+  stock_adjusted: {
+    current_month: SalesForecastStockAdjustedMonth;
+    next_month: SalesForecastStockAdjustedMonth;
+    confidence: "high" | "medium" | "low";
+    confidence_note: string;
+    inventory_source: string;
+    no_future_replenishment: boolean;
+    inventory_controlled_skus: number;
+    uncapped_service_skus: number;
+    insufficient_evidence_skus: number;
+  };
+  daily_series: SalesForecastDailyPoint[];
+  source_cutoffs: {
+    sales_date: string | null;
+    inventory_date: string | null;
+    purchases_date: string | null;
+  };
+  staleness: {
+    as_of_date: string;
+    sales_days_behind: number | null;
+    inventory_days_behind: number | null;
+    purchases_days_behind: number | null;
+    sales_is_stale: boolean;
+    inventory_is_stale: boolean;
+    purchases_are_stale: boolean;
+  };
+  business_timezone: string;
   model_version: string;
   drivers: string[];
   rate_basis?: "rolling_90d_complete" | "previous_month_complete" | "current_month_run_rate";
@@ -1850,6 +1891,93 @@ export interface PurchasesDayGroupedResponse {
 export function usePurchasesDayGrouped(date: string | null) {
   return useMetrics<PurchasesDayGroupedResponse>(
     date ? `/api/metrics/purchases-day-grouped?date=${date}` : null,
+    PURCHASES_DAY_METRICS_OPTIONS,
+  );
+}
+
+export interface PurchaseAssessment {
+  id: string;
+  business_date: string;
+  cod_clase: string;
+  num_documento: string;
+  nit_proveedor: string | null;
+  nombre_proveedor: string | null;
+  content_fingerprint: string;
+  assessment_fingerprint: string;
+  status: "pending" | "processing" | "completed" | "fallback" | "failed";
+  attempt_count: number;
+  last_error_code: string | null;
+  deterministic_metrics: {
+    invoice?: {
+      total_factura_cop?: number | null;
+      total_lineas_cop?: number | null;
+    };
+    totals?: {
+      productos_distintos?: number;
+      productos_omitidos?: number;
+    };
+    assessment_summary?: {
+      senal_global: string;
+      skus_evaluados: number;
+      skus_con_evidencia_de_demanda_y_stock: number;
+      skus_sin_historial_previo_180d: number;
+      valor_lineas_compra_cop: number | null;
+      valor_en_senales_de_revision_cop: number | null;
+      porcentaje_valor_en_senales_de_revision: number | null;
+    };
+    products?: Array<Record<string, unknown>>;
+  };
+  markdown: string | null;
+  source_cutoffs: Record<string, string | null>;
+  generation_mode: "llm" | "deterministic_fallback" | null;
+  provider: string | null;
+  model: string | null;
+  analyzer_revision: string;
+  prompt_revision: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface PurchaseAssessmentListResponse {
+  items: PurchaseAssessment[];
+  date_from: string;
+  date_to: string;
+  limit: number;
+}
+
+export function usePurchaseAssessment(
+  businessDate: string | null,
+  classCode: string | null,
+  documentNumber: string | null,
+) {
+  const params = businessDate && classCode && documentNumber
+    ? new URLSearchParams({
+        business_date: businessDate,
+        cod_clase: classCode,
+        num_documento: documentNumber,
+      })
+    : null;
+  return useMetrics<PurchaseAssessment>(
+    params ? `/api/purchase-assessments/invoice?${params.toString()}` : null,
+    PURCHASES_DAY_METRICS_OPTIONS,
+  );
+}
+
+export function usePurchaseAssessments(
+  dateFrom: string | null,
+  dateTo: string | null,
+  limit = 10,
+) {
+  const params = dateFrom && dateTo
+    ? new URLSearchParams({
+        date_from: dateFrom,
+        date_to: dateTo,
+        limit: String(limit),
+      })
+    : null;
+  return useMetrics<PurchaseAssessmentListResponse>(
+    params ? `/api/purchase-assessments?${params.toString()}` : null,
     PURCHASES_DAY_METRICS_OPTIONS,
   );
 }
