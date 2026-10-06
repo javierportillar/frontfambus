@@ -68,6 +68,17 @@ function monthLabel(month: string): string {
   return `${MONTHS[idx] ?? rawMonth} ${year}`;
 }
 
+function forecastDateLabel(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat("es-CO", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
 function parseMonth(month: string): { year: number; monthNumber: number } {
   const [yearPart = "0", monthPart = "1"] = month.split("-");
   return { year: Number(yearPart), monthNumber: Number(monthPart) };
@@ -218,15 +229,14 @@ export function VentasView(): JSX.Element {
       .filter((item) => item.date.startsWith(`${selectedMonth}-`))
       .map((item) => [item.date, item]),
   );
-  let observedCumulative = 0;
   const dailyChartData = selectedDays.map((item) => {
     const forecast = forecastByDate.get(item.date);
     const actualAmount = isForecastMonth ? forecast?.actual_amount ?? null : item.sales;
-    observedCumulative += actualAmount ?? 0;
     return {
       label: item.day,
+      date: item.date,
+      dateLabel: forecastDateLabel(item.date),
       ventas: actualAmount,
-      acumulado: Number(observedCumulative.toFixed(2)),
       baseForecast: isForecastMonth && forecast?.actual_amount === null
         ? forecast.base_projected_amount
         : null,
@@ -375,24 +385,34 @@ export function VentasView(): JSX.Element {
             )}
           </Card>
 
-          <Card header={<h2 className="font-semibold text-text-primary">Evolución diaria — {monthLabel(selectedMonth)}</h2>}>
+          <Card header={(
+            <div>
+              <h2 className="font-semibold text-text-primary">Ventas por día — {monthLabel(selectedMonth)}</h2>
+              <p className="text-xs text-text-muted">
+                Importes diarios en COP, no acumulados. Barras: ventas registradas; líneas: estimación para días futuros.
+              </p>
+            </div>
+          )}>
             {daily.isLoading && !dm ? (
               <Skeleton className="h-56 rounded-lg" />
             ) : !selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) && !isForecastMonth ? (
               <p className="py-12 text-center text-sm text-text-muted">Sin datos diarios para {monthLabel(selectedMonth)}.</p>
             ) : (
               <>
-                {isForecastMonth && selectedForecastMonth && selectedStockForecastMonth && (
-                  <div className="mb-3 space-y-2 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs">
-                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-text-secondary">
-                      <span><strong className="text-[#2563EB]">Base run-rate:</strong> {formatMoneyFull(selectedForecastMonth.projected_amount)}</span>
-                      <span><strong className="text-[#9A7414]">Stock ajustado:</strong> {formatMoneyFull(selectedStockForecastMonth.projected_amount)}</span>
-                    </div>
-                    <p className="text-text-muted">
-                      Cortes — ventas {df?.source_cutoffs.sales_date ?? "sin datos"} · inventario {df?.source_cutoffs.inventory_date ?? "sin datos"} · compras {df?.source_cutoffs.purchases_date ?? "sin datos"}. Estado: {staleForecastSources.length ? `desactualizadas: ${staleForecastSources.join(", ")}` : "fuentes al día"}. Fuente de stock: {df?.stock_adjusted.inventory_source}.
+                  {isForecastMonth && selectedForecastMonth && selectedStockForecastMonth && (
+                    <div className="mb-3 space-y-2 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs">
+                      <div className="flex flex-wrap gap-x-5 gap-y-1 text-text-secondary">
+                        <span><strong className="text-[#2563EB]">Pronóstico base del mes:</strong> {formatMoneyFull(selectedForecastMonth.projected_amount)}</span>
+                        <span><strong className="text-[#9A7414]">Con inventario actual:</strong> {formatMoneyFull(selectedStockForecastMonth.projected_amount)}</span>
+                      </div>
+                      <p className="text-text-muted">
+                        El total del mes incluye lo observado ({formatMoneyFull(selectedForecastMonth.observed_amount ?? 0)}) y la estimación restante ({formatMoneyFull(Math.max(0, selectedForecastMonth.projected_amount - (selectedForecastMonth.observed_amount ?? 0)))}). {df?.daily_pattern.note}
+                      </p>
+                      <p className="text-text-muted">
+                        Cortes — ventas {df?.source_cutoffs.sales_date ?? "sin datos"} · inventario {df?.source_cutoffs.inventory_date ?? "sin datos"} · compras {df?.source_cutoffs.purchases_date ?? "sin datos"}. Estado: {staleForecastSources.length ? `desactualizadas: ${staleForecastSources.join(", ")}` : "fuentes al día"}. Fuente de stock: {df?.stock_adjusted.inventory_source}.
                     </p>
                     <p className="text-text-muted">
-                      Escenario con stock: confianza baja, sin backtest por falta de snapshots históricos y sin compras futuras; {df?.stock_adjusted.insufficient_evidence_skus ?? 0} SKU(s) con evidencia insuficiente. La comparación no implica que comprar cause ventas.
+                      Escenario con inventario: supone que no habrá nuevas compras y no implica que comprar cause ventas. Evidencia insuficiente: {df?.stock_adjusted.insufficient_evidence_skus ?? 0} SKU(s).
                     </p>
                     {df?.staleness.sales_is_stale && (
                       <p role="status" className="font-semibold text-warning">
@@ -406,35 +426,37 @@ export function VentasView(): JSX.Element {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
                     <YAxis yAxisId="left" tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e3).toFixed(0)}K`} />
-                    <YAxis yAxisId="right" orientation="right" tick={{fontSize:10}} stroke="#2563EB" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
                     <Tooltip
+                      labelFormatter={(_label, payload) => {
+                        const point = payload?.[0]?.payload as { dateLabel?: string } | undefined;
+                        return point?.dateLabel ?? String(_label);
+                      }}
                       formatter={(value, name) => [
                         formatCurrencyFull(Number(value)),
                         name === "ventas"
-                          ? "Venta real observada"
+                          ? "Venta real del día"
                           : name === "baseForecast"
-                            ? "Base run-rate diaria"
+                            ? "Pronóstico base de ese día"
                             : name === "stockForecast"
-                              ? "Stock ajustado diario"
-                              : "Acumulado observado",
+                              ? "Escenario con inventario de ese día"
+                              : "Venta real del día",
                       ]}
                       contentStyle={{borderRadius:"8px",fontSize:"12px"}}
                     />
                     <Bar yAxisId="left" dataKey="ventas" fill="#7B1818" radius={[2,2,0,0]} />
-                    <Line yAxisId="right" type="monotone" dataKey="acumulado" stroke="#2563EB" strokeWidth={2} dot={{r:2,fill:"#2563EB"}} activeDot={{r:5}} />
                     {isForecastMonth && (
                       <>
-                        <Line yAxisId="left" type="linear" dataKey="baseForecast" stroke="#2563EB" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} />
-                        <Line yAxisId="left" type="linear" dataKey="stockForecast" stroke="#D7A928" strokeWidth={2} strokeDasharray="3 3" dot={false} connectNulls={false} />
+                        <Line yAxisId="left" type="monotone" dataKey="baseForecast" stroke="#2563EB" strokeWidth={2} strokeDasharray="6 3" dot={{r:2,fill:"#2563EB"}} activeDot={{r:5}} connectNulls={false} />
+                        <Line yAxisId="left" type="monotone" dataKey="stockForecast" stroke="#D7A928" strokeWidth={2} strokeDasharray="3 3" dot={{r:2,fill:"#D7A928"}} activeDot={{r:5}} connectNulls={false} />
                       </>
                     )}
                   </ComposedChart>
                 </ResponsiveContainer>
                 {isForecastMonth && (
                   <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-text-muted" aria-label="Leyenda de la proyección diaria">
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7B1818]" /> Venta real conocida</span>
-                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#2563EB]" /> Base run-rate</span>
-                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#D7A928]" /> Escenario con stock</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7B1818]" /> Venta real del día</span>
+                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#2563EB]" /> Pronóstico base por día</span>
+                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#D7A928]" /> Con inventario por día</span>
                   </div>
                 )}
               </>

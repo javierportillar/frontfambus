@@ -25,6 +25,11 @@ const CONFIDENCE_LABELS: Record<string, string> = {
   medium: "media",
   low: "baja",
 };
+const RATE_BASIS_COPY: Record<string, string> = {
+  rolling_90d_complete: "promedio diario de ventas válidas de los 90 días previos",
+  previous_month_complete: "promedio diario del último mes cerrado",
+  current_month_run_rate: "promedio de los días con venta del mes actual",
+};
 const PURCHASE_ASSESSMENT_START = "2026-09-01";
 
 function monthLabel(month: string): string {
@@ -123,12 +128,20 @@ export function ProyeccionTab(): JSX.Element {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="space-y-2 text-xs leading-relaxed text-text-muted">
             <p>
-              <strong className="text-text-primary">Cómo se calcula:</strong>{" "}
-              el modelo base aplica el ritmo de ventas de los 90 días calendario previos al mes actual. Su cobertura real depende del corte de ventas indicado abajo.
+              <strong className="text-text-primary">Pronóstico base:</strong>{" "}
+              suma lo observado más la estimación de los días restantes. El nivel usa el {RATE_BASIS_COPY[data.rate_basis ?? "rolling_90d_complete"] ?? "promedio diario disponible"}; no es una cifra garantizada.
             </p>
             <p>
-              <strong className="text-text-primary">Escenario con stock:</strong>{" "}
-              limita la demanda histórica por el inventario disponible y lleva el saldo al mes siguiente, sin sumar compras futuras. Es una comparación de escenarios, no una relación causal entre comprar y vender.
+              <strong className="text-text-primary">Distribución por día:</strong>{" "}
+              {data.daily_pattern.note}
+            </p>
+            <p>
+              <strong className="text-text-primary">Referencia anual:</strong>{" "}
+              el mismo mes del año pasado se muestra para comparar, pero no entra en este pronóstico.
+            </p>
+            <p>
+              <strong className="text-text-primary">Escenario con inventario:</strong>{" "}
+              limita la venta estimada al inventario disponible y lleva el saldo al mes siguiente, sin sumar compras futuras. Es un escenario, no una afirmación de que comprar cause ventas.
             </p>
           </div>
           <div className="rounded-xl border border-border bg-surface-dark px-4 py-3 text-text-inverse shadow-sm">
@@ -136,9 +149,9 @@ export function ProyeccionTab(): JSX.Element {
             <p className="mt-1 text-sm font-bold">{monthLabel(current.month)} → {monthLabel(next.month)}</p>
           </div>
         </div>
-        {data.rate_basis && data.rate_basis !== "rolling_90d_complete" && (
+        {data.daily_pattern.method === "flat_daily_fallback" && (
           <p role="status" className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-            El modelo está usando una base alternativa ({data.rate_basis}) porque todavía no hay 90 días completos.
+            No hay suficientes fechas con venta para estimar variación por calendario; la curva diaria usa un reparto uniforme.
           </p>
         )}
         <p
@@ -152,41 +165,41 @@ export function ProyeccionTab(): JSX.Element {
             role="status"
             className="mt-3 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary"
           >
-            Confianza {CONFIDENCE_LABELS[data.backtest_accuracy?.confidence ?? "low"] ?? "baja"} según backtest: {confidenceNote}
+            Precisión histórica del total mensual: confianza {CONFIDENCE_LABELS[data.backtest_accuracy?.confidence ?? "low"] ?? "baja"}. {confidenceNote} Esto no mide la precisión de cada fecha.
           </p>
         )}
         <p role="status" className="mt-3 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary">
-          Escenario con stock: confianza baja y sin backtest por falta de snapshots históricos. Fuente: {data.stock_adjusted.inventory_source}. SKUs con stock controlado: {data.stock_adjusted.inventory_controlled_skus}; servicios sin límite: {data.stock_adjusted.uncapped_service_skus}; evidencia insuficiente: {data.stock_adjusted.insufficient_evidence_skus}. {data.stock_adjusted.confidence_note}
+          Escenario con inventario: supone que no habrá nuevas compras y limita las ventas estimadas al stock disponible. No tiene backtest porque faltan snapshots históricos; no implica que comprar cause ventas. Fuente: {data.stock_adjusted.inventory_source}. SKU(s) con stock controlado: {data.stock_adjusted.inventory_controlled_skus}; servicios sin límite: {data.stock_adjusted.uncapped_service_skus}; evidencia insuficiente: {data.stock_adjusted.insufficient_evidence_skus}. {data.stock_adjusted.confidence_note}
         </p>
       </Card>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <Stat
-            label={`Base run-rate — ${monthLabel(current.month)}`}
+            label={`Pronóstico base — ${monthLabel(current.month)}`}
             value={formatMoneyFull(current.projected_amount)}
-            subtitle={`Observado: ${formatMoneyFull(observed)} · confianza ${CONFIDENCE_LABELS[current.confidence] ?? current.confidence}`}
+            subtitle={`Incluye ${formatMoneyFull(observed)} observado + días restantes · confianza mensual ${CONFIDENCE_LABELS[current.confidence] ?? current.confidence}`}
           />
         </Card>
         <Card>
           <Stat
-            label={`Stock ajustado — ${monthLabel(current.month)}`}
+            label={`Con inventario actual — ${monthLabel(current.month)}`}
             value={formatMoneyFull(stockCurrent.projected_amount)}
             subtitle={`Mismo observado: ${formatMoneyFull(stockCurrent.observed_amount)} · confianza baja · sin reposición futura`}
           />
         </Card>
         <Card>
           <Stat
-            label={`Base run-rate — ${monthLabel(next.month)}`}
+            label={`Pronóstico base — ${monthLabel(next.month)}`}
             value={formatMoneyFull(next.projected_amount)}
             subtitle={`${next.days_total} días · confianza ${CONFIDENCE_LABELS[next.confidence] ?? next.confidence}${
-              next.last_year_same_month ? ` · mismo mes anterior: ${formatMoneyFull(next.last_year_same_month)}` : ""
+              next.last_year_same_month ? ` · real mismo mes año anterior: ${formatMoneyFull(next.last_year_same_month)}` : ""
             }`}
           />
         </Card>
         <Card>
           <Stat
-            label={`Stock ajustado — ${monthLabel(next.month)}`}
+            label={`Con inventario remanente — ${monthLabel(next.month)}`}
             value={formatMoneyFull(stockNext.projected_amount)}
             subtitle={`${stockNext.days_total} días · confianza baja · inventario remanente del mes actual`}
           />
@@ -202,19 +215,19 @@ export function ProyeccionTab(): JSX.Element {
             <Tooltip
               formatter={(value, name) => [
                 formatMoneyFull(Number(value)),
-                name === "real" ? "Real observado" : name === "base" ? "Base run-rate" : "Escenario con stock",
+              name === "real" ? "Real observado" : name === "base" ? "Pronóstico base total" : "Con inventario total",
               ]}
               contentStyle={{ borderRadius: "10px", border: "1px solid var(--color-border)", fontSize: "12px" }}
             />
-            <Bar dataKey="real" fill="var(--color-primary)" stackId="projection" name="real" />
+            <Bar dataKey="real" fill="var(--color-primary)" name="real" />
             <Bar dataKey="base" fill="#2563EB" radius={[5, 5, 0, 0]} name="base" />
             <Bar dataKey="stockAdjusted" fill="#D7A928" radius={[5, 5, 0, 0]} name="stockAdjusted" />
           </BarChart>
         </ResponsiveContainer>
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-text-muted" aria-label="Leyenda de la gráfica">
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-primary" /> Real observado</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#2563EB]" /> Base run-rate</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#D7A928]" /> Escenario con stock</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#2563EB]" /> Pronóstico base total del mes</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#D7A928]" /> Escenario total con inventario</span>
         </div>
       </Card>
 
@@ -297,14 +310,14 @@ export function ProyeccionTab(): JSX.Element {
       }>
         <div className="-mx-4 overflow-x-auto md:mx-0">
           <table className="w-full min-w-[680px] text-sm">
-            <caption className="sr-only">Comparación del mes actual y el mes siguiente entre run-rate y stock ajustado</caption>
+            <caption className="sr-only">Comparación del real observado con los pronósticos totales del mes, base y con inventario</caption>
             <thead>
               <tr className="border-b border-border text-left text-[0.7rem] uppercase tracking-[0.12em] text-text-muted">
                 <th scope="col" className="px-4 py-2 md:pl-2">Mes</th>
                 <th scope="col" className="px-2 py-2">Etapa</th>
                 <th scope="col" className="px-2 py-2 text-right">Real observado</th>
-                <th scope="col" className="px-2 py-2 text-right">Base run-rate</th>
-                <th scope="col" className="px-2 py-2 text-right">Escenario con stock</th>
+                <th scope="col" className="px-2 py-2 text-right">Pronóstico base total</th>
+                <th scope="col" className="px-2 py-2 text-right">Total con inventario</th>
                 <th scope="col" className="px-4 py-2 text-right md:pr-2">Confianza</th>
               </tr>
             </thead>

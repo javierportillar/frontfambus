@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  retryPurchaseAssessment,
   usePurchaseAssessment,
   usePurchasesDayGrouped,
   type CompraDocumento,
@@ -20,6 +21,8 @@ interface Props {
 }
 
 export function CompraDetalleContent({ date, documentNumber, classCode }: Props): JSX.Element {
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const { data, error, isLoading } = usePurchasesDayGrouped(date);
   const document = useMemo(
     () => data?.documentos.find(
@@ -33,6 +36,23 @@ export function CompraDetalleContent({ date, documentNumber, classCode }: Props)
     classCode || document?.cod_clase || null,
     documentNumber,
   );
+  const handleRegenerate = async () => {
+    const assessmentId = evaluation.data?.id;
+    if (!assessmentId || isRetrying) return;
+    setIsRetrying(true);
+    setRetryError(null);
+    try {
+      const queued = await retryPurchaseAssessment(assessmentId);
+      await evaluation.mutate(queued, false);
+    } catch (retryFailure) {
+      const message = retryFailure instanceof Error ? retryFailure.message : "";
+      setRetryError(message.includes("API error 429")
+        ? "Esperá unos minutos antes de volver a intentar."
+        : "No pudimos volver a generar la narrativa. La evaluación guardada se conserva.");
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   if (isLoading && !data) return <Skeleton className="h-96 rounded-xl" />;
   if (error) {
@@ -50,6 +70,9 @@ export function CompraDetalleContent({ date, documentNumber, classCode }: Props)
         error={evaluation.error}
         isLoading={evaluation.isLoading}
         onRetry={() => void evaluation.mutate()}
+        onRegenerate={() => void handleRegenerate()}
+        isRetrying={isRetrying}
+        retryError={retryError}
       />
     </div>
   );
@@ -60,11 +83,17 @@ function PurchaseAssessmentPanel({
   error,
   isLoading,
   onRetry,
+  onRegenerate,
+  isRetrying,
+  retryError,
 }: {
   assessment: PurchaseAssessment | undefined;
   error: Error | undefined;
   isLoading: boolean;
   onRetry: () => void;
+  onRegenerate: () => void;
+  isRetrying: boolean;
+  retryError: string | null;
 }): JSX.Element {
   const missing = error?.message.includes("API error 404") ?? false;
   const cutoffs = assessment?.source_cutoffs;
@@ -106,9 +135,34 @@ function PurchaseAssessmentPanel({
       ) : assessment?.markdown ? (
         <div>
           {assessment.status === "fallback" && (
-            <p role="status" className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-              Respaldo determinístico: el proveedor LLM no estuvo disponible al generar esta evaluación.
-            </p>
+            <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-xs text-warning">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="max-w-3xl">
+                  <p role="status" className="font-semibold">Respaldo determinístico: se guardaron los cálculos, pero falta la narrativa con IA.</p>
+                  <p className="mt-1">
+                    Podés solicitar un nuevo intento con la misma evidencia. Si el proveedor de IA sigue sin responder, se conservará este informe.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  disabled={isRetrying || Boolean(assessment.next_retry_at && Date.parse(assessment.next_retry_at) > Date.now())}
+                  className="shrink-0 rounded-lg border border-warning/50 bg-surface px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning"
+                >
+                  {isRetrying ? "Encolando reintento…" : "Reintentar análisis con IA"}
+                </button>
+              </div>
+              {assessment.next_retry_at && Date.parse(assessment.next_retry_at) > Date.now() && (
+                <p role="status" className="mt-2 text-text-muted">
+                  Disponible después de {new Intl.DateTimeFormat("es-CO", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZone: "America/Bogota",
+                  }).format(new Date(assessment.next_retry_at))}.
+                </p>
+              )}
+              {retryError && <p role="alert" className="mt-2 font-semibold">{retryError}</p>}
+            </div>
           )}
           {assessment.status === "processing" && (
             <p role="status" className="mb-3 rounded-md border border-border bg-surface-alt px-3 py-2 text-xs text-text-secondary">

@@ -121,6 +121,7 @@ async function seedSession(page: Page, reply = assistantReply, tenant = "motosho
     } });
   });
   await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/api/health/ready**", (route) => route.fulfill({ json: { ready: true } }));
   await page.route("**/api/purchase-assessments/invoice**", (route) => route.fulfill({
     status: 404,
     json: { detail: "Assessment not generated in test fixture" },

@@ -53,6 +53,13 @@ describe("ProyeccionTab backtest confidence", () => {
           insufficient_evidence_skus: 1,
         },
         daily_series: [],
+        daily_pattern: {
+          method: "weekday_week_of_month",
+          history_days: 90,
+          days_with_sales: 73,
+          seasonal_window_days: 365,
+          note: "Distribución por día de semana y tramo del mes.",
+        },
         source_cutoffs: {
           sales_date: "2026-09-15",
           inventory_date: "2026-09-16",
@@ -90,10 +97,11 @@ describe("ProyeccionTab backtest confidence", () => {
   it("explains a low confidence forecast using actual backtest accuracy", () => {
     render(<ProyeccionTab />);
 
-    expect(screen.getByText(/Confianza baja según backtest/)).toHaveTextContent("3 meses cerrados");
-    expect(screen.getByText(/Confianza baja según backtest/)).toHaveTextContent("75.5%");
-    expect(screen.getByText(/Escenario con stock: confianza baja y sin backtest/)).toBeInTheDocument();
-    expect(screen.getByText(/Stock ajustado — Sep 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Precisión histórica del total mensual/)).toHaveTextContent("3 meses cerrados");
+    expect(screen.getByText(/Precisión histórica del total mensual/)).toHaveTextContent("75.5%");
+    expect(screen.getByText(/Escenario con inventario: supone que no habrá nuevas compras/)).toBeInTheDocument();
+    expect(screen.getByText(/Con inventario actual — Sep 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Distribución por día:/).parentElement).toHaveTextContent("día de semana");
     expect(screen.getAllByText(/confianza baja/).length).toBeGreaterThan(2);
     expect(screen.getAllByRole("cell", { name: "Base baja · stock baja" })).toHaveLength(2);
   });

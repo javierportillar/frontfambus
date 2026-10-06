@@ -133,12 +133,25 @@ describe("VentasView forecast chart", () => {
           stock_adjusted_projected_amount: 45.16,
         },
         {
+          date: `${currentMonth}-03`,
+          actual_amount: null,
+          base_projected_amount: 75,
+          stock_adjusted_projected_amount: 35,
+        },
+        {
           date: `${nextMonth}-01`,
           actual_amount: null,
           base_projected_amount: 100,
           stock_adjusted_projected_amount: 30,
         },
       ],
+      daily_pattern: {
+        method: "weekday_week_of_month",
+        history_days: 90,
+        days_with_sales: 60,
+        seasonal_window_days: 365,
+        note: "Distribución por día de semana y tramo del mes.",
+      },
       source_cutoffs: {
         sales_date: cutoff,
         inventory_date: cutoff,
@@ -185,27 +198,29 @@ describe("VentasView forecast chart", () => {
     expect(await screen.findByTestId("series-baseForecast")).toBeInTheDocument();
     expect(screen.getByTestId("series-stockForecast")).toBeInTheDocument();
     expect(screen.getByText(/Ventas desactualizadas/)).toBeInTheDocument();
-    expect(screen.getByText(/Base run-rate:/)).toBeInTheDocument();
+    expect(screen.getByText(/Pronóstico base del mes:/)).toBeInTheDocument();
+    expect(screen.getByText(/Importes diarios en COP, no acumulados/)).toBeInTheDocument();
+    expect(screen.getByText(/día de semana/)).toBeInTheDocument();
 
     const chart = screen.getByTestId("forecast-daily-chart");
     const chartData = JSON.parse(chart.getAttribute("data-chart-data") ?? "[]") as Array<{
       ventas: number | null;
-      acumulado: number;
       baseForecast: number | null;
       stockForecast: number | null;
     }>;
     expect(chartData[0]).toMatchObject({
       ventas: 50,
-      acumulado: 50,
       baseForecast: null,
       stockForecast: null,
     });
     expect(chartData[1]).toMatchObject({
       ventas: null,
-      acumulado: 50,
       baseForecast: 100,
       stockForecast: 45.16,
     });
+    expect(chartData[2]?.baseForecast).toBe(75);
+    expect(chartData[2]?.baseForecast).not.toBe(chartData[1]?.baseForecast);
+    expect(chartData[1]).not.toHaveProperty("acumulado");
 
     const monthPicker = screen.getByLabelText("Mes a analizar");
     fireEvent.change(monthPicker, { target: { value: shiftMonthISO(businessMonthISO(), 1) } });

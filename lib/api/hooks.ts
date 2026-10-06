@@ -316,6 +316,14 @@ interface SalesForecastDailyPoint {
   stock_adjusted_projected_amount: number | null;
 }
 
+interface SalesForecastDailyPattern {
+  method: "weekday_week_of_month" | "flat_daily_fallback";
+  history_days: number;
+  days_with_sales: number;
+  seasonal_window_days: number;
+  note: string;
+}
+
 interface SalesForecastMonthly {
   current_month: SalesForecastMonth;
   next_month: SalesForecastMonth;
@@ -331,6 +339,7 @@ interface SalesForecastMonthly {
     insufficient_evidence_skus: number;
   };
   daily_series: SalesForecastDailyPoint[];
+  daily_pattern: SalesForecastDailyPattern;
   source_cutoffs: {
     sales_date: string | null;
     inventory_date: string | null;
@@ -1907,6 +1916,7 @@ export interface PurchaseAssessment {
   status: "pending" | "processing" | "completed" | "fallback" | "failed";
   attempt_count: number;
   last_error_code: string | null;
+  next_retry_at: string | null;
   deterministic_metrics: {
     invoice?: {
       total_factura_cop?: number | null;
@@ -1961,6 +1971,13 @@ export function usePurchaseAssessment(
   return useMetrics<PurchaseAssessment>(
     params ? `/api/purchase-assessments/invoice?${params.toString()}` : null,
     PURCHASES_DAY_METRICS_OPTIONS,
+  );
+}
+
+export function retryPurchaseAssessment(assessmentId: string): Promise<PurchaseAssessment> {
+  return apiFetchJson<PurchaseAssessment>(
+    `/api/purchase-assessments/${encodeURIComponent(assessmentId)}/retry`,
+    { method: "POST" },
   );
 }
 

@@ -29,6 +29,13 @@ const forecast = {
     insufficient_evidence_skus: 1,
   },
   daily_series: [],
+  daily_pattern: {
+    method: "weekday_week_of_month",
+    history_days: 90,
+    days_with_sales: 73,
+    seasonal_window_days: 365,
+    note: "Distribución según patrón histórico por día de semana y tramo del mes.",
+  },
   source_cutoffs: {
     sales_date: "2026-09-15",
     inventory_date: "2026-09-16",
@@ -102,7 +109,7 @@ for (const tenant of ["motoshop", "masvital"] as const) {
 
     await expect(page.getByRole("tab", { name: /Proyección/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: /Balance/ })).toBeVisible();
-    await expect(page.getByText(/Confianza baja según backtest/)).toContainText("75.5%");
+    await expect(page.getByText(/Precisión histórica del total mensual/)).toContainText("75.5%");
   });
 }
 
