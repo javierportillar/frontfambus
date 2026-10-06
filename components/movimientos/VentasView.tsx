@@ -412,7 +412,7 @@ export function VentasView(): JSX.Element {
                         Cortes — ventas {df?.source_cutoffs.sales_date ?? "sin datos"} · inventario {df?.source_cutoffs.inventory_date ?? "sin datos"} · compras {df?.source_cutoffs.purchases_date ?? "sin datos"}. Estado: {staleForecastSources.length ? `desactualizadas: ${staleForecastSources.join(", ")}` : "fuentes al día"}. Fuente de stock: {df?.stock_adjusted.inventory_source}.
                     </p>
                     <p className="text-text-muted">
-                      Escenario con inventario: supone que no habrá nuevas compras y no implica que comprar cause ventas. Evidencia insuficiente: {df?.stock_adjusted.insufficient_evidence_skus ?? 0} SKU(s).
+                      Escenario con inventario: supone que no habrá nuevas compras y distribuye el total limitado por stock con el patrón diario general; no simula agotamiento SKU por SKU cada día ni implica que comprar cause ventas. Evidencia insuficiente: {df?.stock_adjusted.insufficient_evidence_skus ?? 0} SKU(s).
                     </p>
                     {df?.staleness.sales_is_stale && (
                       <p role="status" className="font-semibold text-warning">
