@@ -315,6 +315,86 @@ test("purchase document keeps product values readable without horizontal page sc
   expect(widths.document).toBeLessThanOrEqual(widths.viewport + 1);
 });
 
+test("purchase invoice renders its persisted Markdown assessment on mobile", async ({ page }) => {
+  await authenticate(page, 375);
+  await page.route("**/api/metrics/purchases-day-grouped**", (route) => route.fulfill({ json: {
+    date: "2026-09-05",
+    total_compras: 240,
+    total_documentos: 1,
+    documentos: [{
+      num_documento: "P1",
+      cod_clase: "FC",
+      nit_proveedor: "900",
+      nombre_proveedor: "Proveedor Norte",
+      total_factura: 240,
+      num_items: 1,
+      items: [{
+        cod_producto: "SKU1",
+        nom_producto: "Filtro",
+        cantidad: 20,
+        valor_unitario: 10,
+        costo_producto: 8,
+        total: 200,
+        unidad_medida: "UND",
+      }],
+    }],
+  } }));
+  await page.route("**/api/purchase-assessments/invoice**", (route) => route.fulfill({ json: {
+    id: "assessment-1",
+    business_date: "2026-09-05",
+    cod_clase: "FC",
+    num_documento: "P1",
+    nit_proveedor: "900",
+    nombre_proveedor: "Proveedor Norte",
+    content_fingerprint: "a".repeat(64),
+    assessment_fingerprint: "b".repeat(64),
+    status: "completed",
+    attempt_count: 1,
+    last_error_code: null,
+    deterministic_metrics: {
+      invoice: { total_factura_cop: 240, total_lineas_cop: 200 },
+      totals: { productos_distintos: 1, productos_omitidos: 0 },
+      assessment_summary: {
+        senal_global: "requiere_revision",
+        skus_evaluados: 1,
+        skus_con_evidencia_de_demanda_y_stock: 1,
+        skus_sin_historial_previo_180d: 0,
+        valor_lineas_compra_cop: 200,
+        valor_en_senales_de_revision_cop: 200,
+        porcentaje_valor_en_senales_de_revision: 100,
+        limitacion: "Evaluación orientativa.",
+      },
+      products: [],
+    },
+    markdown: "## Evidencia observada\n\n- Proveedor: Proveedor Norte.\n- Filtro: la cantidad supera la referencia de cobertura.\n\n## Limitación\n\nLas ventas posteriores no se atribuyen causalmente a esta factura.",
+    source_cutoffs: {
+      purchases: "2026-09-13",
+      sales: "2026-09-15",
+      inventory: "2026-09-16",
+      abc: "2026-09",
+    },
+    generation_mode: "llm",
+    provider: "test-provider",
+    model: "test-model",
+    analyzer_revision: "test-v1",
+    prompt_revision: "test-v1",
+    created_at: "2026-09-16T12:00:00Z",
+    updated_at: "2026-09-16T12:00:00Z",
+    completed_at: "2026-09-16T12:00:00Z",
+  } }));
+  await page.goto("/dashboards/compras/dia/2026-09-05/documento/P1?cod_clase=FC");
+
+  await expect(page.getByRole("heading", { name: "Evaluación automática de la compra" })).toBeVisible();
+  await expect(page.getByText("requiere revision", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Evidencia observada" })).toBeVisible();
+  await expect(page.getByText(/no se atribuyen causalmente/)).toBeVisible();
+  const widths = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth,
+    viewport: document.documentElement.clientWidth,
+  }));
+  expect(widths.document).toBeLessThanOrEqual(widths.viewport + 1);
+});
+
 test("daily purchase expansion wraps long SKUs and preserves every product metric on mobile", async ({ page }) => {
   await authenticate(page, 320);
   await page.route("**/api/metrics/purchases-day-grouped**", (route) => route.fulfill({ json: {

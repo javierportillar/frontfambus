@@ -121,6 +121,10 @@ async function seedSession(page: Page, reply = assistantReply, tenant = "motosho
     } });
   });
   await page.route("**/api/auth/refresh", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/api/purchase-assessments/invoice**", (route) => route.fulfill({
+    status: 404,
+    json: { detail: "Assessment not generated in test fixture" },
+  }));
   await page.route("**/api/llm/qa/chat", (route: Route) => route.fulfill({ json: reply }));
   await page.route("**/api/llm/chat/conversations", (route: Route) => {
     if (route.request().method() === "POST") return route.fulfill({ json: {
