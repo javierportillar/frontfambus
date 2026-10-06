@@ -137,22 +137,24 @@ export function VentasView(): JSX.Element {
   const prevMonth = previousMonth(selectedMonth);
 
   const sales = useSalesSummaryV2();
+  const fc = useSalesForecastMonthly();
+  const df = fc.data;
+  const forecastCalendarMonth = df?.current_month.month ?? businessMonthISO();
 
   useEffect(() => {
     const maxDate = sales.data?.max_sales_date;
     const businessMonth = sales.data?.business_month;
     if (!maxDate || !businessMonth) return;
     setSelection((current) => syncSalesSelection(current, {
-      scopeKey: `${currentTenant ?? "_no_tenant"}:${businessMonth}`,
+      scopeKey: `${currentTenant ?? "_no_tenant"}:${forecastCalendarMonth}`,
       maxDate,
-      businessMonth,
+      businessMonth: forecastCalendarMonth,
     }));
-  }, [currentTenant, sales.data?.business_month, sales.data?.max_sales_date]);
+  }, [currentTenant, forecastCalendarMonth, sales.data?.business_month, sales.data?.max_sales_date]);
   const daily = useSalesDailyMonth(selectedMonth);
   const dailyPrevYear = useSalesDailyMonth(prevYearMonth);
   const dailyPrevMonth = useSalesDailyMonth(prevMonth);
   const hist = useSalesHistorical();
-  const fc = useSalesForecastMonthly();
   const trend = useSalesTrend(24);
   const trendPrev = useSalesTrendByYear(selectedYear - 1);
   const monthDetail = useSalesMonthDetail(selectedMonth);
@@ -168,14 +170,17 @@ export function VentasView(): JSX.Element {
   const dpm = dailyPrevMonth.data;
   // hist no se usa directamente; HistoricaTab tiene su propio hook interno
   void hist;
-  const df = fc.data;
-
   const selectedMonthDays = daysInMonth(selectedMonth);
   const maxRawDay = Math.max(0, ...(dm?.days ?? []).map((item) => item.day));
   const isCurrentBusinessMonth = selectedMonth === d?.business_month;
-  const visibleDays = isCurrentBusinessMonth
-    ? Math.max(1, Math.min(selectedMonthDays, Math.max(dayFromDate(d?.max_sales_date), maxRawDay)))
-    : selectedMonthDays;
+  const isForecastMonth = Boolean(
+    df && [df.current_month.month, df.next_month.month].includes(selectedMonth),
+  );
+  const visibleDays = isForecastMonth
+    ? selectedMonthDays
+    : isCurrentBusinessMonth
+      ? Math.max(1, Math.min(selectedMonthDays, Math.max(dayFromDate(d?.max_sales_date), maxRawDay)))
+      : selectedMonthDays;
 
   const selectedDays = useMemo(() => fillDailySeries(dm?.days, selectedMonth, visibleDays), [dm?.days, selectedMonth, visibleDays]);
   const prevYearDays = useMemo(() => fillDailySeries(dp?.days, prevYearMonth, Math.min(visibleDays, daysInMonth(prevYearMonth))), [dp?.days, prevYearMonth, visibleDays]);
@@ -198,9 +203,47 @@ export function VentasView(): JSX.Element {
     !dm?.days.some((item) => item.date === d.max_sales_date),
   );
 
+  const selectedForecastMonth = selectedMonth === df?.current_month.month
+    ? df.current_month
+    : selectedMonth === df?.next_month.month
+      ? df.next_month
+      : null;
+  const selectedStockForecastMonth = selectedMonth === df?.stock_adjusted.current_month.month
+    ? df.stock_adjusted.current_month
+    : selectedMonth === df?.stock_adjusted.next_month.month
+      ? df.stock_adjusted.next_month
+      : null;
+  const forecastByDate = new Map(
+    (df?.daily_series ?? [])
+      .filter((item) => item.date.startsWith(`${selectedMonth}-`))
+      .map((item) => [item.date, item]),
+  );
+  let observedCumulative = 0;
+  const dailyChartData = selectedDays.map((item) => {
+    const forecast = forecastByDate.get(item.date);
+    const actualAmount = isForecastMonth ? forecast?.actual_amount ?? null : item.sales;
+    observedCumulative += actualAmount ?? 0;
+    return {
+      label: item.day,
+      ventas: actualAmount,
+      acumulado: Number(observedCumulative.toFixed(2)),
+      baseForecast: isForecastMonth && forecast?.actual_amount === null
+        ? forecast.base_projected_amount
+        : null,
+      stockForecast: isForecastMonth && forecast?.actual_amount === null
+        ? forecast.stock_adjusted_projected_amount
+        : null,
+    };
+  });
+  const staleForecastSources = [
+    df?.staleness.sales_is_stale ? "ventas" : null,
+    df?.staleness.inventory_is_stale ? "inventario" : null,
+    df?.staleness.purchases_are_stale ? "compras" : null,
+  ].filter(Boolean);
+
   const annualSeries = buildAnnualSalesSeries({
     selectedMonth,
-    businessMonth: d?.business_month,
+    businessMonth: forecastCalendarMonth,
     currentYearTotals: trendCurr,
     previousYearTotals: trendP,
     currentMonthActual: monthlyTotal,
@@ -233,7 +276,7 @@ export function VentasView(): JSX.Element {
             onChange={(event) => setSelection((current) => selectSalesMonth(
               current,
               event.target.value,
-              d.business_month,
+              forecastCalendarMonth,
             ))}
             className="mt-1 block rounded-xl border border-border bg-surface px-3 py-2 text-sm font-normal normal-case tracking-normal text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
@@ -335,20 +378,66 @@ export function VentasView(): JSX.Element {
           <Card header={<h2 className="font-semibold text-text-primary">Evolución diaria — {monthLabel(selectedMonth)}</h2>}>
             {daily.isLoading && !dm ? (
               <Skeleton className="h-56 rounded-lg" />
-            ) : !selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) ? (
+            ) : !selectedDays.some((d) => d.sales !== 0 || d.invoices > 0) && !isForecastMonth ? (
               <p className="py-12 text-center text-sm text-text-muted">Sin datos diarios para {monthLabel(selectedMonth)}.</p>
             ) : (
-            <ResponsiveContainer width="100%" height={230}>
-              <ComposedChart data={selectedDays.map(item=>({label:item.day,ventas:item.sales,acumulado:item.accumulated}))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
-                <YAxis yAxisId="left" tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e3).toFixed(0)}K`} />
-                <YAxis yAxisId="right" orientation="right" tick={{fontSize:10}} stroke="#2563EB" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
-                <Tooltip formatter={(value, name) => [formatCurrencyFull(Number(value)), name === "ventas" ? "Ventas día" : "Acumulado"]} contentStyle={{borderRadius:"8px",fontSize:"12px"}} />
-                <Bar yAxisId="left" dataKey="ventas" fill="#7B1818" radius={[2,2,0,0]} />
-                <Line yAxisId="right" type="monotone" dataKey="acumulado" stroke="#2563EB" strokeWidth={2} dot={{r:2,fill:"#2563EB"}} activeDot={{r:5}} />
-              </ComposedChart>
-            </ResponsiveContainer>
+              <>
+                {isForecastMonth && selectedForecastMonth && selectedStockForecastMonth && (
+                  <div className="mb-3 space-y-2 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs">
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-text-secondary">
+                      <span><strong className="text-[#2563EB]">Base run-rate:</strong> {formatMoneyFull(selectedForecastMonth.projected_amount)}</span>
+                      <span><strong className="text-[#9A7414]">Stock ajustado:</strong> {formatMoneyFull(selectedStockForecastMonth.projected_amount)}</span>
+                    </div>
+                    <p className="text-text-muted">
+                      Cortes — ventas {df?.source_cutoffs.sales_date ?? "sin datos"} · inventario {df?.source_cutoffs.inventory_date ?? "sin datos"} · compras {df?.source_cutoffs.purchases_date ?? "sin datos"}. Estado: {staleForecastSources.length ? `desactualizadas: ${staleForecastSources.join(", ")}` : "fuentes al día"}. Fuente de stock: {df?.stock_adjusted.inventory_source}.
+                    </p>
+                    <p className="text-text-muted">
+                      Escenario con stock: confianza baja, sin backtest por falta de snapshots históricos y sin compras futuras; {df?.stock_adjusted.insufficient_evidence_skus ?? 0} SKU(s) con evidencia insuficiente. La comparación no implica que comprar cause ventas.
+                    </p>
+                    {df?.staleness.sales_is_stale && (
+                      <p role="status" className="font-semibold text-warning">
+                        Ventas desactualizadas: el corte es {df.source_cutoffs.sales_date ?? "desconocido"}. Observado conocido en {monthLabel(selectedMonth)}: {formatMoneyFull(selectedForecastMonth.observed_amount ?? 0)}.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <ResponsiveContainer width="100%" height={230}>
+                  <ComposedChart data={dailyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="label" tick={{fontSize:10}} stroke="#a3a3a3" />
+                    <YAxis yAxisId="left" tick={{fontSize:10}} stroke="#a3a3a3" tickFormatter={(v:number)=>`$${(v/1e3).toFixed(0)}K`} />
+                    <YAxis yAxisId="right" orientation="right" tick={{fontSize:10}} stroke="#2563EB" tickFormatter={(v:number)=>`$${(v/1e6).toFixed(1)}M`} />
+                    <Tooltip
+                      formatter={(value, name) => [
+                        formatCurrencyFull(Number(value)),
+                        name === "ventas"
+                          ? "Venta real observada"
+                          : name === "baseForecast"
+                            ? "Base run-rate diaria"
+                            : name === "stockForecast"
+                              ? "Stock ajustado diario"
+                              : "Acumulado observado",
+                      ]}
+                      contentStyle={{borderRadius:"8px",fontSize:"12px"}}
+                    />
+                    <Bar yAxisId="left" dataKey="ventas" fill="#7B1818" radius={[2,2,0,0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="acumulado" stroke="#2563EB" strokeWidth={2} dot={{r:2,fill:"#2563EB"}} activeDot={{r:5}} />
+                    {isForecastMonth && (
+                      <>
+                        <Line yAxisId="left" type="linear" dataKey="baseForecast" stroke="#2563EB" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} />
+                        <Line yAxisId="left" type="linear" dataKey="stockForecast" stroke="#D7A928" strokeWidth={2} strokeDasharray="3 3" dot={false} connectNulls={false} />
+                      </>
+                    )}
+                  </ComposedChart>
+                </ResponsiveContainer>
+                {isForecastMonth && (
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-text-muted" aria-label="Leyenda de la proyección diaria">
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7B1818]" /> Venta real conocida</span>
+                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#2563EB]" /> Base run-rate</span>
+                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#D7A928]" /> Escenario con stock</span>
+                  </div>
+                )}
+              </>
             )}
           </Card>
 
