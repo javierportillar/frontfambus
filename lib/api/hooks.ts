@@ -287,6 +287,13 @@ interface SalesForecastMonth {
   month: string;
   observed_amount?: number;
   projected_amount: number;
+  initial_forecast_amount?: number;
+  remaining_forecast_amount?: number;
+  forecast_origin_date?: string | null;
+  forecast_status?: "issued" | "reconstructed" | "provisional" | "frozen" | null;
+  vintage_persisted?: boolean;
+  forecast_model_version?: string | null;
+  calibration_version?: string | null;
   daily_rate?: number;
   days_observed?: number;
   days_total: number;
@@ -313,6 +320,7 @@ interface SalesForecastDailyPoint {
   date: string;
   actual_amount: number | null;
   base_projected_amount: number | null;
+  revised_projected_amount?: number | null;
   stock_adjusted_projected_amount: number | null;
 }
 
@@ -321,6 +329,19 @@ interface SalesForecastDailyPattern {
   history_days: number;
   days_with_sales: number;
   seasonal_window_days: number;
+  note: string;
+}
+
+interface SalesForecastCalibration {
+  status: "calibrated" | "baseline_retained" | "insufficient_history";
+  training_months: number;
+  holdout_months: number;
+  monthly_level_factor: number;
+  weekday_factors: number[];
+  week_of_month_factors: number[];
+  baseline_wape_pct: number | null;
+  calibrated_wape_pct: number | null;
+  last_training_month: string | null;
   note: string;
 }
 
@@ -340,6 +361,7 @@ interface SalesForecastMonthly {
   };
   daily_series: SalesForecastDailyPoint[];
   daily_pattern: SalesForecastDailyPattern;
+  calibration?: SalesForecastCalibration | null;
   source_cutoffs: {
     sales_date: string | null;
     inventory_date: string | null;

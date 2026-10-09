@@ -237,9 +237,7 @@ export function VentasView(): JSX.Element {
       date: item.date,
       dateLabel: forecastDateLabel(item.date),
       ventas: actualAmount,
-      baseForecast: isForecastMonth && forecast?.actual_amount === null
-        ? forecast.base_projected_amount
-        : null,
+      baseForecast: isForecastMonth ? forecast?.base_projected_amount ?? null : null,
       stockForecast: isForecastMonth && forecast?.actual_amount === null
         ? forecast.stock_adjusted_projected_amount
         : null,
@@ -389,7 +387,7 @@ export function VentasView(): JSX.Element {
             <div>
               <h2 className="font-semibold text-text-primary">Ventas por día — {monthLabel(selectedMonth)}</h2>
               <p className="text-xs text-text-muted">
-                Importes diarios en COP, no acumulados. Barras: ventas registradas; líneas: estimación para días futuros.
+                Importes diarios en COP, no acumulados. Barras: ventas reales; línea azul: pronóstico original del mes, también en días pasados.
               </p>
             </div>
           )}>
@@ -402,12 +400,49 @@ export function VentasView(): JSX.Element {
                   {isForecastMonth && selectedForecastMonth && selectedStockForecastMonth && (
                     <div className="mb-3 space-y-2 rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs">
                       <div className="flex flex-wrap gap-x-5 gap-y-1 text-text-secondary">
-                        <span><strong className="text-[#2563EB]">Pronóstico base del mes:</strong> {formatMoneyFull(selectedForecastMonth.projected_amount)}</span>
+                        <span><strong className="text-[#2563EB]">Pronóstico original del mes:</strong> {formatMoneyFull(selectedForecastMonth.initial_forecast_amount ?? selectedForecastMonth.projected_amount)}</span>
+                        {selectedMonth === df?.current_month.month && (
+                          <span><strong className="text-text-primary">Estimación al corte:</strong> {formatMoneyFull(selectedForecastMonth.projected_amount)}</span>
+                        )}
                         <span><strong className="text-[#9A7414]">Con inventario actual:</strong> {formatMoneyFull(selectedStockForecastMonth.projected_amount)}</span>
                       </div>
                       <p className="text-text-muted">
-                        El total del mes incluye lo observado ({formatMoneyFull(selectedForecastMonth.observed_amount ?? 0)}) y la estimación restante ({formatMoneyFull(Math.max(0, selectedForecastMonth.projected_amount - (selectedForecastMonth.observed_amount ?? 0)))}). {df?.daily_pattern.note}
+                        {selectedMonth === df?.current_month.month
+                          ? `La estimación al corte suma lo observado (${formatMoneyFull(selectedForecastMonth.observed_amount ?? 0)}) y el remanente (${formatMoneyFull(selectedForecastMonth.remaining_forecast_amount ?? Math.max(0, selectedForecastMonth.projected_amount - (selectedForecastMonth.observed_amount ?? 0)))}).`
+                          : "El pronóstico original se calcula antes de observar ventas del mes."} {df?.daily_pattern.note}
                       </p>
+                      <p className="text-text-muted">
+                        Curva {selectedForecastMonth.forecast_status === "reconstructed"
+                          ? "reconstruida"
+                          : selectedForecastMonth.forecast_status === "issued"
+                            ? "congelada al inicio"
+                            : "provisional"} con datos hasta {selectedForecastMonth.forecast_origin_date ?? "sin corte"}
+                        {selectedForecastMonth.forecast_model_version
+                          ? ` · modelo ${selectedForecastMonth.forecast_model_version}`
+                          : ""}
+                        {selectedForecastMonth.calibration_version
+                          ? ` · calibración ${selectedForecastMonth.calibration_version}`
+                          : ""}.
+                      </p>
+                      {selectedMonth === df?.current_month.month
+                        && selectedForecastMonth.vintage_persisted === false && (
+                          <p role="status" className="font-semibold text-warning">
+                            No se pudo guardar el vintage de forma permanente; esta curva puede cambiar al actualizar los datos.
+                          </p>
+                        )}
+                      {df?.calibration && (
+                        <p className="text-text-muted">
+                          Calibración diaria: {df.calibration.status === "calibrated"
+                            ? "ajustada con errores históricos"
+                            : df.calibration.status === "baseline_retained"
+                              ? "se conserva el patrón base"
+                              : "historial insuficiente; se conserva el patrón base"} · {df.calibration.training_months} meses de entrenamiento
+                          {df.calibration.baseline_wape_pct !== null
+                            && df.calibration.calibrated_wape_pct !== null
+                            ? ` · WAPE ${df.calibration.baseline_wape_pct.toFixed(1)}% → ${df.calibration.calibrated_wape_pct.toFixed(1)}%`
+                            : ""}
+                        </p>
+                      )}
                       <p className="text-text-muted">
                         Cortes — ventas {df?.source_cutoffs.sales_date ?? "sin datos"} · inventario {df?.source_cutoffs.inventory_date ?? "sin datos"} · compras {df?.source_cutoffs.purchases_date ?? "sin datos"}. Estado: {staleForecastSources.length ? `desactualizadas: ${staleForecastSources.join(", ")}` : "fuentes al día"}. Fuente de stock: {df?.stock_adjusted.inventory_source}.
                     </p>
@@ -436,7 +471,7 @@ export function VentasView(): JSX.Element {
                         name === "ventas"
                           ? "Venta real del día"
                           : name === "baseForecast"
-                            ? "Pronóstico base de ese día"
+                            ? "Pronóstico original de ese día"
                             : name === "stockForecast"
                               ? "Escenario con inventario de ese día"
                               : "Venta real del día",
@@ -455,7 +490,7 @@ export function VentasView(): JSX.Element {
                 {isForecastMonth && (
                   <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-text-muted" aria-label="Leyenda de la proyección diaria">
                     <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7B1818]" /> Venta real del día</span>
-                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#2563EB]" /> Pronóstico base por día</span>
+                    <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#2563EB]" /> Pronóstico original por día</span>
                     <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-[#D7A928]" /> Con inventario por día</span>
                   </div>
                 )}

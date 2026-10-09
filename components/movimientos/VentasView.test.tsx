@@ -63,6 +63,8 @@ vi.mock("@/components/ventas/HistoricaTab", () => ({ HistoricaTab: () => null })
 vi.mock("@/components/ventas/MargenMensualTable", () => ({ MargenMensualTable: () => null }));
 vi.mock("@/components/ventas/ProductosVendidosTabla", () => ({ ProductosVendidosTabla: () => null }));
 
+let forecastFixture: NonNullable<ReturnType<typeof useSalesForecastMonthly>["data"]>;
+
 function swr<T>(data: T) {
   return {
     data,
@@ -91,11 +93,18 @@ describe("VentasView forecast chart", () => {
       num_facturas: 0,
     }) as unknown as ReturnType<typeof useSalesSummaryV2>);
 
-    vi.mocked(useSalesForecastMonthly).mockReturnValue(swr({
+    const forecastData = {
       current_month: {
         month: currentMonth,
         observed_amount: 50,
         projected_amount: 3050,
+        initial_forecast_amount: 3100,
+        remaining_forecast_amount: 3000,
+        forecast_origin_date: null,
+        forecast_status: "issued",
+        vintage_persisted: true,
+        forecast_model_version: "weekday_week_of_month_v2",
+        calibration_version: "daily-calibration-v1-calibrated-2026-09",
         daily_rate: 100,
         days_observed: 1,
         days_total: 31,
@@ -123,7 +132,7 @@ describe("VentasView forecast chart", () => {
         {
           date: `${currentMonth}-01`,
           actual_amount: 50,
-          base_projected_amount: null,
+          base_projected_amount: 80,
           stock_adjusted_projected_amount: null,
         },
         {
@@ -152,6 +161,18 @@ describe("VentasView forecast chart", () => {
         seasonal_window_days: 365,
         note: "Distribución por día de semana y tramo del mes.",
       },
+      calibration: {
+        status: "calibrated",
+        training_months: 6,
+        holdout_months: 3,
+        monthly_level_factor: 1.05,
+        weekday_factors: [1, 1, 1, 1, 1, 1, 1],
+        week_of_month_factors: [1, 1, 1, 1, 1],
+        baseline_wape_pct: 18,
+        calibrated_wape_pct: 15,
+        last_training_month: "2026-09",
+        note: "Evaluación cronológica.",
+      },
       source_cutoffs: {
         sales_date: cutoff,
         inventory_date: cutoff,
@@ -173,7 +194,9 @@ describe("VentasView forecast chart", () => {
       rate_window: { start: "2026-06-01", end: "2026-08-29", days_with_sales: 60 },
       backtest_accuracy: null,
       history: [],
-    }) as ReturnType<typeof useSalesForecastMonthly>);
+    };
+    forecastFixture = forecastData as NonNullable<ReturnType<typeof useSalesForecastMonthly>["data"]>;
+    vi.mocked(useSalesForecastMonthly).mockReturnValue(swr(forecastData) as ReturnType<typeof useSalesForecastMonthly>);
 
     vi.mocked(useSalesDailyMonth).mockImplementation((month) => swr({
       month,
@@ -191,15 +214,17 @@ describe("VentasView forecast chart", () => {
     vi.mocked(useVendorDataFlag).mockReturnValue(swr({ has_vendor_data: false, porcentaje_sin_vendedor: 0 }) as unknown as ReturnType<typeof useVendorDataFlag>);
   });
 
-  it("plots both forecasts for the current calendar month, but not for historical months", async () => {
+  it("shows the original forecast on elapsed and future days, but not for historical months", async () => {
     render(<VentasView />);
     fireEvent.click(screen.getByRole("button", { name: "Mensual" }));
 
     expect(await screen.findByTestId("series-baseForecast")).toBeInTheDocument();
     expect(screen.getByTestId("series-stockForecast")).toBeInTheDocument();
     expect(screen.getByText(/Ventas desactualizadas/)).toBeInTheDocument();
-    expect(screen.getByText(/Pronóstico base del mes:/)).toBeInTheDocument();
-    expect(screen.getByText(/Importes diarios en COP, no acumulados/)).toBeInTheDocument();
+    expect(screen.getByText(/Pronóstico original del mes/)).toBeInTheDocument();
+    expect(screen.getByText(/modelo weekday_week_of_month_v2/)).toBeInTheDocument();
+    expect(screen.getByText(/Calibración diaria: ajustada con errores históricos/)).toBeInTheDocument();
+    expect(screen.getByText(/WAPE 18.0% → 15.0%/)).toBeInTheDocument();
     expect(screen.getByText(/día de semana/)).toBeInTheDocument();
 
     const chart = screen.getByTestId("forecast-daily-chart");
@@ -210,7 +235,7 @@ describe("VentasView forecast chart", () => {
     }>;
     expect(chartData[0]).toMatchObject({
       ventas: 50,
-      baseForecast: null,
+      baseForecast: 80,
       stockForecast: null,
     });
     expect(chartData[1]).toMatchObject({
@@ -237,5 +262,15 @@ describe("VentasView forecast chart", () => {
       expect(screen.queryByTestId("series-stockForecast")).not.toBeInTheDocument();
       expect(screen.getByTestId("series-ventas")).toBeInTheDocument();
     });
+  });
+
+  it("warns when the current-month vintage could not be saved", async () => {
+    forecastFixture.current_month.vintage_persisted = false;
+    forecastFixture.current_month.forecast_status = "provisional";
+
+    render(<VentasView />);
+    fireEvent.click(screen.getByRole("button", { name: "Mensual" }));
+
+    expect(await screen.findByText(/No se pudo guardar el vintage de forma permanente/)).toBeInTheDocument();
   });
 });
