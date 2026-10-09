@@ -140,4 +140,33 @@ describe("CompraDetalleContent assessment retry", () => {
 
     expect(screen.queryByRole("button", { name: "Reintentar análisis con IA" })).not.toBeInTheDocument();
   });
+
+  it("links a valid supplier NIT to the existing supplier profile", () => {
+    vi.mocked(usePurchasesDayGrouped).mockReturnValue(swr({
+      date: "2026-10-05",
+      total_compras: 250_000,
+      total_documentos: 1,
+      documentos: [{ ...invoice, nit_proveedor: "900123456" }],
+    }) as unknown as ReturnType<typeof usePurchasesDayGrouped>);
+
+    render(<CompraDetalleContent date="2026-10-05" documentNumber="FC-9001" classCode="FC" />);
+
+    expect(screen.getByRole("link", {
+      name: "Abrir perfil del proveedor Proveedor de prueba, NIT 900123456",
+    })).toHaveAttribute("href", "/dashboards/compras/proveedores/900123456");
+  });
+
+  it("keeps supplier text non-clickable when the NIT is missing or invalid", () => {
+    vi.mocked(usePurchasesDayGrouped).mockReturnValue(swr({
+      date: "2026-10-05",
+      total_compras: 250_000,
+      total_documentos: 1,
+      documentos: [invoice],
+    }) as unknown as ReturnType<typeof usePurchasesDayGrouped>);
+
+    render(<CompraDetalleContent date="2026-10-05" documentNumber="FC-9001" classCode="FC" />);
+
+    expect(screen.getByText("Proveedor de prueba")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /perfil del proveedor/i })).not.toBeInTheDocument();
+  });
 });

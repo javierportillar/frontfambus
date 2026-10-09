@@ -10,6 +10,7 @@ import {
   type PurchaseAssessment,
 } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
+import { isValidSupplierNit, supplierProfileHref } from "@/lib/compras/routes";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -206,7 +207,7 @@ function PurchaseDocument({ document }: { document: CompraDocumento }): JSX.Elem
       <div className="grid gap-3 sm:grid-cols-3">
         <Summary label="Total comprado" value={formatMoneyFull(document.total_factura)} />
         <Summary label="Productos" value={document.num_items.toLocaleString("es-CO")} />
-        <Summary label="Proveedor" value={document.nombre_proveedor ?? "Sin proveedor"} />
+        <SupplierSummary document={document} />
       </div>
 
       <Card className="overflow-hidden p-0">
@@ -279,6 +280,30 @@ function PurchaseDocument({ document }: { document: CompraDocumento }): JSX.Elem
         </div>
       </Card>
     </div>
+  );
+}
+
+function SupplierSummary({ document }: { document: CompraDocumento }): JSX.Element {
+  const name = document.nombre_proveedor?.trim() || "Proveedor sin identificar";
+  const nit = document.nit_proveedor?.trim() || "";
+  const profileIsAvailable = isValidSupplierNit(nit);
+
+  return (
+    <Card>
+      <p className="text-xs text-text-muted">Proveedor</p>
+      {profileIsAvailable ? (
+        <Link
+          href={supplierProfileHref(nit)}
+          aria-label={`Abrir perfil del proveedor ${name}, NIT ${nit}`}
+          className="mt-1 block truncate text-lg font-semibold text-text-primary hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          {name}
+        </Link>
+      ) : (
+        <p className="mt-1 truncate text-lg font-semibold text-text-primary">{name}</p>
+      )}
+      {nit && <p className="mt-0.5 truncate text-xs text-text-muted">NIT {nit}</p>}
+    </Card>
   );
 }
 
