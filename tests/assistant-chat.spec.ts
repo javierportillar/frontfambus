@@ -606,7 +606,7 @@ function purchaseReply(tenant: string): TestReply {
         label: "Distribuidora Norte",
         label_is_unique: true,
         domain: "purchases",
-        href: "/dashboards/compras/proveedores/900123456",
+        href: "/dashboards/proveedores/900123456",
       },
     ],
     attachments: [],

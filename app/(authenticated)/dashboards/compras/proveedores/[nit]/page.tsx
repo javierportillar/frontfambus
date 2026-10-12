@@ -1,13 +1,12 @@
-import type { Metadata } from "next";
-import { SupplierProfile } from "@/components/compras/SupplierProfile";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Perfil del proveedor" };
-
-export default function SupplierProfilePage({
+// V1.27: el perfil del proveedor se movió a la sección propia /dashboards/proveedores.
+// Se conserva esta ruta como deep link legado redirigiendo al nuevo destino.
+export default function SupplierProfileRedirect({
   params,
 }: {
   params: { nit: string };
-}): JSX.Element {
-  const nit = String(params.nit ?? "");
-  return <SupplierProfile nit={nit} />;
+}): never {
+  const nit = encodeURIComponent(String(params.nit ?? ""));
+  redirect(`/dashboards/proveedores/${nit}`);
 }

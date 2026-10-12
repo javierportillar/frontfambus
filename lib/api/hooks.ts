@@ -3,6 +3,7 @@ import { apiFetch, apiFetchJson } from "./client";
 import { getCached, setCache } from "@/lib/offline/cache";
 import { useAuthStore } from "@/lib/auth/store";
 import { isValidBusinessDate, isValidSupplierNit } from "@/lib/compras/routes";
+import { isValidCustomerId } from "@/lib/clientes/routes";
 import { sendChatMessage, type ChatReply } from "./chat";
 
 interface Product {
@@ -2418,4 +2419,235 @@ export async function deactivateUser(username: string): Promise<AdminUser> {
   return apiFetchJson<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}`, {
     method: "DELETE",
   });
+}
+
+// ── V1.22: Directorio y perfiles de clientes ─────────────────────────────
+//
+// "Mejores clientes" = clientes identificados ordenados por ventas facturadas
+// válidas del período. El consumidor genérico (NIT 222222222) y los
+// identificadores vacíos quedan fuera del ranking y solo aparecen agregados en
+// el resumen (ventas_sin_identificar / facturas_sin_identificar).
+
+export type ClienteSortBy = "ventas" | "facturas" | "ticket_promedio" | "ultima_compra";
+export type ClienteSortOrder = "asc" | "desc";
+
+export const CLIENTE_SORT_FIELDS: readonly ClienteSortBy[] = [
+  "ventas",
+  "facturas",
+  "ticket_promedio",
+  "ultima_compra",
+];
+
+export interface ClienteItem {
+  customer_id: string;
+  nombre_canonico: string;
+  ventas_total: number;
+  facturas: number;
+  ticket_promedio: number;
+  primera_compra: string | null;
+  ultima_compra: string | null;
+}
+
+export interface ClientesResumen {
+  clientes_identificados: number;
+  ventas_totales_validas: number;
+  ventas_identificadas: number;
+  facturas_totales: number;
+  ticket_promedio_global: number;
+  top10_ventas_suma: number;
+  /** Ratio 0..1 sobre TODAS las ventas válidas (incluye no identificados). */
+  top10_participacion: number;
+  ventas_sin_identificar: number;
+  facturas_sin_identificar: number;
+}
+
+export interface ClientesPaginacion {
+  pagina: number;
+  tamano_pagina: number;
+  total_filas: number;
+  total_paginas: number;
+}
+
+export interface ClientesResponse {
+  periodo: { fecha_inicio: string; fecha_fin: string };
+  resumen: ClientesResumen;
+  items: ClienteItem[];
+  paginacion: ClientesPaginacion;
+}
+
+export interface ClientePerfilResumen {
+  ventas_total: number;
+  facturas: number;
+  ticket_promedio: number;
+  primera_compra: string | null;
+  ultima_compra: string | null;
+  unidades_vendidas: number;
+}
+
+export interface ClienteProductoTop {
+  sku: string | null;
+  nombre_producto: string;
+  unidades: number;
+  ventas_valor: number;
+  facturas: number;
+}
+
+export interface ClientePerfilResponse {
+  cliente: { customer_id: string; nombre_canonico: string };
+  resumen: ClientePerfilResumen;
+  productos_top: ClienteProductoTop[];
+  periodo: { fecha_inicio: string; fecha_fin: string };
+}
+
+export interface ClienteFacturaItem {
+  fecha_negocio: string;
+  cod_clase: string;
+  num_documento: string;
+  total_factura: number;
+  lineas: number;
+}
+
+export interface ClienteFacturasResponse {
+  items: ClienteFacturaItem[];
+  total: number;
+  total_lineas: number;
+  total_paginas: number;
+  pagina: number;
+  tamano_pagina: number;
+}
+
+export const CLIENTES_DEFAULT_PAGE_SIZE = 20;
+const CLIENTES_MAX_PAGE_SIZE = 100;
+const CLIENTES_MAX_QUERY = 100;
+
+function isValidClientesQuery(query: string): boolean {
+  return query.length <= CLIENTES_MAX_QUERY && !/[\u0000-\u001f\u007f]/.test(query);
+}
+
+function isValidClientesPaging(page: number, pageSize: number): boolean {
+  return Number.isInteger(page)
+    && page >= 1
+    && Number.isInteger(pageSize)
+    && pageSize >= 1
+    && pageSize <= CLIENTES_MAX_PAGE_SIZE;
+}
+
+function isValidClientesPeriod(fechaInicio: string, fechaFin: string): boolean {
+  return isValidBusinessDate(fechaInicio)
+    && isValidBusinessDate(fechaFin)
+    && fechaInicio <= fechaFin;
+}
+
+export function buildClientesUrl(
+  fechaInicio: string,
+  fechaFin: string,
+  options: {
+    query?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: ClienteSortBy;
+    sortOrder?: ClienteSortOrder;
+  } = {},
+): string {
+  const {
+    query = "",
+    page = 1,
+    pageSize = CLIENTES_DEFAULT_PAGE_SIZE,
+    sortBy = "ventas",
+    sortOrder = "desc",
+  } = options;
+  const params = new URLSearchParams({
+    fecha_inicio: fechaInicio,
+    fecha_fin: fechaFin,
+    page: String(page),
+    page_size: String(pageSize),
+    sort_by: sortBy,
+    sort_order: sortOrder,
+  });
+  const normalized = query.trim();
+  if (normalized) params.set("q", normalized);
+  return `/api/metrics/clientes?${params.toString()}`;
+}
+
+export function useClientes(
+  fechaInicio: string,
+  fechaFin: string,
+  options: {
+    query?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: ClienteSortBy;
+    sortOrder?: ClienteSortOrder;
+  } = {},
+) {
+  const {
+    query = "",
+    page = 1,
+    pageSize = CLIENTES_DEFAULT_PAGE_SIZE,
+    sortBy = "ventas",
+    sortOrder = "desc",
+  } = options;
+  const ok = isValidClientesPeriod(fechaInicio, fechaFin)
+    && isValidClientesQuery(query.trim())
+    && isValidClientesPaging(page, pageSize);
+  return useMetrics<ClientesResponse>(
+    ok ? buildClientesUrl(fechaInicio, fechaFin, { query, page, pageSize, sortBy, sortOrder }) : null,
+    { keepPreviousData: false },
+  );
+}
+
+export function buildClientePerfilUrl(
+  customerId: string,
+  fechaInicio: string,
+  fechaFin: string,
+): string {
+  const params = new URLSearchParams({ fecha_inicio: fechaInicio, fecha_fin: fechaFin });
+  return `/api/metrics/clientes/${encodeURIComponent(customerId)}/perfil?${params.toString()}`;
+}
+
+export function useClientePerfil(
+  customerId: string | null,
+  fechaInicio: string,
+  fechaFin: string,
+) {
+  const ok = !!customerId
+    && isValidCustomerId(customerId)
+    && isValidClientesPeriod(fechaInicio, fechaFin);
+  return useMetrics<ClientePerfilResponse>(
+    ok ? buildClientePerfilUrl(customerId, fechaInicio, fechaFin) : null,
+    { keepPreviousData: false },
+  );
+}
+
+export function buildClienteFacturasUrl(
+  customerId: string,
+  fechaInicio: string,
+  fechaFin: string,
+  page = 1,
+  pageSize = CLIENTES_DEFAULT_PAGE_SIZE,
+): string {
+  const params = new URLSearchParams({
+    fecha_inicio: fechaInicio,
+    fecha_fin: fechaFin,
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  return `/api/metrics/clientes/${encodeURIComponent(customerId)}/facturas?${params.toString()}`;
+}
+
+export function useClienteFacturas(
+  customerId: string | null,
+  fechaInicio: string,
+  fechaFin: string,
+  page = 1,
+  pageSize = CLIENTES_DEFAULT_PAGE_SIZE,
+) {
+  const ok = !!customerId
+    && isValidCustomerId(customerId)
+    && isValidClientesPeriod(fechaInicio, fechaFin)
+    && isValidClientesPaging(page, pageSize);
+  return useMetrics<ClienteFacturasResponse>(
+    ok ? buildClienteFacturasUrl(customerId, fechaInicio, fechaFin, page, pageSize) : null,
+    { keepPreviousData: false },
+  );
 }

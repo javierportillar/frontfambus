@@ -16,6 +16,8 @@ describe("module access", () => {
 
   it("maps direct dashboard URLs to their module", () => {
     expect(resolvePathAccess("/dashboards/movimientos")).toEqual({ feature: "ventas-summary" });
+    expect(resolvePathAccess("/dashboards/clientes")).toEqual({ feature: "ventas-summary" });
+    expect(resolvePathAccess("/dashboards/clientes/1085320887")).toEqual({ feature: "ventas-summary" });
     expect(resolvePathAccess("/dashboards/compras/dia/2026-07-20")).toEqual({
       feature: "ventas-summary",
     });
@@ -36,6 +38,24 @@ describe("module access", () => {
   it("gates the assistant by the tenant chat feature", () => {
     expect(canAccessPath("/chat", { role: "gerente", enabledFeatures: ["chat-ia"], allowedModules: null })).toBe(true);
     expect(canAccessPath("/chat", { role: "gerente", enabledFeatures: [], allowedModules: null })).toBe(false);
+  });
+
+  it("gates the customer directory and profiles with the ventas-summary module", () => {
+    expect(canAccessPath("/dashboards/clientes", {
+      role: "vendedor",
+      enabledFeatures: ["ventas-summary"],
+      allowedModules: ["ventas-summary"],
+    })).toBe(true);
+    expect(canAccessPath("/dashboards/clientes/1085320887", {
+      role: "vendedor",
+      enabledFeatures: ["ventas-summary"],
+      allowedModules: ["ventas-summary"],
+    })).toBe(true);
+    expect(canAccessPath("/dashboards/clientes/1085320887", {
+      role: "vendedor",
+      enabledFeatures: ["ventas-summary"],
+      allowedModules: ["analisis"],
+    })).toBe(false);
   });
 
   it("gates purchase entity references with the existing ventas-summary module", () => {
@@ -70,7 +90,7 @@ describe("module access", () => {
       "supplier",
       "1116274616",
       "purchases",
-      "/dashboards/compras/proveedores/1116274616",
+      "/dashboards/proveedores/1116274616",
     )).toBe(true);
     expect(isSafeAssistantEntityHref(
       "purchase_document",
@@ -107,19 +127,19 @@ describe("module access", () => {
       "supplier",
       "1116274616",
       "purchases",
-      "/dashboards/compras/proveedores/1116274616?tenant=other",
+      "/dashboards/proveedores/1116274616?tenant=other",
     )).toBe(false);
     expect(isSafeAssistantEntityHref(
       "supplier",
       "not-a-nit",
       "purchases",
-      "/dashboards/compras/proveedores/not-a-nit",
+      "/dashboards/proveedores/not-a-nit",
     )).toBe(false);
     expect(isSafeAssistantEntityHref(
       "supplier",
       "1116274616",
       "sales",
-      "/dashboards/compras/proveedores/1116274616",
+      "/dashboards/proveedores/1116274616",
     )).toBe(false);
   });
 
@@ -130,12 +150,12 @@ describe("module access", () => {
       enabledFeatures: ["ventas-summary"],
       allowedModules: ["ventas-summary"],
     })).toBe(true);
-    expect(canAccessPath("/dashboards/compras/proveedores/1116274616", {
+    expect(canAccessPath("/dashboards/proveedores/1116274616", {
       role: "vendedor",
       enabledFeatures: ["ventas-summary"],
       allowedModules: ["ventas-summary"],
     })).toBe(true);
-    expect(canAccessPath("/dashboards/compras/proveedores/1116274616", {
+    expect(canAccessPath("/dashboards/proveedores/1116274616", {
       role: "vendedor",
       enabledFeatures: ["ventas-summary"],
       allowedModules: ["analisis"],

@@ -18,7 +18,7 @@ import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 const PAGE_SIZE = 20;
-const PURCHASES_HREF = "/dashboards/movimientos?modo=compras";
+const SUPPLIERS_HREF = "/dashboards/proveedores";
 
 function yearsBefore(date: string, years: number): string {
   const [year = "0", month = "1", day = "1"] = date.split("-");
@@ -194,8 +194,18 @@ export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
             <ul aria-label="Productos más comprados al proveedor" className="space-y-2 md:hidden">
               {data.compras.productos_top.map((product) => (
                 <li key={product.cod_producto} className="min-w-0 rounded-lg border border-border p-3">
-                  <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nombre}</p>
-                  <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{product.cod_producto}</p>
+                  <Link
+                    href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                    className="block break-words text-sm font-semibold leading-snug text-primary hover:underline"
+                  >
+                    {product.nombre}
+                  </Link>
+                  <Link
+                    href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                    className="mt-0.5 block break-all font-mono text-xs text-text-muted hover:text-primary hover:underline"
+                  >
+                    {product.cod_producto}
+                  </Link>
                   <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border/70 pt-2 text-xs">
                     <div>
                       <dt className="text-text-muted">Unidades</dt>
@@ -227,8 +237,18 @@ export function SupplierProfile({ nit }: { nit: string }): JSX.Element {
                   {data.compras.productos_top.map((product) => (
                     <tr key={product.cod_producto} className="border-b border-border/60 last:border-0">
                       <td className="px-3 py-2">
-                        <span className="block font-medium text-text-primary">{product.nombre}</span>
-                  <span className="break-all text-xs text-text-muted">{product.cod_producto}</span>
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                          className="block font-medium text-primary hover:underline"
+                        >
+                          {product.nombre}
+                        </Link>
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                          className="break-all text-xs text-text-muted hover:text-primary hover:underline"
+                        >
+                          {product.cod_producto}
+                        </Link>
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{product.unidades.toLocaleString("es-CO")}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{product.documentos.toLocaleString("es-CO")}</td>
@@ -298,7 +318,7 @@ function ProfileFrame({
   return (
     <div className="space-y-5">
       <div>
-        <Link href={PURCHASES_HREF} className="text-sm text-accent hover:underline">← Volver a compras</Link>
+        <Link href={SUPPLIERS_HREF} className="text-sm text-accent hover:underline">← Volver a proveedores</Link>
         <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">Perfil del proveedor</p>
         <h1 className="mt-1 break-words text-xl font-bold leading-tight text-text-primary sm:text-2xl">{name ?? "Proveedor"}</h1>
         <p className="mt-1 text-sm text-text-muted">NIT {nit}</p>
@@ -417,33 +437,32 @@ function DocumentHistory({
             const href = purchaseDocumentHrefFromEntityId(
               `${document.business_date}|${document.cod_clase}|${document.num_documento}`,
             );
-            const content = (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-text-muted">{document.business_date}</p>
-                    <p className="mt-1 font-semibold text-text-primary">Factura {document.num_documento}</p>
-                    <p className="mt-0.5 text-xs text-text-muted">Clase {document.cod_clase} · {document.num_items} productos</p>
-                  </div>
-                  <p className="shrink-0 text-right text-sm font-bold tabular-nums text-text-primary">
-                    {formatMoneyFull(document.total_factura)}
-                  </p>
-                </div>
-              </>
-            );
             return (
               <li key={`${document.business_date}|${document.cod_clase}|${document.num_documento}`}>
-                {href ? (
-                  <Link
-                    href={href}
-                    aria-label={`Abrir factura ${document.num_documento} clase ${document.cod_clase}`}
-                    className="block rounded-lg border border-border bg-surface p-3 transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    {content}
-                  </Link>
-                ) : (
-                  <article className="rounded-lg border border-border bg-surface p-3">{content}</article>
-                )}
+                <article className="rounded-lg border border-border bg-surface p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-text-muted">{document.business_date}</p>
+                      <p className="mt-1 font-semibold text-text-primary">
+                        {href ? (
+                          <Link
+                            href={href}
+                            aria-label={`Abrir factura ${document.num_documento} clase ${document.cod_clase}`}
+                            className="text-primary hover:underline"
+                          >
+                            Factura {document.num_documento}
+                          </Link>
+                        ) : (
+                          <span>Factura {document.num_documento}</span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-muted">Clase {document.cod_clase} · {document.num_items} productos</p>
+                    </div>
+                    <p className="shrink-0 text-right text-sm font-bold tabular-nums text-text-primary">
+                      {formatMoneyFull(document.total_factura)}
+                    </p>
+                  </div>
+                </article>
               </li>
             );
           })}

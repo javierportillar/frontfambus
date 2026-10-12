@@ -50,5 +50,5 @@ export function purchaseDocumentHrefFromEntityId(entityId: string): string | nul
 }
 
 export function supplierProfileHref(nit: string): string {
-  return `/dashboards/compras/proveedores/${encodeURIComponent(nit)}`;
+  return `/dashboards/proveedores/${encodeURIComponent(nit)}`;
 }

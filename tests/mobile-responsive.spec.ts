@@ -255,7 +255,7 @@ test("supplier profile shows products and invoices as readable mobile cards", as
   await page.route("**/api/metrics/compras-proveedor-perfil**", (route) =>
     route.fulfill({ json: supplierProfileResponse }),
   );
-  await page.goto("/dashboards/compras/proveedores/1010119448");
+  await page.goto("/dashboards/proveedores/1010119448");
 
   await expect(page.getByRole("list", { name: "Productos más comprados al proveedor" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Historial de compras del proveedor" })).toBeVisible();

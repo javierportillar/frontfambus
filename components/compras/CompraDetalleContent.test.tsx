@@ -153,7 +153,7 @@ describe("CompraDetalleContent assessment retry", () => {
 
     expect(screen.getByRole("link", {
       name: "Abrir perfil del proveedor Proveedor de prueba, NIT 900123456",
-    })).toHaveAttribute("href", "/dashboards/compras/proveedores/900123456");
+    })).toHaveAttribute("href", "/dashboards/proveedores/900123456");
   });
 
   it("keeps supplier text non-clickable when the NIT is missing or invalid", () => {

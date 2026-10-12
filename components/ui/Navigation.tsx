@@ -127,6 +127,21 @@ const Icons = {
       <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
     </svg>
   ),
+  proveedores: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M3 21h18" />
+      <path d="M5 21V7l7-4 7 4v14" />
+      <path d="M9 21v-5h6v5" />
+    </svg>
+  ),
+  clientes: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
   logout: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
       <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
@@ -154,6 +169,8 @@ const iconMap: Record<string, ReactNode> = {
   home: Icons.home,
   ventas: Icons.ventas,
   compras: Icons.compras,
+  proveedores: Icons.proveedores,
+  clientes: Icons.clientes,
   inventario: Icons.inventario,
   abc: Icons.abc,
   dormidos: Icons.dormidos,
@@ -614,6 +631,8 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
+    { label: "Proveedores", href: "/dashboards/proveedores", icon: Icons.proveedores, feature: "ventas-summary" },
+    { label: "Clientes", href: "/dashboards/clientes", icon: Icons.clientes, feature: "ventas-summary" },
     { label: "Inventario", href: "/dashboards/inventario", icon: Icons.inventario, feature: "inventario" },
     { label: "Decisiones", href: "/dashboards/decisiones", icon: Icons.acciones, feature: "decisiones" },
     { label: "Análisis", href: "/dashboards/analisis", icon: Icons.forecast, feature: "analisis" },

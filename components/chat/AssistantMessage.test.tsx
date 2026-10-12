@@ -312,7 +312,7 @@ describe("AssistantMessage rendered states", () => {
           label: "Distribuidora Norte",
           label_is_unique: true,
           domain: "purchases",
-          href: "/dashboards/compras/proveedores/900123456",
+          href: "/dashboards/proveedores/900123456",
         },
       ],
     });
@@ -331,7 +331,7 @@ describe("AssistantMessage rendered states", () => {
         label: "Distribuidora Norte",
         label_is_unique: false,
         domain: "purchases",
-        href: "/dashboards/compras/proveedores/900123456",
+        href: "/dashboards/proveedores/900123456",
       }],
     });
     render(<AssistantMessage message={message} context={baseContext} />);
@@ -339,7 +339,7 @@ describe("AssistantMessage rendered states", () => {
     expect(screen.queryByRole("link", { name: "Distribuidora Norte" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Abrir ficha de proveedor NIT 900123456" })).toHaveAttribute(
       "href",
-      "/dashboards/compras/proveedores/900123456",
+      "/dashboards/proveedores/900123456",
     );
   });
 
