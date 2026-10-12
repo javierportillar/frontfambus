@@ -5,6 +5,7 @@
 // el header de página (volver/título), ahora lo provee MovimientosPage.
 
 import { useMemo, useState, useEffect } from "react";
+import Link from "next/link";
 import {
   useSalesSummaryV2,
   useSalesDailyMonth,
@@ -625,7 +626,7 @@ export function VentasView(): JSX.Element {
                       <ul className="space-y-1.5">
                         {monthDetail.data.aceleradores.map((p: TopSkuItem) => (
                           <li key={p.cod_producto} className="flex min-w-0 items-start justify-between gap-2">
-                            <span className="min-w-0 break-words text-sm text-text-primary">{p.nom_producto}</span>
+                            <Link href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`} className="min-w-0 break-words text-sm text-primary hover:underline">{p.nom_producto}</Link>
                             <span className="text-sm font-semibold text-green-700 shrink-0">{formatMoneyFull(p.valor_total)}</span>
                           </li>
                         ))}
@@ -640,7 +641,7 @@ export function VentasView(): JSX.Element {
                       <ul className="space-y-1.5">
                         {monthDetail.data.frenadores.map((p: TopSkuItem) => (
                           <li key={p.cod_producto} className="flex min-w-0 items-start justify-between gap-2">
-                            <span className="min-w-0 break-words text-sm text-text-primary">{p.nom_producto}</span>
+                            <Link href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`} className="min-w-0 break-words text-sm text-primary hover:underline">{p.nom_producto}</Link>
                             <span className="text-sm font-semibold text-red-700 shrink-0">{formatMoneyFull(p.valor_total)}</span>
                           </li>
                         ))}

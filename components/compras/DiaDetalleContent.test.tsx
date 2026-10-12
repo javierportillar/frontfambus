@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { DocumentoCard } from "./DiaDetalleContent";
 
 describe("DocumentoCard", () => {
-  it("makes the entire purchase header clickable while keeping the expand control separate", () => {
+  it("links only the supplier name and invoice number while keeping the expand control separate", () => {
     const onToggle = vi.fn();
     render(
       <DocumentoCard
@@ -29,16 +29,24 @@ describe("DocumentoCard", () => {
       />,
     );
 
-    const documentLink = screen.getByRole("link", {
+    const documentHref = "/dashboards/compras/dia/2024-07-27/documento/13?cod_clase=S18";
+
+    const nameLink = screen.getByRole("link", {
       name: "Abrir factura 13 clase S18 de KAROL NATALIA BURGOS BUSTOS",
     });
-    expect(documentLink).toHaveAttribute(
-      "href",
-      "/dashboards/compras/dia/2024-07-27/documento/13?cod_clase=S18",
-    );
-    expect(documentLink).toHaveTextContent("Factura 13 · S18 · NIT 1116274616");
-    expect(documentLink).toHaveTextContent("580 productos");
-    expect(documentLink.textContent).toContain("$");
+    expect(nameLink).toHaveAttribute("href", documentHref);
+    expect(nameLink).toHaveTextContent("KAROL NATALIA BURGOS BUSTOS");
+
+    const invoiceLink = screen.getByRole("link", { name: "Factura 13" });
+    expect(invoiceLink).toHaveAttribute("href", documentHref);
+
+    const itemsText = screen.getByText("580 productos");
+    expect(itemsText).toBeInTheDocument();
+    expect(itemsText.closest("a")).toBeNull();
+
+    const headerAmount = itemsText.previousElementSibling;
+    expect(headerAmount?.textContent).toContain("$");
+    expect(headerAmount?.closest("a")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Mostrar productos" }));
     expect(onToggle).toHaveBeenCalledOnce();

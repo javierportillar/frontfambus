@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { ProductAbcMap } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { AbcChip } from "@/components/productos/Chips";
@@ -71,7 +71,6 @@ export function ProductosVendidosTabla({
   loadingAll = false,
   isFullDataset = false,
 }: Props): JSX.Element {
-  const router = useRouter();
   const [sortKey, setSortKey] = useState<SortKey>("valor");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expanded, setExpanded] = useState(false);
@@ -168,15 +167,23 @@ export function ProductosVendidosTabla({
               const intensity = maxValor ? p.valor / maxValor : 0;
               const abc = abcMap?.productos[p.cod]?.abc;
               return (
-                <tr
-                  key={p.cod || `${p.nom}-${idx}`}
-                  className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                  onClick={() => p.cod && router.push(`/dashboards/productos/${encodeURIComponent(p.cod)}`)}
-                >
+                  <tr
+                    key={p.cod || `${p.nom}-${idx}`}
+                    className="border-b border-border/60 hover:bg-surface-alt"
+                  >
                   <td className="py-2 px-3 text-right text-xs text-text-muted tabular-nums">{idx + 1}</td>
                   <td className="py-2 px-1">{abc ? <AbcChip abc={abc} /> : null}</td>
-                  <td className="py-2 px-3">
-                    <div className="truncate text-text-primary font-medium">{p.nom}</div>
+                    <td className="py-2 px-3">
+                      {p.cod ? (
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(p.cod)}`}
+                          className="block truncate font-medium text-primary hover:underline"
+                        >
+                          {p.nom}
+                        </Link>
+                      ) : (
+                        <div className="truncate font-medium text-text-primary">{p.nom}</div>
+                      )}
                     {showIntensityBar && (
                       <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-alt">
                         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, intensity * 100)}%` }} />
@@ -206,17 +213,21 @@ export function ProductosVendidosTabla({
           const intensity = maxValor ? p.valor / maxValor : 0;
           const abc = abcMap?.productos[p.cod]?.abc;
           return (
-            <button
-              key={p.cod || `${p.nom}-${idx}`}
-              type="button"
-              onClick={() => p.cod && router.push(`/dashboards/productos/${encodeURIComponent(p.cod)}`)}
-              className="block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-alt"
-            >
+            <div key={p.cod || `${p.nom}-${idx}`} className="rounded-lg border border-border bg-surface px-3 py-2">
               <div className="flex items-start gap-2">
                 <span className="w-6 shrink-0 text-right text-xs font-bold text-text-muted">{idx + 1}</span>
                 {abc ? <AbcChip abc={abc} /> : <span className="h-5 w-5 shrink-0" />}
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-text-primary truncate">{p.nom}</div>
+                  {p.cod ? (
+                    <Link
+                      href={`/dashboards/productos/${encodeURIComponent(p.cod)}`}
+                      className="block truncate text-sm font-medium text-primary hover:underline"
+                    >
+                      {p.nom}
+                    </Link>
+                  ) : (
+                    <div className="truncate text-sm font-medium text-text-primary">{p.nom}</div>
+                  )}
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
                     <span>
                       Cantidad vendida:{" "}
@@ -237,7 +248,7 @@ export function ProductosVendidosTabla({
                   )}
                 </div>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

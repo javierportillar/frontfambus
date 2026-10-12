@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import {
   useInventarioOverview,
@@ -381,15 +381,15 @@ export function ResumenTab({ onGoToTab }: Props): JSX.Element {
 }
 
 function AlertaRow({ item }: { item: InventarioItem }): JSX.Element {
-  const router = useRouter();
   return (
-    <button
-      type="button"
-      onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`)}
-      className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2 text-left hover:bg-surface-alt"
-    >
+    <div className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-text-primary truncate">{item.nom_producto}</div>
+        <Link
+          href={`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`}
+          className="block truncate text-sm font-medium text-primary hover:underline"
+        >
+          {item.nom_producto}
+        </Link>
         <div className="text-[0.65rem] text-text-muted">
           {item.cod_producto} · rotación {item.rotacion_diaria.toFixed(2)} {item.unidad_medida}/día
           {item.abc && <span className="ml-1">· ABC: {item.abc}</span>}
@@ -403,6 +403,6 @@ function AlertaRow({ item }: { item: InventarioItem }): JSX.Element {
           Sugerido: {item.sugerido_comprar} {item.unidad_medida}
         </div>
       </div>
-    </button>
+    </div>
   );
 }

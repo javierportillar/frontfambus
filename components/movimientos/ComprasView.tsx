@@ -190,11 +190,23 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
                 const max = data.top_proveedores[0]?.total_compras ?? 1;
                 const intensity = p.total_compras / max;
                 const canClick = isValidSupplierNit(p.nit ?? "");
-                const summary = (
-                  <>
+                return (
+                  <div
+                    key={`${p.nit}-${idx}`}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-text-primary">{p.nombre}</div>
+                        {canClick ? (
+                          <Link
+                            href={supplierProfileHref(p.nit ?? "")}
+                            className="block truncate text-sm font-medium text-primary hover:underline"
+                          >
+                            {p.nombre}
+                          </Link>
+                        ) : (
+                          <div className="truncate text-sm font-medium text-text-primary opacity-60">{p.nombre}</div>
+                        )}
                         <div className="text-[0.65rem] text-text-muted">NIT {p.nit ?? "?"} · {p.num_documentos} doc</div>
                       </div>
                       <div className="shrink-0 text-right">
@@ -204,22 +216,6 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
                     <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-alt">
                       <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, intensity * 100)}%` }} />
                     </div>
-                  </>
-                );
-                return (
-                  <div key={`${p.nit}-${idx}`}>
-                    {canClick ? (
-                      <Link
-                        href={supplierProfileHref(p.nit ?? "")}
-                        className="block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                      >
-                        {summary}
-                      </Link>
-                    ) : (
-                      <div className="block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left opacity-60">
-                        {summary}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -234,25 +230,30 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
             <>
             <ul aria-label="Productos más comprados del mes" className="space-y-2 lg:hidden">
               {data.top_productos.map((product, index) => (
-                <li key={product.cod_producto}>
-                  <Link
-                    href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
-                    className="flex min-h-11 min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3 hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    <div className="flex min-w-0 items-start gap-2">
-                      <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{index + 1}.</span>
-                      <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nom_producto}</p>
-                        <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{product.cod_producto}</p>
-                      </div>
+                <li key={product.cod_producto} className="flex min-h-11 min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{index + 1}.</span>
+                    <div className="min-w-0">
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                        className="block break-words text-sm font-semibold leading-snug text-primary hover:underline"
+                      >
+                        {product.nom_producto}
+                      </Link>
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                        className="mt-0.5 block break-all font-mono text-xs text-text-muted hover:text-primary hover:underline"
+                      >
+                        {product.cod_producto}
+                      </Link>
                     </div>
-                    <div className="shrink-0 text-right text-xs">
-                      <p className="font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_total)}</p>
-                      <p className="mt-0.5 text-text-muted">
-                        {product.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {product.unidad_medida ?? "u"}
-                      </p>
-                    </div>
-                  </Link>
+                  </div>
+                  <div className="shrink-0 text-right text-xs">
+                    <p className="font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_total)}</p>
+                    <p className="mt-0.5 text-text-muted">
+                      {product.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {product.unidad_medida ?? "u"}
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -268,14 +269,15 @@ function MensualTab({ mes }: { mes: string }): JSX.Element {
                 </thead>
                 <tbody>
                   {data.top_productos.map((p, idx) => (
-                    <tr
-                      key={p.cod_producto}
-                      className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                      onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-                    >
+                    <tr key={p.cod_producto} className="border-b border-border/60 hover:bg-surface-alt">
                       <td className="py-2 pr-2 text-xs text-text-muted">{idx + 1}</td>
                       <td className="py-2 px-2">
-                        <div className="text-text-primary font-medium text-sm truncate max-w-xs">{p.nom_producto}</div>
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                          className="block max-w-xs truncate text-sm font-medium text-primary hover:underline"
+                        >
+                          {p.nom_producto}
+                        </Link>
                         <div className="text-[0.65rem] text-text-muted">{p.cod_producto}</div>
                       </td>
                       <td className="py-2 px-2 text-right tabular-nums text-text-muted">
@@ -462,7 +464,6 @@ function ProveedorTab(): JSX.Element {
 // eslint-disable-next-line no-unused-vars
 function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.Element {
   const { data, isLoading } = useComprasHistorico();
-  const router = useRouter();
 
   if (isLoading && !data) return <Card><Skeleton className="h-96 rounded-lg" /></Card>;
   if (!data || data.serie.length === 0) return <Card><p className="py-8 text-center text-sm text-text-muted">Sin histórico de compras.</p></Card>;
@@ -562,12 +563,16 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
             </thead>
             <tbody>
               {[...data.serie].reverse().map((m) => (
-                <tr
-                  key={m.mes}
-                  className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                  onClick={() => onClickMes(m.mes)}
-                >
-                  <td className="py-2 pr-2 font-medium text-text-primary">{mesLabel(m.mes)}</td>
+                <tr key={m.mes} className="border-b border-border/60 hover:bg-surface-alt">
+                  <td className="py-2 pr-2">
+                    <button
+                      type="button"
+                      onClick={() => onClickMes(m.mes)}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {mesLabel(m.mes)}
+                    </button>
+                  </td>
                   <td className="px-2 text-right tabular-nums font-semibold">{formatMoneyFull(m.total)}</td>
                   <td className="px-2 text-right tabular-nums">{m.num_documentos}</td>
                   <td className="px-2 text-right tabular-nums text-text-muted">{m.proveedores_unicos}</td>
@@ -594,11 +599,23 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
                 const max = data.top_proveedores?.[0]?.total_compras ?? 1;
                 const intensity = p.total_compras / max;
                 const canClick = isValidSupplierNit(p.nit ?? "");
-                const summary = (
-                  <>
+                return (
+                  <div
+                    key={`${p.nit}-${idx}`}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-text-primary">{p.nombre}</div>
+                        {canClick ? (
+                          <Link
+                            href={supplierProfileHref(p.nit ?? "")}
+                            className="block truncate text-sm font-medium text-primary hover:underline"
+                          >
+                            {p.nombre}
+                          </Link>
+                        ) : (
+                          <div className="truncate text-sm font-medium text-text-primary opacity-60">{p.nombre}</div>
+                        )}
                         <div className="text-[0.65rem] text-text-muted">
                           NIT {p.nit ?? "?"} · {p.num_documentos} doc ·{" "}
                           {p.primera_compra && p.ultima_compra ? `${p.primera_compra} → ${p.ultima_compra}` : ""}
@@ -611,19 +628,6 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
                     <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-alt">
                       <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, intensity * 100)}%` }} />
                     </div>
-                  </>
-                );
-                return (
-                  <div key={`${p.nit}-${idx}`}>
-                    {canClick ? (
-                      <Link href={supplierProfileHref(p.nit ?? "")} className="block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-                        {summary}
-                      </Link>
-                    ) : (
-                      <div className="block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left opacity-60">
-                        {summary}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -643,26 +647,31 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
             <>
             <ul aria-label="Productos más comprados históricamente" className="space-y-2 lg:hidden">
               {data.top_productos.map((product, index) => (
-                <li key={product.cod_producto}>
-                  <Link
-                    href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
-                    className="flex min-h-11 min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3 hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    <div className="flex min-w-0 items-start gap-2">
-                      <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{index + 1}.</span>
-                      <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nom_producto}</p>
-                        <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{product.cod_producto}</p>
-                      </div>
+                <li key={product.cod_producto} className="flex min-h-11 min-w-0 items-start justify-between gap-3 rounded-lg border border-border p-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{index + 1}.</span>
+                    <div className="min-w-0">
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                        className="block break-words text-sm font-semibold leading-snug text-primary hover:underline"
+                      >
+                        {product.nom_producto}
+                      </Link>
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}`}
+                        className="mt-0.5 block break-all font-mono text-xs text-text-muted hover:text-primary hover:underline"
+                      >
+                        {product.cod_producto}
+                      </Link>
                     </div>
-                    <div className="shrink-0 text-right text-xs">
-                      <p className="font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_total)}</p>
-                      <p className="mt-0.5 text-text-muted">
-                        {product.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {product.unidad_medida ?? "u"}
-                        {` · ${product.veces_comprado} compras`}
-                      </p>
-                    </div>
-                  </Link>
+                  </div>
+                  <div className="shrink-0 text-right text-xs">
+                    <p className="font-semibold tabular-nums text-text-primary">{formatMoneyFull(product.valor_total)}</p>
+                    <p className="mt-0.5 text-text-muted">
+                      {product.cantidad_total.toLocaleString("es-CO", { maximumFractionDigits: 2 })} {product.unidad_medida ?? "u"}
+                      {` · ${product.veces_comprado} compras`}
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -679,14 +688,15 @@ function HistoricaTab({ onClickMes }: { onClickMes: (m: string) => void }): JSX.
                 </thead>
                 <tbody>
                   {data.top_productos.map((p, idx) => (
-                    <tr
-                      key={p.cod_producto}
-                      className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                      onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-                    >
+                    <tr key={p.cod_producto} className="border-b border-border/60 hover:bg-surface-alt">
                       <td className="py-2 pr-2 text-xs text-text-muted">{idx + 1}</td>
                       <td className="py-2 px-2">
-                        <div className="text-text-primary font-medium text-sm truncate max-w-xs">{p.nom_producto}</div>
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                          className="block max-w-xs truncate text-sm font-medium text-primary hover:underline"
+                        >
+                          {p.nom_producto}
+                        </Link>
                         <div className="text-[0.65rem] text-text-muted">{p.cod_producto}</div>
                       </td>
                       <td className="py-2 px-2 text-right tabular-nums text-text-muted">

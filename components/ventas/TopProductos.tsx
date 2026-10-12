@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { ProductAbcMap } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { AbcChip } from "@/components/productos/Chips";
@@ -15,7 +15,7 @@ export interface TopProductoItem {
 
 /**
  * Lista de top productos con barra de intensidad, etiqueta ABC (del mapa)
- * y navegación a la ficha del producto al hacer click.
+ * y enlace a la ficha del producto desde el nombre.
  */
 export function TopProductos({
   productos,
@@ -26,7 +26,6 @@ export function TopProductos({
   abcMap?: ProductAbcMap;
   limit?: number;
 }): JSX.Element {
-  const router = useRouter();
   const max = productos[0]?.valor_total ?? 1;
 
   return (
@@ -35,16 +34,19 @@ export function TopProductos({
         const intensity = max ? p.valor_total / max : 0;
         const abc = abcMap?.productos[p.cod_producto]?.abc;
         return (
-          <button
+          <div
             key={p.cod_producto}
-            type="button"
-            onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-            className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-surface-alt"
+            className="flex items-center gap-3 rounded-lg px-1 py-1"
           >
             <span className="w-5 shrink-0 text-right text-xs font-bold text-text-muted">{idx + 1}</span>
             {abc ? <AbcChip abc={abc} /> : <span className="h-5 w-5 shrink-0" />}
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-text-primary">{p.nom_producto}</div>
+              <Link
+                href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                className="block truncate text-sm font-medium text-primary hover:underline"
+              >
+                {p.nom_producto}
+              </Link>
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-alt">
                 <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, intensity * 100)}%` }} />
               </div>
@@ -56,7 +58,7 @@ export function TopProductos({
                 {p.porcentaje_ingreso != null ? ` · ${p.porcentaje_ingreso.toFixed(1)}%` : ""}
               </div>
             </div>
-          </button>
+          </div>
         );
       })}
     </div>

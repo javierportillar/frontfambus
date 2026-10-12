@@ -7,7 +7,7 @@
 // muestra los mismos productos que el usuario vio en la card.
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useProductAnalytics, type ProductAnalyticsParams, type ProductMetric } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -53,7 +53,6 @@ function accionVenta(m: ProductMetric): string {
 }
 
 export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 21 }: Props): JSX.Element {
-  const router = useRouter();
   const [page, setPage] = useState(1);
 
   // Orden por defecto según modo: compra = por revenue (importancia);
@@ -136,21 +135,27 @@ export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 2
               const suggested = sugeridoComprar(item, leadColchonDias);
               const cover = coberturaDias(item);
               return (
-                <li key={item.cod_producto}>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`)}
-                    className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-2">
-                        <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{(page - 1) * PAGE_SIZE + index + 1}.</span>
-                        <AbcChip abc={item.abc} />
-                        <div className="min-w-0">
-                          <p className="break-words text-sm font-semibold leading-snug text-text-primary">{item.nombre}</p>
-                          <p className="mt-0.5 break-all font-mono text-xs text-text-muted">{item.cod_producto}</p>
-                        </div>
-                      </div>
+                    <li key={item.cod_producto}>
+                      <div className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3">
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-start gap-2">
+                            <span className="shrink-0 pt-0.5 text-xs tabular-nums text-text-muted">{(page - 1) * PAGE_SIZE + index + 1}.</span>
+                            <AbcChip abc={item.abc} />
+                            <div className="min-w-0">
+                              <Link
+                                href={`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`}
+                                className="block break-words text-sm font-semibold leading-snug text-primary hover:underline"
+                              >
+                                {item.nombre}
+                              </Link>
+                              <Link
+                                href={`/dashboards/productos/${encodeURIComponent(item.cod_producto)}`}
+                                className="mt-0.5 block break-all font-mono text-xs text-text-muted hover:text-primary hover:underline"
+                              >
+                                {item.cod_producto}
+                              </Link>
+                            </div>
+                          </div>
                       <div className="shrink-0 text-right">
                         <p className="text-[0.65rem] text-text-muted">Stock</p>
                         <p className="font-semibold tabular-nums text-text-primary">
@@ -202,9 +207,9 @@ export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 2
                           </div>
                         </>
                       )}
-                    </dl>
-                  </button>
-                </li>
+                        </dl>
+                      </div>
+                    </li>
               );
             })}
           </ul>
@@ -236,11 +241,7 @@ export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 2
                   const sug = sugeridoComprar(m, leadColchonDias);
                   const cob = coberturaDias(m);
                   return (
-                    <tr
-                      key={m.cod_producto}
-                      className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                      onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(m.cod_producto)}`)}
-                    >
+                    <tr key={m.cod_producto} className="border-b border-border/60 hover:bg-surface-alt">
                       <td className="py-2 pl-4 pr-2 md:pl-2 text-xs text-text-muted tabular-nums">
                         {(page - 1) * PAGE_SIZE + idx + 1}
                       </td>
@@ -248,7 +249,12 @@ export function PlanScopeado({ modo, preset, titulo, accent, leadColchonDias = 2
                         <div className="flex items-center gap-2">
                           <AbcChip abc={m.abc} />
                           <div className="min-w-0">
-                            <div className="truncate font-medium text-text-primary max-w-xs">{m.nombre}</div>
+                            <Link
+                              href={`/dashboards/productos/${encodeURIComponent(m.cod_producto)}`}
+                              className="block max-w-xs truncate font-medium text-primary hover:underline"
+                            >
+                              {m.nombre}
+                            </Link>
                             <div className="text-[0.65rem] text-text-muted">{m.cod_producto}</div>
                           </div>
                         </div>

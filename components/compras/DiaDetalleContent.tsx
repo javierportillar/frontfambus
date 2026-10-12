@@ -190,6 +190,9 @@ export function DocumentoCard({
 }: DocumentoCardProps): JSX.Element {
   const reactId = useId();
   const panelId = `purchase-document-${reactId.replace(/:/g, "")}`;
+  const documentHref = `/dashboards/compras/dia/${encodeURIComponent(date)}`
+    + `/documento/${encodeURIComponent(doc.num_documento)}`
+    + `?cod_clase=${encodeURIComponent(doc.cod_clase)}`;
   return (
     <div className="rounded-lg border border-border bg-surface">
       <div className="flex items-center gap-2">
@@ -205,18 +208,24 @@ export function DocumentoCard({
             {open ? "▾" : "▸"}
           </button>
         ) : null}
-        <Link
-          href={`/dashboards/compras/dia/${encodeURIComponent(date)}/documento/${encodeURIComponent(doc.num_documento)}?cod_clase=${encodeURIComponent(doc.cod_clase)}`}
-          onClick={onBeforeProductNavigation}
-          aria-label={`Abrir factura ${doc.num_documento}${doc.cod_clase ? ` clase ${doc.cod_clase}` : ""} de ${doc.nombre_proveedor}`}
-          className="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-3 text-left hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-text-primary">
+            <Link
+              href={documentHref}
+              onClick={onBeforeProductNavigation}
+              aria-label={`Abrir factura ${doc.num_documento}${doc.cod_clase ? ` clase ${doc.cod_clase}` : ""} de ${doc.nombre_proveedor}`}
+              className="block truncate text-sm font-semibold text-primary hover:underline"
+            >
               {doc.nombre_proveedor}
-            </div>
+            </Link>
             <div className="text-[0.65rem] text-text-muted">
-              Factura {doc.num_documento}
+              <Link
+                href={documentHref}
+                onClick={onBeforeProductNavigation}
+                className="hover:text-primary hover:underline"
+              >
+                Factura {doc.num_documento}
+              </Link>
               {doc.cod_clase ? ` · ${doc.cod_clase}` : ""}
               {doc.nit_proveedor && ` · NIT ${doc.nit_proveedor}`}
             </div>
@@ -229,7 +238,7 @@ export function DocumentoCard({
               {doc.num_items} producto{doc.num_items === 1 ? "" : "s"}
             </div>
           </div>
-        </Link>
+        </div>
       </div>
       {doc.items.length > 0 && (
         <div id={panelId} hidden={!open} className="border-t border-border">

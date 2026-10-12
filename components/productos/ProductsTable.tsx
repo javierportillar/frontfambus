@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useProductAnalytics, type ProductMetric } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { diasStockLabel } from "@/lib/productos/display";
@@ -51,7 +51,6 @@ interface ProductsTableProps {
 }
 
 export function ProductsTable({ window, initialEstado = "", initialAbc = "", rotacion = "" }: ProductsTableProps): JSX.Element {
-  const router = useRouter();
   const [q, setQ] = useState("");
   const [estado, setEstado] = useState(initialEstado);
   const [abc, setAbc] = useState(initialAbc);
@@ -242,19 +241,23 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
           <ul aria-label="Resultados del catálogo" className="space-y-2 lg:hidden">
             {data.items.map((product) => (
               <li key={product.cod_producto}>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(product.cod_producto)}?window=${window}`)}
-                  className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                >
+                <div className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface p-3">
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="flex min-w-0 items-start gap-2">
                       <AbcChip abc={product.abc} />
                       <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold leading-snug text-text-primary">{product.nombre}</p>
-                        <p className="mt-0.5 break-all font-mono text-xs text-text-muted">
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}?window=${window}`}
+                          className="block break-words text-sm font-semibold leading-snug text-primary hover:underline"
+                        >
+                          {product.nombre}
+                        </Link>
+                        <Link
+                          href={`/dashboards/productos/${encodeURIComponent(product.cod_producto)}?window=${window}`}
+                          className="mt-0.5 block break-all font-mono text-xs text-text-muted hover:text-primary hover:underline"
+                        >
                           {product.cod_producto}{product.rank_rev ? ` · #${product.rank_rev} en ventas` : ""}
-                        </p>
+                        </Link>
                       </div>
                     </div>
                     <span className="shrink-0"><EstadoChip estado={product.estado} /></span>
@@ -288,7 +291,7 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
                       <dd className="mt-1"><AccionChip accion={product.accion} /></dd>
                     </div>
                   </dl>
-                </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -312,11 +315,15 @@ export function ProductsTable({ window, initialEstado = "", initialAbc = "", rot
                 {data.items.map((p: ProductMetric) => (
                   <tr
                     key={p.cod_producto}
-                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}?window=${window}`)}
-                    className="cursor-pointer border-b border-border/60 transition-colors hover:bg-surface-alt"
+                    className="border-b border-border/60 transition-colors hover:bg-surface-alt"
                   >
                     <td className="py-2 pr-2">
-                      <div className="font-medium text-text-primary leading-tight max-w-[260px] truncate">{p.nombre}</div>
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}?window=${window}`}
+                        className="block font-medium leading-tight max-w-[260px] truncate text-primary hover:underline"
+                      >
+                        {p.nombre}
+                      </Link>
                       <div className="text-[0.65rem] text-text-muted">{p.cod_producto}{p.rank_rev ? ` · #${p.rank_rev} en ventas` : ""}</div>
                     </td>
                     <td className="px-2 text-center"><AbcChip abc={p.abc} /></td>

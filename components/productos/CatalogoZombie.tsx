@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useProductosZombie } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -16,7 +16,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
  * cuánta plata está atrapada.
  */
 export function CatalogoZombie(): JSX.Element {
-  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const pageSize = expanded ? 500 : 10;
   const { data, isLoading } = useProductosZombie(1, pageSize);
@@ -73,13 +72,23 @@ export function CatalogoZombie(): JSX.Element {
           </thead>
           <tbody>
             {data.items.map((p) => (
-              <tr
-                key={p.cod_producto}
-                className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-              >
-                <td className="py-2 px-3 text-xs text-text-muted tabular-nums">{p.cod_producto}</td>
-                <td className="py-2 px-3 text-text-primary">{p.nom_producto || "—"}</td>
+              <tr key={p.cod_producto} className="border-b border-border/60 hover:bg-surface-alt">
+                <td className="py-2 px-3 text-xs tabular-nums">
+                  <Link
+                    href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                    className="text-text-muted hover:text-primary hover:underline"
+                  >
+                    {p.cod_producto}
+                  </Link>
+                </td>
+                <td className="py-2 px-3">
+                  <Link
+                    href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                    className="text-primary hover:underline"
+                  >
+                    {p.nom_producto || "—"}
+                  </Link>
+                </td>
                 <td className="py-2 px-3 text-right tabular-nums">
                   {p.stock_actual.toLocaleString("es-CO", { maximumFractionDigits: 2 })}{" "}
                   <span className="text-xs text-text-muted">{p.unidad_medida}</span>
@@ -102,14 +111,22 @@ export function CatalogoZombie(): JSX.Element {
       {/* Mobile cards */}
       <div className="md:hidden space-y-2">
         {data.items.map((p) => (
-          <button
+          <div
             key={p.cod_producto}
-            type="button"
-            onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-            className="block w-full rounded-lg border border-border bg-surface px-3 py-2 text-left hover:bg-surface-alt"
+            className="rounded-lg border border-border bg-surface px-3 py-2"
           >
-            <div className="text-sm font-medium text-text-primary truncate">{p.nom_producto || "—"}</div>
-            <div className="text-[0.65rem] text-text-muted tabular-nums">{p.cod_producto}</div>
+            <Link
+              href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+              className="block truncate text-sm font-medium text-primary hover:underline"
+            >
+              {p.nom_producto || "—"}
+            </Link>
+            <Link
+              href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+              className="block text-[0.65rem] tabular-nums text-text-muted hover:text-primary hover:underline"
+            >
+              {p.cod_producto}
+            </Link>
             <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
               <span className="text-text-secondary">
                 Stock: <strong>{p.stock_actual} {p.unidad_medida}</strong>
@@ -121,7 +138,7 @@ export function CatalogoZombie(): JSX.Element {
                 <span className="text-text-muted">{p.dias_en_catalogo}d en catálogo</span>
               )}
             </div>
-          </button>
+          </div>
         ))}
       </div>
 

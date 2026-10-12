@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAnalisisProductos, type AnalisisProductoItem } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
@@ -18,7 +18,6 @@ interface Props {
 export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
   const { data, isLoading } = useAnalisisProductos(ini, fin, 50);
   const [ranking, setRanking] = useState<Ranking>("revenue");
-  const router = useRouter();
 
   const items: AnalisisProductoItem[] = useMemo(() => {
     if (!data) return [];
@@ -143,14 +142,15 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
                   : ratio >= 0.5 ? "text-amber-600"
                   : "text-red-600";
                 return (
-                  <tr
-                    key={p.cod_producto}
-                    className="border-b border-border/60 hover:bg-surface-alt cursor-pointer"
-                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-                  >
+                  <tr key={p.cod_producto} className="border-b border-border/60 hover:bg-surface-alt">
                     <td className="py-2 px-3 text-xs text-text-muted tabular-nums">{idx + 1}</td>
                     <td className="py-2 px-3">
-                      <div className="text-text-primary font-medium truncate max-w-md">{p.nom_producto}</div>
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                        className="block max-w-md truncate font-medium text-primary hover:underline"
+                      >
+                        {p.nom_producto}
+                      </Link>
                       <div className="text-[0.65rem] text-text-muted">
                         {p.cod_producto} ·{" "}
                         {p.unidades.toLocaleString("es-CO", { maximumFractionDigits: 0 })} {p.unidad_medida ?? "u"} vendidas
@@ -200,11 +200,15 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
                 {data.top_ganadores.map((p) => (
                   <li
                     key={p.cod_producto}
-                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-1.5 cursor-pointer hover:bg-surface-alt"
+                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-1.5 hover:bg-surface-alt"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm text-text-primary truncate">{p.nom_producto}</div>
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                        className="block truncate text-sm text-primary hover:underline"
+                      >
+                        {p.nom_producto}
+                      </Link>
                       <div className="text-[0.65rem] text-text-muted">
                         {formatMoneyFull(p.revenue_prev ?? 0)} → {formatMoneyFull(p.revenue)}
                       </div>
@@ -229,11 +233,15 @@ export function ProductosTopTab({ ini, fin }: Props): JSX.Element {
                 {data.top_perdedores.map((p) => (
                   <li
                     key={p.cod_producto}
-                    onClick={() => router.push(`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`)}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-1.5 cursor-pointer hover:bg-surface-alt"
+                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-1.5 hover:bg-surface-alt"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm text-text-primary truncate">{p.nom_producto}</div>
+                      <Link
+                        href={`/dashboards/productos/${encodeURIComponent(p.cod_producto)}`}
+                        className="block truncate text-sm text-primary hover:underline"
+                      >
+                        {p.nom_producto}
+                      </Link>
                       <div className="text-[0.65rem] text-text-muted">
                         {formatMoneyFull(p.revenue_prev ?? 0)} → {formatMoneyFull(p.revenue)}
                       </div>
