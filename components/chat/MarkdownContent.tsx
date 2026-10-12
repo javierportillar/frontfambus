@@ -28,42 +28,99 @@ function visibleEntityRefs(refs: EntityRef[], context?: AccessContext): EntityRe
   ));
 }
 
+function normalizeWhitespace(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function cleanProductAlias(value: string): string {
+  return value
+    .replace(/_?POL\s*\([+-]\s*[+-]\)_?/gi, " ")
+    .replace(/_/g, " ")
+    .replace(/\bMF-\s+/gi, "MF-")
+    .replace(/(\d+X)\s+(\d+[A-Za-z]+)/gi, "$1$2")
+    .replace(/(\d+\/\d+)\s+"/g, '$1"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function productNameVariants(label: string): string[] {
+  const clean = normalizeWhitespace(label);
+  if (!clean) return [];
+  const variants: string[] = [clean];
+  const add = (candidate: string) => {
+    const normalized = normalizeWhitespace(candidate);
+    if (
+      normalized
+      && normalized.length >= 6
+      && !variants.some((v) => v.toLocaleLowerCase("es-CO") === normalized.toLocaleLowerCase("es-CO"))
+    ) {
+      variants.push(normalized);
+    }
+  };
+
+  if (clean.includes(" / ")) {
+    const beforeSlash = normalizeWhitespace(clean.split(" / ")[0] ?? "");
+    if (beforeSlash.split(/\s+/).length >= 2) {
+      add(beforeSlash);
+      add(cleanProductAlias(beforeSlash));
+    }
+  }
+  if (clean.includes(";")) {
+    add(clean.replace(/\s*;\s*/g, " "));
+    const parts = clean.split(";").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      add(`${parts[0]} ${parts[1]}`);
+    }
+  }
+  add(cleanProductAlias(clean));
+  return variants;
+}
+
 function assistantMentions(refs: EntityRef[]): EntityMention[] {
   const products = refs.filter((ref) => (
     ref.entity_type === "product"
     && ref.domain === "inventory"
   ));
   const suppliers = refs.filter((ref) => ref.entity_type === "supplier" && ref.domain === "purchases");
-  const productLabelCounts = new Map<string, number>();
+  const productVariantCounts = new Map<string, number>();
   const supplierLabelCounts = new Map<string, number>();
   for (const ref of products) {
-    const key = ref.label.toLocaleLowerCase("es-CO");
-    productLabelCounts.set(key, (productLabelCounts.get(key) ?? 0) + 1);
+    const seenForRef = new Set<string>();
+    for (const variant of productNameVariants(ref.label)) {
+      const key = normalizeDiacritics(variant).toLocaleLowerCase("es-CO");
+      if (!seenForRef.has(key)) {
+        seenForRef.add(key);
+        productVariantCounts.set(key, (productVariantCounts.get(key) ?? 0) + 1);
+      }
+    }
   }
   for (const ref of suppliers) {
-    const key = ref.label.toLocaleLowerCase("es-CO");
+    const key = normalizeWhitespace(ref.label).toLocaleLowerCase("es-CO");
     supplierLabelCounts.set(key, (supplierLabelCounts.get(key) ?? 0) + 1);
   }
 
   const mentions: EntityMention[] = [];
   for (const ref of products) {
     mentions.push({ term: ref.entity_id, ref, kind: "product-sku" });
-    const normalizedLabel = ref.label.toLocaleLowerCase("es-CO");
-    if (ref.label_is_unique !== false
-      && normalizedLabel
-      && normalizedLabel !== ref.entity_id.toLocaleLowerCase("es-CO")
-      && productLabelCounts.get(normalizedLabel) === 1) {
-      mentions.push({ term: ref.label, ref, kind: "product-name" });
+    const skuKey = normalizeDiacritics(ref.entity_id).toLocaleLowerCase("es-CO");
+    for (const variant of productNameVariants(ref.label)) {
+      const variantKey = normalizeDiacritics(variant).toLocaleLowerCase("es-CO");
+      if (variantKey
+        && variantKey !== skuKey
+        && productVariantCounts.get(variantKey) === 1) {
+        mentions.push({ term: variant, ref, kind: "product-name" });
+      }
     }
   }
   for (const ref of suppliers) {
     mentions.push({ term: ref.entity_id, ref, kind: "supplier-nit" });
-    const normalizedLabel = ref.label.toLocaleLowerCase("es-CO");
+    const cleanSupplierLabel = normalizeWhitespace(ref.label);
+    const normalizedLabel = cleanSupplierLabel.toLocaleLowerCase("es-CO");
     if (ref.label_is_unique === true
       && normalizedLabel
       && normalizedLabel !== ref.entity_id.toLocaleLowerCase("es-CO")
       && supplierLabelCounts.get(normalizedLabel) === 1) {
-      mentions.push({ term: ref.label, ref, kind: "supplier-name" });
+      mentions.push({ term: cleanSupplierLabel, ref, kind: "supplier-name" });
     }
   }
   for (const ref of refs.filter((item) => item.entity_type === "purchase_document" && item.domain === "purchases")) {
@@ -81,9 +138,21 @@ function isIdentifierContinuation(value: string | undefined): boolean {
   return value !== undefined && /[\p{L}\p{N}_./-]/u.test(value);
 }
 
+function normalizeForIndexSearch(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i]!;
+    const stripped = ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    out += stripped.length === 1 ? stripped : ch.toLowerCase().slice(0, 1);
+  }
+  return out;
+}
+
 function countWholeTerm(value: string, term: string): number {
-  const haystack = value.toLocaleLowerCase("es-CO");
-  const needle = term.toLocaleLowerCase("es-CO");
+  const collapsedValue = value.replace(/\s+/g, " ");
+  const collapsedTerm = term.trim().replace(/\s+/g, " ");
+  const haystack = normalizeForIndexSearch(collapsedValue);
+  const needle = normalizeForIndexSearch(collapsedTerm);
   if (!needle) return 0;
   let searchFrom = 0;
   let count = 0;
@@ -91,7 +160,7 @@ function countWholeTerm(value: string, term: string): number {
     const start = haystack.indexOf(needle, searchFrom);
     if (start < 0) return count;
     const end = start + needle.length;
-    if (!isWordCharacter(value[start - 1]) && !isWordCharacter(value[end])) count += 1;
+    if (!isWordCharacter(collapsedValue[start - 1]) && !isWordCharacter(collapsedValue[end])) count += 1;
     searchFrom = end;
   }
   return count;
@@ -225,10 +294,7 @@ function hasExplicitSkuLabel(context: string, sku: string): boolean {
     `\\b(?:sku|c[oó]digo|cod|ean)\\b(?:\\s*(?:n(?:ro|[úu]mero)?\\.?))?\\s*[:#-]?\\s*${escapeRegExp(sku)}(?![\\p{L}\\p{N}_./-])`,
     "iu",
   );
-  if (pattern.test(context)) return true;
-  const contextHasSkuHeader = /\b(?:sku|c[oó]digo|cod|ean)\b/i.test(context);
-  const skuAsTerm = countWholeTerm(context, sku) === 1;
-  return contextHasSkuHeader && skuAsTerm;
+  return pattern.test(context);
 }
 
 function normalizeDiacritics(value: string): string {
@@ -236,10 +302,11 @@ function normalizeDiacritics(value: string): string {
 }
 
 function containsProductLabelMatch(context: string, label: string): boolean {
-  if (containsWholeTerm(context, label)) return true;
+  for (const variant of productNameVariants(label)) {
+    if (containsWholeTerm(context, variant)) return true;
+  }
   const normalizedContext = normalizeDiacritics(context);
   const normalizedLabel = normalizeDiacritics(label);
-  if (containsWholeTerm(normalizedContext, normalizedLabel)) return true;
   const words = normalizedLabel
     .split(/[\s,./_-]+/)
     .map((w) => w.trim().toLocaleLowerCase("es-CO"))
@@ -252,7 +319,12 @@ function containsProductLabelMatch(context: string, label: string): boolean {
 }
 
 function isAmountOrQuantityContext(context: string): boolean {
-  return /\b(?:total|precio|valor|margen|costo|unidades?|cantidad|ref|saldo)\b/i.test(context);
+  return (
+    /^\s*#\s*:/i.test(context)
+    || /\b(?:total|precio|valor|margen|costo|unidades?|unid\.?|unds?|uds|cantidad|ref|saldo|facturas?|transacciones|ventas?|veces|stock|existencias?|cobertura|d[ií]as|sugerido|posici[oó]n|ranking|ratio|participaci[oó]n)\b/i.test(
+      context,
+    )
+  );
 }
 
 function linkEntityMentions(
@@ -264,28 +336,33 @@ function linkEntityMentions(
   rowContext: string = context,
 ): ReactNode[] {
   if (!mentions.length || !value) return [value];
-  const lowerValue = value.toLocaleLowerCase("es-CO");
+  const normalizedValue = normalizeForIndexSearch(value);
   const safeContext = visibleMarkdownText(context);
   const safeRowContext = visibleMarkdownText(rowContext);
   const matches: Array<{ start: number; end: number; mention: EntityMention }> = [];
 
   for (const mention of mentions) {
-    const term = mention.term.toLocaleLowerCase("es-CO");
+    const term = normalizeForIndexSearch(mention.term);
     if (!term) continue;
     let searchFrom = 0;
-    while (searchFrom < lowerValue.length) {
-      const start = lowerValue.indexOf(term, searchFrom);
+    while (searchFrom < normalizedValue.length) {
+      const start = normalizedValue.indexOf(term, searchFrom);
       if (start < 0) break;
       const end = start + term.length;
       const needsNameContext = mention.kind === "product-sku" && /^\d+$/.test(mention.ref.entity_id);
-      const numericContextIsUnique = countWholeTerm(safeContext, mention.term) === 1;
+      const explicitSkuInContext = hasExplicitSkuLabel(safeContext, mention.ref.entity_id);
+      const numericContextIsUnique = countWholeTerm(safeContext, mention.term) === 1
+        && (explicitSkuInContext || countWholeTerm(safeRowContext, mention.term) === 1);
       const notInAmountColumn = !isAmountOrQuantityContext(safeContext);
+      const labelInRow = containsProductLabelMatch(safeRowContext, mention.ref.label);
       const productSkuHasContext = mention.kind !== "product-sku"
-        || (!needsNameContext && notInAmountColumn)
-        || (needsNameContext
-          && notInAmountColumn
-          && numericContextIsUnique
-          && containsWholeTerm(safeContext, mention.ref.label));
+        || !needsNameContext
+        || (numericContextIsUnique
+          && labelInRow
+          && (notInAmountColumn || explicitSkuInContext));
+      const productNameAllowed = mention.kind !== "product-name"
+        || mention.ref.label_is_unique !== false
+        || containsWholeTerm(safeRowContext, mention.ref.entity_id);
       const supplierNitHasContext = mention.kind !== "supplier-nit"
         || (numericContextIsUnique && hasExplicitNitLabel(safeContext, mention.ref.entity_id));
       const documentHasContext = mention.kind !== "purchase-document"
@@ -299,7 +376,8 @@ function linkEntityMentions(
         && !isWordCharacter(value[end])
         && (mention.kind !== "supplier-nit" && mention.kind !== "purchase-document"
           || (!isIdentifierContinuation(value[start - 1]) && !isIdentifierContinuation(value[end])))
-        && productSkuHasContext) {
+        && productSkuHasContext
+        && productNameAllowed) {
         if (supplierNitHasContext && documentHasContext) matches.push({ start, end, mention });
       }
       searchFrom = end;
@@ -370,8 +448,12 @@ function canLinkMarkdownEntity(
     return canonicalName || verifiedNit;
   }
   if (ref.entity_type === "product") {
+    const isSameProductName = productNameVariants(ref.label).some(
+      (variant) => normalizeForIndexSearch(visibleLabel) === normalizeForIndexSearch(variant),
+    );
     const ambiguousProductName = ref.label_is_unique === false
-      && visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
+      && isSameProductName
+      && !containsWholeTerm(visibleRowContext, ref.entity_id);
     const isNumericSku = /^\d+$/.test(ref.entity_id);
     const mentionsNumericSkuAsLabel = isNumericSku && containsWholeTerm(visibleLabel, ref.entity_id);
     const numericSkuNeedsName = mentionsNumericSkuAsLabel

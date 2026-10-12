@@ -296,7 +296,7 @@ describe("MarkdownContent", () => {
       label: "Distribuidora Norte",
       label_is_unique: true,
       domain: "purchases",
-      href: "/dashboards/compras/proveedores/900123456",
+      href: "/dashboards/proveedores/900123456",
     };
     render(
       <MarkdownContent
@@ -321,7 +321,7 @@ describe("MarkdownContent", () => {
       label: "Distribuidora Norte",
       label_is_unique: false,
       domain: "purchases",
-      href: "/dashboards/compras/proveedores/900123456",
+      href: "/dashboards/proveedores/900123456",
     };
     render(
       <MarkdownContent
@@ -338,7 +338,7 @@ describe("MarkdownContent", () => {
   });
 
   it("does not turn an arbitrary internal Markdown destination into a link", () => {
-    render(<MarkdownContent content="[Abrir ficha](/dashboards/compras/proveedores/900123456)" />);
+    render(<MarkdownContent content="[Abrir ficha](/dashboards/proveedores/900123456)" />);
 
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("Abrir ficha")).toBeInTheDocument();
@@ -351,7 +351,7 @@ describe("MarkdownContent", () => {
       label: "Distribuidora Norte",
       label_is_unique: true,
       domain: "purchases",
-      href: "/dashboards/compras/proveedores/900123456",
+      href: "/dashboards/proveedores/900123456",
     };
     render(
       <MarkdownContent
@@ -381,7 +381,7 @@ describe("MarkdownContent", () => {
       label: "MARIA CAMILA MUÑOZ PANTOJA",
       label_is_unique: true,
       domain: "purchases",
-      href: "/dashboards/compras/proveedores/1010119448",
+      href: "/dashboards/proveedores/1010119448",
     };
     const natifRef: EntityRef = {
       entity_type: "supplier",
@@ -389,7 +389,7 @@ describe("MarkdownContent", () => {
       label: "NATIF",
       label_is_unique: true,
       domain: "purchases",
-      href: "/dashboards/compras/proveedores/901406306",
+      href: "/dashboards/proveedores/901406306",
     };
     const chocotabsRef: EntityRef = {
       entity_type: "product",
@@ -464,5 +464,98 @@ describe("MarkdownContent", () => {
     expect(screen.queryByRole("link", { name: /\$324/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /\$554/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /\$125/ })).not.toBeInTheDocument();
+  });
+
+  it("links numeric SKUs, accented/aliased product names, and row-disambiguated shared names in tables without linking quantities", () => {
+    const refs: EntityRef[] = [
+      {
+        entity_type: "product",
+        entity_id: "MOTS1430",
+        label: "SERVICIO-TECNICO MANTENIMIENTO DE MOTOS",
+        label_is_unique: true,
+        domain: "inventory",
+        href: "/dashboards/productos/MOTS1430",
+      },
+      {
+        entity_type: "product",
+        entity_id: "2024",
+        label: "ARANDELA 6 MM (ANCHA)",
+        label_is_unique: true,
+        domain: "inventory",
+        href: "/dashboards/productos/2024",
+      },
+      {
+        entity_type: "product",
+        entity_id: "601325",
+        label: "AC MAGNA 4T 20W50 MA2/SL CJ 12/L / 700102/12",
+        label_is_unique: true,
+        domain: "inventory",
+        href: "/dashboards/productos/601325",
+      },
+      {
+        entity_type: "product",
+        entity_id: "171501",
+        label: "BATERIA MOTO AGM_12V_6.5AH_MAGNA_POL (+ -)_MF- YT",
+        label_is_unique: true,
+        domain: "inventory",
+        href: "/dashboards/productos/171501",
+      },
+      {
+        entity_type: "product",
+        entity_id: "13007",
+        label: "VELOCIMETRO COMPLETO MOTOTEC",
+        label_is_unique: false,
+        domain: "inventory",
+        href: "/dashboards/productos/13007",
+      },
+    ];
+
+    render(
+      <MarkdownContent
+        content={[
+          "| SKU | Producto | Unidades |",
+          "| --- | --- | --- |",
+          "| MOTS1430 | SERVICIO-TÉCNICO MANTENIMIENTO DE MOTOS | 808 |",
+          "| 2024 | ARANDELA 6 MM (ANCHA) | 21 |",
+          "| 601325 | AC MAGNA 4T 20W50 MA2/SL CJ 12/L | 21 |",
+          "| 171501 | BATERIA MOTO AGM 12V 6.5AH MAGNA MF-YT | 13 |",
+          "| 13007 | VELOCIMETRO COMPLETO MOTOTEC | 4 |",
+          "",
+          "Nota: VELOCIMETRO COMPLETO MOTOTEC sin SKU en esta línea no se enlaza.",
+        ].join("\n")}
+        entityRefs={refs}
+        accessContext={{ role: "admin", enabledFeatures: ["inventario"], allowedModules: null }}
+      />,
+    );
+
+    const rows = screen.getAllByRole("row");
+    // Row 1: MOTS1430 + accented SERVICIO-TÉCNICO
+    expect(within(rows[1]!).getAllByRole("link")).toHaveLength(2);
+    expect(within(rows[1]!).getAllByRole("link")[0]).toHaveAttribute("href", "/dashboards/productos/MOTS1430");
+    expect(within(rows[1]!).getAllByRole("link")[1]).toHaveAttribute("href", "/dashboards/productos/MOTS1430");
+
+    // Row 2: numeric SKU 2024 + ARANDELA 6 MM (ANCHA), quantity 21 unlinked
+    expect(within(rows[2]!).getAllByRole("link")).toHaveLength(2);
+    expect(within(rows[2]!).getAllByRole("link")[0]).toHaveAttribute("href", "/dashboards/productos/2024");
+    expect(within(rows[2]!).getAllByRole("link")[1]).toHaveAttribute("href", "/dashboards/productos/2024");
+    expect(within(rows[2]!).getByRole("cell", { name: "21" }).querySelector("a")).toBeNull();
+
+    // Row 3: numeric SKU 601325 + stripped-suffix alias AC MAGNA 4T 20W50 MA2/SL CJ 12/L
+    expect(within(rows[3]!).getAllByRole("link")).toHaveLength(2);
+    expect(within(rows[3]!).getAllByRole("link")[0]).toHaveAttribute("href", "/dashboards/productos/601325");
+    expect(within(rows[3]!).getAllByRole("link")[1]).toHaveAttribute("href", "/dashboards/productos/601325");
+
+    // Row 4: numeric SKU 171501 + cleaned battery alias
+    expect(within(rows[4]!).getAllByRole("link")).toHaveLength(2);
+    expect(within(rows[4]!).getAllByRole("link")[0]).toHaveAttribute("href", "/dashboards/productos/171501");
+    expect(within(rows[4]!).getAllByRole("link")[1]).toHaveAttribute("href", "/dashboards/productos/171501");
+
+    // Row 5: numeric SKU 13007 + shared name VELOCIMETRO COMPLETO MOTOTEC disambiguated by row SKU
+    expect(within(rows[5]!).getAllByRole("link")).toHaveLength(2);
+    expect(within(rows[5]!).getAllByRole("link")[0]).toHaveAttribute("href", "/dashboards/productos/13007");
+    expect(within(rows[5]!).getAllByRole("link")[1]).toHaveAttribute("href", "/dashboards/productos/13007");
+
+    // Prose line without SKU 13007 does NOT link the non-unique name
+    expect(screen.getByText(/sin SKU en esta línea/).closest("a")).toBeNull();
   });
 });
