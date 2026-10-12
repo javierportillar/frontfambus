@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Navigation, gerenteNavItems, type NavItem } from "@/components/ui/Navigation";
 import { useAuthStore } from "@/lib/auth/store";
+import { useUIStore } from "@/lib/ui/store";
 import { OfflineQueueBadge } from "@/components/OfflineQueueBadge";
 import { QueueScheduler } from "@/components/QueueScheduler";
 import { TenantTheme } from "@/components/TenantTheme";
@@ -44,6 +45,9 @@ export default function AuthenticatedLayout({
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const user = useAuthStore((s) => s.user);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
+  const sidebarHovered = useUIStore((s) => s.sidebarHovered);
+  const sidebarExpanded = !sidebarCollapsed || sidebarHovered;
   const permissionsReady = useAuthStore((s) => s.permissionsReady);
   const hydrateSession = useAuthStore((s) => s.hydrateSession);
   const [permissionsError, setPermissionsError] = useState(false);
@@ -180,16 +184,30 @@ export default function AuthenticatedLayout({
         onLogout={handleLogout}
         hideBottomNav={fullPageAssistant}
       />
-      <main
-        className={fullPageAssistant
-          ? "fixed inset-x-0 top-0 z-30 h-[100dvh] overflow-hidden bg-background p-0 lg:left-16"
-          : "mx-auto w-full max-w-[1800px] px-4 pb-20 pt-4 transition-all duration-200 lg:pb-8 lg:ml-16"}
-        style={fullPageAssistant && viewport.height > 0
-          ? { top: `${viewport.offsetTop}px`, height: `${viewport.height}px` }
-          : undefined}
-      >
-        {content}
-      </main>
+      {fullPageAssistant ? (
+        <main
+          className={`fixed inset-y-0 right-0 left-0 z-30 h-[100dvh] overflow-hidden bg-background p-0 transition-all duration-200 ${
+            sidebarExpanded ? "lg:left-60" : "lg:left-16"
+          }`}
+          style={
+            viewport.height > 0
+              ? { top: `${viewport.offsetTop}px`, height: `${viewport.height}px` }
+              : undefined
+          }
+        >
+          {content}
+        </main>
+      ) : (
+        <main
+          className={`w-full min-w-0 overflow-x-clip transition-all duration-200 ${
+            sidebarExpanded ? "lg:pl-60" : "lg:pl-16"
+          }`}
+        >
+          <div className="mx-auto w-full min-w-0 max-w-[1800px] px-4 pb-20 pt-4 lg:px-6 lg:pb-8">
+            {content}
+          </div>
+        </main>
+      )}
       <OfflineQueueBadge />
       <QueueScheduler />
       <AssistantLauncher

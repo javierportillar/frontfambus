@@ -28,7 +28,7 @@ function MovimientosInner(): JSX.Element {
   }, [modo]);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <Link href="/" className="text-sm text-accent hover:underline">← Volver a inicio</Link>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">

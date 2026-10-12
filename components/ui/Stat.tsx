@@ -69,7 +69,7 @@ export function Stat({
       </div>
 
       {/* Valor principal */}
-      <p className="break-words text-xl font-bold leading-tight text-text-primary sm:text-2xl">{value}</p>
+      <p className="break-words text-lg font-bold leading-tight text-text-primary sm:text-xl xl:text-2xl tabular-nums">{value}</p>
 
       {/* Fila inferior: delta + label o subtitle */}
       {(dir || subtitle) && (

@@ -300,8 +300,8 @@ function DayContent({
           {detail.formas_pago.length === 0 ? (
             <p className="py-4 text-center text-sm text-text-muted">Sin datos.</p>
           ) : (
-            <div className="flex items-center gap-4">
-              <div style={{ width: 130, height: 130 }}>
+            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="shrink-0" style={{ width: 130, height: 130 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={detail.formas_pago} dataKey="total_ventas" nameKey="nombre" cx="50%" cy="50%" outerRadius={55} innerRadius={28} paddingAngle={2}>
@@ -312,12 +312,12 @@ function DayContent({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <ul className="flex-1 space-y-1.5 text-xs">
+              <ul className="min-w-0 w-full flex-1 space-y-1.5 text-xs">
                 {detail.formas_pago.map((f: FormaPagoItem, idx: number) => (
-                  <li key={f.cod_formapago} className="flex items-center gap-2">
+                  <li key={f.cod_formapago} className="flex min-w-0 items-center gap-2">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: PAY_COLORS[idx % PAY_COLORS.length] }} />
-                    <span className="flex-1 truncate text-text-secondary">{f.nombre}</span>
-                    <span className="font-semibold text-text-primary">{f.porcentaje.toFixed(0)}%</span>
+                    <span className="min-w-0 flex-1 truncate text-text-secondary">{f.nombre}</span>
+                    <span className="shrink-0 font-semibold text-text-primary">{f.porcentaje.toFixed(0)}%</span>
                   </li>
                 ))}
               </ul>

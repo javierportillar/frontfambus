@@ -43,7 +43,7 @@ export function Card({
 }: CardProps): JSX.Element {
   return (
     <div
-      className={`overflow-hidden rounded-xl ${variantStyles[variant]} ${hover ? hoverStyles[variant] : ""} ${className}`}
+      className={`min-w-0 overflow-hidden rounded-xl ${variantStyles[variant]} ${hover ? hoverStyles[variant] : ""} ${className}`}
     >
       {header && (
         <div className="border-b border-border px-4 py-3 font-medium text-text-primary">

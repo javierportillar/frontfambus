@@ -51,8 +51,8 @@ export function BuscarComprasTab(): JSX.Element {
     <div className="space-y-4">
       <Card>
         <form onSubmit={submit} className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-end">
-            <label className="text-xs font-medium text-text-muted">
+          <div className="grid gap-3 lg:grid-cols-[minmax(14rem,1fr)_auto_auto] lg:items-end">
+            <label className="min-w-0 text-xs font-medium text-text-muted">
               Proveedor, producto, SKU o número de factura
               <input
                 type="search"
@@ -61,10 +61,10 @@ export function BuscarComprasTab(): JSX.Element {
                 onChange={(event) => setQueryInput(event.target.value)}
                 maxLength={100}
                 placeholder="Ej.: MIELI, yogur o 194"
-                className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+                className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
               />
             </label>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="min-w-0 text-xs font-medium text-text-muted">
               Desde
               <input
                 type="date"
@@ -72,10 +72,10 @@ export function BuscarComprasTab(): JSX.Element {
                 value={fechaInicio}
                 max={fechaFin}
                 onChange={(event) => { setFechaInicio(event.target.value); setPage(1); }}
-                className="mt-1 block rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+                className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
               />
             </label>
-            <label className="text-xs font-medium text-text-muted">
+            <label className="min-w-0 text-xs font-medium text-text-muted">
               Hasta
               <input
                 type="date"
@@ -84,7 +84,7 @@ export function BuscarComprasTab(): JSX.Element {
                 min={fechaInicio}
                 max={today}
                 onChange={(event) => { setFechaFin(event.target.value); setPage(1); }}
-                className="mt-1 block rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
+                className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary"
               />
             </label>
           </div>
@@ -146,7 +146,7 @@ export function BuscarComprasTab(): JSX.Element {
                   aria-label={`Abrir factura ${document.num_documento} clase ${document.cod_clase} de ${document.nombre_proveedor}`}
                   className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-3 hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-text-primary">Factura {document.num_documento}</span>
                       <span className="rounded-full bg-surface-alt px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-text-muted">

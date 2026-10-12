@@ -273,7 +273,7 @@ export function VentasView(): JSX.Element {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <p className="text-xs text-text-muted">Datos hasta {d.max_sales_date}</p>
         <label className="text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
@@ -316,7 +316,7 @@ export function VentasView(): JSX.Element {
 
       {tab === "mensual" && (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
             <Card><Stat label="Ventas del mes" value={formatMoneyFull(monthlyTotal)} subtitle={`${dm?.total_days_with_sales ?? 0} días con venta · ${monthLabel(selectedMonth)}`} /></Card>
             <Card><Stat label="Facturas" value={monthlyInvoices.toLocaleString("es-CO")} subtitle="mes seleccionado" /></Card>
             <Card><Stat label="Ticket promedio" value={formatMoneyFull(monthlyTicket)} subtitle="por factura" /></Card>
@@ -624,8 +624,8 @@ export function VentasView(): JSX.Element {
                     ) : (
                       <ul className="space-y-1.5">
                         {monthDetail.data.aceleradores.map((p: TopSkuItem) => (
-                          <li key={p.cod_producto} className="flex items-start justify-between gap-2">
-                            <span className="text-sm text-text-primary">{p.nom_producto}</span>
+                          <li key={p.cod_producto} className="flex min-w-0 items-start justify-between gap-2">
+                            <span className="min-w-0 break-words text-sm text-text-primary">{p.nom_producto}</span>
                             <span className="text-sm font-semibold text-green-700 shrink-0">{formatMoneyFull(p.valor_total)}</span>
                           </li>
                         ))}
@@ -639,8 +639,8 @@ export function VentasView(): JSX.Element {
                     ) : (
                       <ul className="space-y-1.5">
                         {monthDetail.data.frenadores.map((p: TopSkuItem) => (
-                          <li key={p.cod_producto} className="flex items-start justify-between gap-2">
-                            <span className="text-sm text-text-primary">{p.nom_producto}</span>
+                          <li key={p.cod_producto} className="flex min-w-0 items-start justify-between gap-2">
+                            <span className="min-w-0 break-words text-sm text-text-primary">{p.nom_producto}</span>
                             <span className="text-sm font-semibold text-red-700 shrink-0">{formatMoneyFull(p.valor_total)}</span>
                           </li>
                         ))}

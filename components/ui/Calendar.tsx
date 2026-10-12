@@ -113,7 +113,7 @@ export function Calendar({ mode, month, days, onDayClick, selectedDate }: Calend
               onClick={() => isSelectable && onDayClick(isoDate)}
               disabled={!isSelectable}
               className={[
-                "relative flex flex-col rounded-xl border p-2 text-left transition-[transform,border-color,box-shadow,background-color] motion-reduce:transition-none",
+                "relative flex min-w-0 flex-col overflow-hidden rounded-xl border p-2 text-left transition-[transform,border-color,box-shadow,background-color] motion-reduce:transition-none",
                 "min-h-[64px] p-1 sm:min-h-[90px] sm:p-2",
                 isSelected
                   ? "border-primary-light bg-primary/10 ring-2 ring-primary/30"
@@ -164,13 +164,13 @@ export function Calendar({ mode, month, days, onDayClick, selectedDate }: Calend
                       formatMoneyFull(data.avgTicket),
                     )}
                   >
-                    <span className="sm:hidden">{formatMoney(data.sales)}</span>
-                    <span className="hidden sm:inline">{formatMoneyFull(data.sales)}</span>
+                    <span className="xl:hidden">{formatMoney(data.sales)}</span>
+                    <span className="hidden xl:inline">{formatMoneyFull(data.sales)}</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[9px] leading-tight text-text-muted sm:gap-x-1.5 sm:text-[10px]">
                     <span>{data.invoices} {copy.countShort}</span>
-                    <span className="hidden sm:inline">·</span>
-                    <span className="hidden tabular-nums sm:inline">{formatMoneyFull(data.avgTicket)}</span>
+                    <span className="hidden xl:inline">·</span>
+                    <span className="hidden tabular-nums xl:inline">{formatMoneyFull(data.avgTicket)}</span>
                   </div>
                   {/* Mini-bar de intensidad */}
                   <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-alt">

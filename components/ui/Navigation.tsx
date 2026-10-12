@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { LogoMark } from "@/components/Logo";
 import { useAuthStore } from "@/lib/auth/store";
@@ -187,7 +187,12 @@ function Sidebar({
   const availableTenants = useAuthStore((s) => s.availableTenants);
   const clearTenant = useAuthStore((s) => s.clearTenant);
   const tenantDisplay = currentTenant ? getTenantDisplay(currentTenant) : null;
-  const [hovered, setHovered] = useState(false);
+  const sidebarHovered = useUIStore((s) => s.sidebarHovered);
+  const setSidebarHovered = useUIStore((s) => s.setSidebarHovered);
+
+  useEffect(() => {
+    return () => setSidebarHovered(false);
+  }, [setSidebarHovered]);
 
   function handleCambiarNegocio(): void {
     clearTenant();
@@ -195,14 +200,14 @@ function Sidebar({
   }
 
   // Sidebar se expande si: está descolapsado (toggle explícito) O hay hover
-  const expanded = !collapsed || hovered;
+  const expanded = !collapsed || sidebarHovered;
 
   function handleMouseEnter(): void {
-    if (collapsed) setHovered(true);
+    if (collapsed) setSidebarHovered(true);
   }
 
   function handleMouseLeave(): void {
-    setHovered(false);
+    setSidebarHovered(false);
   }
 
   return (

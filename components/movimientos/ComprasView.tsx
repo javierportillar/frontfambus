@@ -58,7 +58,7 @@ export function ComprasView(): JSX.Element {
   }, [monthFromUrl]);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <p className="text-xs text-text-muted">Vista mensual, por proveedor, histórica y búsqueda de compras</p>
         {tab === "mensual" && (
