@@ -1,14 +1,10 @@
 "use client";
 
-import { usePurchaseAssessments, useSalesForecastMonthly } from "@/lib/api/hooks";
+import { useSalesForecastMonthly } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
-import { canAccessFeature, type AccessContext } from "@/lib/auth/access";
-import { useAuthStore } from "@/lib/auth/store";
-import { shiftDateISO } from "@/lib/date/business";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
-import Link from "next/link";
 import {
   Bar,
   BarChart,
@@ -30,7 +26,6 @@ const RATE_BASIS_COPY: Record<string, string> = {
   previous_month_complete: "promedio diario del último mes cerrado",
   current_month_run_rate: "promedio de los días con venta del mes actual",
 };
-const PURCHASE_ASSESSMENT_START = "2026-09-01";
 
 function monthLabel(month: string): string {
   const [year, rawMonth] = month.split("-");
@@ -39,31 +34,6 @@ function monthLabel(month: string): string {
 
 export function ProyeccionTab(): JSX.Element {
   const { data, error, isLoading, mutate } = useSalesForecastMonthly();
-  const role = useAuthStore((state) => state.role);
-  const enabledFeatures = useAuthStore((state) => state.enabledFeatures);
-  const allowedModules = useAuthStore((state) => state.allowedModules);
-  const currentTenant = useAuthStore((state) => state.currentTenant);
-  const purchaseAccessContext: AccessContext = {
-    role,
-    enabledFeatures,
-    allowedModules,
-    currentTenant,
-  };
-  const canViewPurchaseEvidence = canAccessFeature("ventas-summary", purchaseAccessContext);
-  const purchaseCutoff = data?.source_cutoffs.purchases_date ?? null;
-  const candidatePurchaseRangeStart = purchaseCutoff
-    ? shiftDateISO(purchaseCutoff, -89)
-    : null;
-  const purchaseRangeStart = purchaseCutoff && purchaseCutoff >= PURCHASE_ASSESSMENT_START
-    ? candidatePurchaseRangeStart && candidatePurchaseRangeStart > PURCHASE_ASSESSMENT_START
-      ? candidatePurchaseRangeStart
-      : PURCHASE_ASSESSMENT_START
-    : null;
-  const purchaseEvidence = usePurchaseAssessments(
-    canViewPurchaseEvidence ? purchaseRangeStart : null,
-    canViewPurchaseEvidence ? purchaseCutoff : null,
-    10,
-  );
 
   if (isLoading && !data) return <Card><Skeleton className="h-64 rounded-lg" /></Card>;
   if (error && !data) {
@@ -230,77 +200,6 @@ export function ProyeccionTab(): JSX.Element {
           <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#D7A928]" /> Escenario total con inventario</span>
         </div>
       </Card>
-
-      {canViewPurchaseEvidence && (
-        <Card
-          header={(
-            <div>
-              <h2 className="font-semibold text-text-primary">Compras relacionadas con este horizonte</h2>
-              <p className="text-xs text-text-muted">
-                Evaluaciones de facturas recientes que aportan contexto a la disponibilidad de inventario.
-              </p>
-            </div>
-          )}
-        >
-          {purchaseEvidence.isLoading && !purchaseEvidence.data ? (
-            <div role="status" className="space-y-2">
-              <Skeleton className="h-12 rounded-lg" />
-              <Skeleton className="h-12 rounded-lg" />
-            </div>
-          ) : purchaseEvidence.error ? (
-            <p role="status" className="text-sm text-text-muted">
-              Las evaluaciones de compras no están disponibles en este momento.
-            </p>
-          ) : !purchaseEvidence.data?.items.length ? (
-            <p className="text-sm text-text-muted">
-              No hay evaluaciones guardadas para el rango con datos de compras.
-            </p>
-          ) : (
-            <ul aria-label="Evaluaciones de compras recientes" className="space-y-2">
-              {purchaseEvidence.data.items.map((evaluation) => {
-                const summary = evaluation.deterministic_metrics.assessment_summary;
-                const label = summary?.senal_global.replaceAll("_", " ")
-                  ?? (evaluation.status === "pending" || evaluation.status === "processing"
-                    ? "en evaluación"
-                    : evaluation.status);
-                const href = `/dashboards/compras/dia/${encodeURIComponent(evaluation.business_date)}`
-                  + `/documento/${encodeURIComponent(evaluation.num_documento)}`
-                  + `?cod_clase=${encodeURIComponent(evaluation.cod_clase)}`;
-                return (
-                  <li key={evaluation.id}>
-                    <Link
-                      href={href}
-                      className="flex min-h-12 flex-col justify-between gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:flex-row sm:items-center"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-semibold text-text-primary">
-                          {evaluation.nombre_proveedor || "Proveedor sin identificar"}
-                        </span>
-                        <span className="text-xs text-text-muted">
-                          {evaluation.business_date} · {evaluation.cod_clase} {evaluation.num_documento}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
-                        <span className="rounded-full border border-border bg-surface-alt px-2 py-1 text-text-secondary">
-                          {label}
-                        </span>
-                        {summary?.porcentaje_valor_en_senales_de_revision != null && (
-                          <span className="text-text-muted">
-                            {summary.porcentaje_valor_en_senales_de_revision}% para revisar
-                          </span>
-                        )}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <p className="mt-3 text-[0.65rem] text-text-muted">
-            Estas evaluaciones describen evidencia de compra y stock; no demuestran que una factura haya causado ventas.
-          </p>
-        </Card>
-      )}
 
       <Card header={
         <div>

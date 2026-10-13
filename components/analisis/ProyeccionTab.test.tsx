@@ -1,11 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { usePurchaseAssessments, useSalesForecastMonthly } from "@/lib/api/hooks";
+import { useSalesForecastMonthly } from "@/lib/api/hooks";
 import { ProyeccionTab } from "./ProyeccionTab";
 
 vi.mock("@/lib/api/hooks", () => ({
-  usePurchaseAssessments: vi.fn(),
   useSalesForecastMonthly: vi.fn(),
 }));
 
@@ -24,13 +23,6 @@ vi.mock("recharts", () => {
 
 describe("ProyeccionTab backtest confidence", () => {
   beforeEach(() => {
-    vi.mocked(usePurchaseAssessments).mockReturnValue({
-      data: undefined,
-      error: undefined,
-      isLoading: false,
-      isValidating: false,
-      mutate: vi.fn(),
-    });
     vi.mocked(useSalesForecastMonthly).mockReturnValue({
       data: {
         current_month: {
@@ -104,5 +96,7 @@ describe("ProyeccionTab backtest confidence", () => {
     expect(screen.getByText(/Distribución por día:/).parentElement).toHaveTextContent("día de semana");
     expect(screen.getAllByText(/confianza baja/).length).toBeGreaterThan(2);
     expect(screen.getAllByRole("cell", { name: "Base baja · stock baja" })).toHaveLength(2);
+    expect(screen.queryByText("Compras relacionadas con este horizonte")).not.toBeInTheDocument();
   });
 });
+
