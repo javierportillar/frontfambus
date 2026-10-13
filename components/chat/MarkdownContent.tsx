@@ -520,7 +520,7 @@ function renderInline(
                 visibleMarkdownText(purchaseContext),
               )
               : false;
-        const code = <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-text-primary">{part.value}</code>;
+        const code = <code className="rounded bg-surface px-1.5 py-0.5 font-mono text-[0.9em] text-text-primary break-words">{part.value}</code>;
         return codeMention && codeMentionIsSafe
           ? <a key={part.key} href={codeMention.ref.href} aria-label={mentionAriaLabel(codeMention)}>{code}</a>
           : <span key={part.key}>{code}</span>;
@@ -576,8 +576,8 @@ function MarkdownTable({
   const header = rows[0] ?? [];
   const body = rows.slice(2); // skip separator row
   return (
-    <div className="my-3 w-full max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-border">
-      <table className="w-full text-xs">
+    <div className="my-3 w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-lg border border-border [-webkit-overflow-scrolling:touch] [touch-action:pan-x_pan-y]">
+      <table className="w-max min-w-full text-xs">
         <thead>
           <tr className="bg-surface-alt">
             {header.map((cell, i) => (
@@ -647,7 +647,7 @@ export function MarkdownContent({
       index += 1;
       while (index < lines.length && !/^\s*```\s*$/.test(lines[index] ?? "")) { codeLines.push(lines[index] ?? ""); index += 1; }
       if (index < lines.length) index += 1;
-      blocks.push(<pre key={`code-${start}`} className="my-2 max-w-full overflow-x-auto rounded-lg bg-surface px-3 py-2 text-xs text-text-primary"><code className={fence[1] ? `language-${fence[1]}` : undefined}>{codeLines.join("\n")}</code></pre>);
+      blocks.push(<pre key={`code-${start}`} className="my-2 w-full max-w-full min-w-0 overflow-x-auto rounded-lg bg-surface px-3 py-2 text-xs text-text-primary"><code className={fence[1] ? `language-${fence[1]}` : undefined}>{codeLines.join("\n")}</code></pre>);
       blockNumber += 1;
       continue;
     }
@@ -657,7 +657,7 @@ export function MarkdownContent({
       const headingLevel = heading[1]?.length ?? 1;
       const headingText = heading[2] ?? "";
       const Heading = `h${headingLevel}` as keyof JSX.IntrinsicElements;
-      blocks.push(<Heading key={`heading-${index}`} className="mt-2 font-semibold text-text-primary">{renderInline(headingText, mentions, authorizedEntityRefs)}</Heading>);
+      blocks.push(<Heading key={`heading-${index}`} className="mt-2 min-w-0 max-w-full break-words font-semibold text-text-primary">{renderInline(headingText, mentions, authorizedEntityRefs)}</Heading>);
       index += 1;
       blockNumber += 1;
       continue;
@@ -682,10 +682,10 @@ export function MarkdownContent({
       const items: ReactNode[] = [];
       const start = index;
       while (index < lines.length && isUnorderedListLine(lines[index] ?? "")) {
-        items.push(<li key={`item-${index}`}>{renderInline((lines[index] ?? "").replace(/^\s*[-*+]\s+/, ""), mentions, authorizedEntityRefs)}</li>);
+        items.push(<li key={`item-${index}`} className="min-w-0 break-words">{renderInline((lines[index] ?? "").replace(/^\s*[-*+]\s+/, ""), mentions, authorizedEntityRefs)}</li>);
         index += 1;
       }
-      blocks.push(<ul key={`list-${start}`} className="my-2 list-disc space-y-1 pl-5">{items}</ul>);
+      blocks.push(<ul key={`list-${start}`} className="my-2 min-w-0 max-w-full list-disc space-y-1 break-words pl-5">{items}</ul>);
       blockNumber += 1;
       continue;
     }
@@ -694,10 +694,10 @@ export function MarkdownContent({
       const items: ReactNode[] = [];
       const start = index;
       while (index < lines.length && isOrderedListLine(lines[index] ?? "")) {
-        items.push(<li key={`item-${index}`}>{renderInline((lines[index] ?? "").replace(/^\s*\d+[.)]\s+/, ""), mentions, authorizedEntityRefs)}</li>);
+        items.push(<li key={`item-${index}`} className="min-w-0 break-words">{renderInline((lines[index] ?? "").replace(/^\s*\d+[.)]\s+/, ""), mentions, authorizedEntityRefs)}</li>);
         index += 1;
       }
-      blocks.push(<ol key={`ordered-${start}`} className="my-2 list-decimal space-y-1 pl-5">{items}</ol>);
+      blocks.push(<ol key={`ordered-${start}`} className="my-2 min-w-0 max-w-full list-decimal space-y-1 break-words pl-5">{items}</ol>);
       blockNumber += 1;
       continue;
     }
@@ -706,7 +706,7 @@ export function MarkdownContent({
       const quoteLines: string[] = [];
       const start = index;
       while (index < lines.length && /^\s*>/.test(lines[index] ?? "")) { quoteLines.push((lines[index] ?? "").replace(/^\s*>\s?/, "")); index += 1; }
-      blocks.push(<blockquote key={`quote-${start}`} className="my-2 border-l-2 border-primary/40 pl-3 text-text-muted">{quoteLines.map((quoteLine, quoteIndex) => <div key={`quote-line-${start + quoteIndex}`}>{renderInline(quoteLine, mentions, authorizedEntityRefs)}</div>)}</blockquote>);
+      blocks.push(<blockquote key={`quote-${start}`} className="my-2 min-w-0 max-w-full break-words border-l-2 border-primary/40 pl-3 text-text-muted">{quoteLines.map((quoteLine, quoteIndex) => <div key={`quote-line-${start + quoteIndex}`}>{renderInline(quoteLine, mentions, authorizedEntityRefs)}</div>)}</blockquote>);
       blockNumber += 1;
       continue;
     }
@@ -715,9 +715,9 @@ export function MarkdownContent({
     const start = index;
     index += 1;
     while (index < lines.length && (lines[index] ?? "").trim() && !isBlockLine(lines[index] ?? "")) { paragraphLines.push(lines[index] ?? ""); index += 1; }
-    blocks.push(<p key={`paragraph-${start}-${blockNumber}`} className="leading-relaxed">{paragraphLines.flatMap((paragraphLine, lineIndex) => [lineIndex ? <br key={`break-${start + lineIndex}`} /> : null, ...renderInline(paragraphLine, mentions, authorizedEntityRefs)])}</p>);
+    blocks.push(<p key={`paragraph-${start}-${blockNumber}`} className="min-w-0 max-w-full break-words leading-relaxed">{paragraphLines.flatMap((paragraphLine, lineIndex) => [lineIndex ? <br key={`break-${start + lineIndex}`} /> : null, ...renderInline(paragraphLine, mentions, authorizedEntityRefs)])}</p>);
     blockNumber += 1;
   }
 
-  return <div className="markdown-content min-w-0 max-w-full break-words">{blocks}</div>;
+  return <div className="markdown-content grid w-full max-w-full min-w-0 grid-cols-[minmax(0,1fr)] overflow-hidden break-words">{blocks}</div>;
 }

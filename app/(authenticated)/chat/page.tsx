@@ -103,6 +103,7 @@ export default function ChatPage(): JSX.Element {
   const [error, setError] = useState<string>();
   const [conversationError, setConversationError] = useState<string>();
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [mobileHeaderHidden, setMobileHeaderHidden] = useState(false);
   const [greeting, setGreeting] = useState("Buenas tardes");
   const abortRef = useRef<AbortController>();
   const conversationActionIdRef = useRef(0);
@@ -110,6 +111,8 @@ export default function ChatPage(): JSX.Element {
   const conversationsRefreshAbortRef = useRef<AbortController>();
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const keepMessagesAtBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  const headerTransitionUntilRef = useRef(0);
 
   const refreshConversations = useCallback(async () => {
     const requestedTenant = useAuthStore.getState().currentTenant;
@@ -161,12 +164,15 @@ export default function ChatPage(): JSX.Element {
     setConversationError(undefined);
     setIsLoading(false);
     setMobileHistoryOpen(false);
+    setMobileHeaderHidden(false);
+    lastScrollTopRef.current = 0;
   }, [currentTenant, user]);
 
   useEffect(() => {
     const messagesRegion = messagesScrollRef.current;
     if (!messagesRegion || !keepMessagesAtBottomRef.current) return;
     messagesRegion.scrollTop = messagesRegion.scrollHeight;
+    lastScrollTopRef.current = messagesRegion.scrollTop;
   }, [messages, isLoading]);
 
   useEffect(() => {
@@ -184,8 +190,10 @@ export default function ChatPage(): JSX.Element {
     setIsLoading(false);
     setConversationId(id);
     keepMessagesAtBottomRef.current = true;
+    lastScrollTopRef.current = 0;
     setError(undefined);
     setMobileHistoryOpen(false);
+    setMobileHeaderHidden(false);
     setMessages([]);
 
     try {
@@ -216,6 +224,8 @@ export default function ChatPage(): JSX.Element {
     setIsLoading(false);
     setError(undefined);
     setMobileHistoryOpen(false);
+    setMobileHeaderHidden(false);
+    lastScrollTopRef.current = 0;
     keepMessagesAtBottomRef.current = true;
     setConversationId(undefined);
     setMessages([]);
@@ -336,6 +346,30 @@ export default function ChatPage(): JSX.Element {
     if (!region) return;
     keepMessagesAtBottomRef.current =
       region.scrollHeight - region.scrollTop - region.clientHeight < 80;
+    const currentScrollTop = region.scrollTop;
+    const now = Date.now();
+    if (now < headerTransitionUntilRef.current) {
+      lastScrollTopRef.current = currentScrollTop;
+      return;
+    }
+    const delta = currentScrollTop - lastScrollTopRef.current;
+    lastScrollTopRef.current = currentScrollTop;
+    if (currentScrollTop <= 24 || delta < -8) {
+      setMobileHeaderHidden((prev) => {
+        if (prev) headerTransitionUntilRef.current = Date.now() + 260;
+        return false;
+      });
+    } else if (
+      currentScrollTop > 48 &&
+      delta > 8 &&
+      region.scrollHeight - region.clientHeight > 140
+    ) {
+      setMobileHeaderHidden((prev) => {
+        if (!prev) headerTransitionUntilRef.current = Date.now() + 260;
+        return true;
+      });
+      setMobileHistoryOpen(false);
+    }
   }, []);
 
   const turnCount = messages.filter((message) => message.role === "user").length;
@@ -422,8 +456,14 @@ export default function ChatPage(): JSX.Element {
         )}
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between border-b border-border bg-surface px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-text-primary lg:px-8 lg:py-3">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header
+          className={`flex shrink-0 items-center justify-between border-border bg-surface text-text-primary transition-all duration-200 lg:border-b lg:px-8 lg:py-3 ${
+            mobileHeaderHidden && !mobileHistoryOpen
+              ? "max-h-0 -translate-y-full overflow-hidden border-b-0 px-4 py-0 opacity-0 pointer-events-none lg:max-h-none lg:translate-y-0 lg:overflow-visible lg:opacity-100 lg:pointer-events-auto"
+              : "max-h-24 translate-y-0 border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] opacity-100"
+          }`}
+        >
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="flex h-10 w-10 items-center justify-center rounded-full lg:hidden" aria-label="Volver al inicio"><span className="text-2xl">←</span></Link>
             <div className="min-w-0 lg:hidden">
@@ -464,7 +504,7 @@ export default function ChatPage(): JSX.Element {
           ref={messagesScrollRef}
           role="region"
           aria-label="Mensajes de la conversación"
-          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-5 py-8 lg:px-10 lg:py-10"
+          className="min-h-0 min-w-0 w-full max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-3 py-4 sm:px-5 sm:py-8 lg:px-10 lg:py-10 [touch-action:pan-y]"
           aria-live="polite"
           onScroll={handleMessagesScroll}
         >
@@ -493,11 +533,11 @@ export default function ChatPage(): JSX.Element {
               {error && <p role="alert" className="mt-5 rounded-xl bg-warning/10 p-3 text-sm text-warning">{error}</p>}
             </div>
           ) : (
-            <div className="mx-auto w-full min-w-0 max-w-3xl space-y-5">
+            <div className="mx-auto w-full max-w-3xl min-w-0 space-y-4 sm:space-y-5">
               {messages.map((message) => (
-                <div key={message.id} className={`flex min-w-0 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div key={message.id} className={`flex w-full max-w-full min-w-0 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                   {message.role === "assistant" ? (
-                    <div className="flex w-full min-w-0 flex-col items-start">
+                    <div className="flex w-full max-w-full min-w-0 flex-col items-stretch">
                       <AssistantMessage message={message} context={accessContext} />
                       <MessageTime message={message} />
                     </div>
@@ -526,9 +566,9 @@ export default function ChatPage(): JSX.Element {
             event.preventDefault();
             void handleSend();
           }}
-          className="shrink-0 bg-background px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 lg:px-10 lg:pb-7"
+          className="shrink-0 bg-background px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:px-10 lg:pb-7"
         >
-          <div className="mx-auto flex max-w-3xl items-end gap-3 rounded-[1.6rem] border border-border bg-surface p-4 shadow-sm transition-shadow focus-within:border-primary/50 focus-within:shadow-md lg:rounded-2xl lg:p-3">
+          <div className="mx-auto flex w-full max-w-3xl min-w-0 items-end gap-2 rounded-3xl border border-border bg-surface px-3.5 py-1.5 shadow-sm transition-shadow focus-within:border-primary/50 focus-within:shadow-md lg:gap-3 lg:rounded-2xl lg:p-3">
             <label htmlFor="page-chat-input" className="sr-only">Pregunta al asistente</label>
             <textarea
               id="page-chat-input"
@@ -544,20 +584,20 @@ export default function ChatPage(): JSX.Element {
               rows={1}
               disabled={isLoading || turnCount >= MAX_TURNS}
               placeholder={turnCount >= MAX_TURNS ? "Límite de turnos alcanzado" : "Chat con el asistente"}
-              className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-base text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-50"
+              className="max-h-32 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base leading-snug text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-50 lg:min-h-10 lg:py-2.5"
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim() || turnCount >= MAX_TURNS}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-fg transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-40 lg:h-10 lg:w-auto lg:rounded-xl lg:px-4 lg:text-sm"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-fg transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-40 lg:h-10 lg:w-auto lg:rounded-xl lg:px-4 lg:text-sm"
               aria-label="Enviar"
             >
               <span className="hidden lg:inline">Enviar</span>
               <span className="lg:hidden" aria-hidden="true">↑</span>
             </button>
           </div>
-          <div className="mx-auto mt-3 flex max-w-3xl items-center justify-between text-[11px] text-text-muted lg:mt-2 lg:justify-center">
-            <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary lg:hidden">{tenantDisplay?.name ?? "Negocio"} IA · datos del negocio</span>
+          <div className="mx-auto mt-1.5 flex max-w-3xl items-center justify-between text-[11px] text-text-muted lg:mt-2 lg:justify-center">
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary lg:hidden">{tenantDisplay?.name ?? "Negocio"} IA · datos del negocio</span>
             <p className="hidden lg:block">La información se consulta con los datos disponibles de {tenantDisplay?.name ?? "tu negocio"}.</p>
           </div>
           {isLoading && (

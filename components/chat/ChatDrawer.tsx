@@ -497,10 +497,10 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
             ))}
           </div>}
         </nav>
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div
             ref={messagesScrollRef}
-            className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5"
+            className="min-h-0 min-w-0 w-full max-w-full flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5 [touch-action:pan-y]"
             role="region"
             aria-label="Mensajes de la conversación"
             aria-live="polite"
@@ -508,7 +508,7 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
           >
             {messages.length === 0 && <p className="py-12 text-center text-sm text-text-muted">Preguntá por ventas, stock, productos dormidos o inventario.</p>}
             {messages.map((message) => (
-              <div key={message.id} className={`flex min-w-0 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div key={message.id} className={`flex w-full max-w-full min-w-0 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                 {message.role === "assistant" ? <AssistantMessage message={message} context={accessContext} /> : <div className="min-w-0 max-w-[90%] rounded-xl bg-primary px-3 py-2 text-sm text-primary-fg"><p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p></div>}
               </div>
             ))}
