@@ -9,8 +9,11 @@ import {
   type CompraDocumento,
   type PurchaseAssessment,
 } from "@/lib/api/hooks";
+import type { EntityRef } from "@/lib/api/chat";
+import { type AccessContext } from "@/lib/auth/access";
+import { useAuthStore } from "@/lib/auth/store";
 import { formatMoneyFull } from "@/lib/format/currency";
-import { isValidSupplierNit, supplierProfileHref } from "@/lib/compras/routes";
+import { isValidSupplierNit, purchaseDocumentHref, supplierProfileHref } from "@/lib/compras/routes";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -67,6 +70,7 @@ export function CompraDetalleContent({ date, documentNumber, classCode }: Props)
     <div className="space-y-4">
       <PurchaseDocument document={document} />
       <PurchaseAssessmentPanel
+        document={document}
         assessment={evaluation.data}
         error={evaluation.error}
         isLoading={evaluation.isLoading}
@@ -79,7 +83,73 @@ export function CompraDetalleContent({ date, documentNumber, classCode }: Props)
   );
 }
 
+function buildAssessmentEntityRefs(
+  assessment: PurchaseAssessment | undefined,
+  document: CompraDocumento,
+): EntityRef[] {
+  const refs: EntityRef[] = [];
+  const seenProducts = new Set<string>();
+
+  const addProduct = (codeRaw: unknown, nameRaw: unknown) => {
+    const code = typeof codeRaw === "string" ? codeRaw.trim() : String(codeRaw ?? "").trim();
+    if (!code || seenProducts.has(code)) return;
+    seenProducts.add(code);
+    const name = typeof nameRaw === "string" && nameRaw.trim() ? nameRaw.trim() : code;
+    refs.push({
+      entity_type: "product",
+      entity_id: code,
+      label: name,
+      href: `/dashboards/productos/${encodeURIComponent(code)}`,
+      domain: "inventory",
+      label_is_unique: true,
+    });
+  };
+
+  for (const item of document.items ?? []) {
+    addProduct(item.cod_producto, item.nom_producto);
+  }
+  for (const prod of assessment?.deterministic_metrics?.products ?? []) {
+    addProduct(prod.cod_producto, prod.nombre);
+  }
+  const omitted = (
+    assessment?.deterministic_metrics?.supplier_opportunities?.top_productos_omitidos ?? []
+  );
+  for (const item of omitted) {
+    addProduct(item.cod_producto, item.nombre);
+  }
+
+  const nit = (assessment?.nit_proveedor ?? document.nit_proveedor ?? "").trim();
+  const supplierName = (
+    assessment?.nombre_proveedor ?? document.nombre_proveedor ?? nit
+  ).trim();
+  if (isValidSupplierNit(nit)) {
+    refs.push({
+      entity_type: "supplier",
+      entity_id: nit,
+      label: supplierName || nit,
+      href: supplierProfileHref(nit),
+      domain: "purchases",
+      label_is_unique: true,
+    });
+  }
+
+  if (assessment?.business_date && assessment?.cod_clase && assessment?.num_documento) {
+    const docId = `${assessment.business_date}:${assessment.cod_clase}:${assessment.num_documento}`;
+    refs.push({
+      entity_type: "purchase_document",
+      entity_id: docId,
+      label: `${assessment.cod_clase} ${assessment.num_documento}`,
+      href: purchaseDocumentHref(assessment.business_date, assessment.num_documento, assessment.cod_clase),
+      domain: "purchases",
+      label_is_unique: true,
+    });
+  }
+
+  return refs;
+}
+
 function PurchaseAssessmentPanel({
+  document,
   assessment,
   error,
   isLoading,
@@ -88,6 +158,7 @@ function PurchaseAssessmentPanel({
   isRetrying,
   retryError,
 }: {
+  document: CompraDocumento;
   assessment: PurchaseAssessment | undefined;
   error: Error | undefined;
   isLoading: boolean;
@@ -96,6 +167,20 @@ function PurchaseAssessmentPanel({
   isRetrying: boolean;
   retryError: string | null;
 }): JSX.Element {
+  const role = useAuthStore((s) => s.role);
+  const enabledFeatures = useAuthStore((s) => s.enabledFeatures);
+  const allowedModules = useAuthStore((s) => s.allowedModules);
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const accessContext = useMemo<AccessContext>(() => ({
+    role: role ?? "admin",
+    enabledFeatures: Array.from(new Set([...enabledFeatures, "inventario", "ventas-summary"])),
+    allowedModules: allowedModules ?? null,
+    currentTenant,
+  }), [allowedModules, currentTenant, enabledFeatures, role]);
+  const entityRefs = useMemo(
+    () => buildAssessmentEntityRefs(assessment, document),
+    [assessment, document],
+  );
   const missing = error?.message.includes("API error 404") ?? false;
   const cutoffs = assessment?.source_cutoffs;
   const rating = assessment?.deterministic_metrics.assessment_summary?.senal_global;
@@ -178,7 +263,11 @@ function PurchaseAssessmentPanel({
             </p>
           )}
           <div className="text-sm text-text-secondary">
-            <MarkdownContent content={assessment.markdown} />
+            <MarkdownContent
+              content={assessment.markdown}
+              entityRefs={entityRefs}
+              accessContext={accessContext}
+            />
           </div>
         </div>
       ) : assessment?.status === "pending" || assessment?.status === "processing" ? (

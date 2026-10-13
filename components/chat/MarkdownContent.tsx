@@ -313,7 +313,9 @@ function containsProductLabelMatch(context: string, label: string): boolean {
     .filter((w) => w.length >= 4 && !["para", "cada", "unos", "unas", "como"].includes(w));
   if (words.length >= 2) {
     const matchedCount = words.filter((w) => containsWholeTerm(normalizedContext, w)).length;
-    if (matchedCount >= 2 && matchedCount >= Math.min(words.length, 3)) return true;
+    if (matchedCount >= 2) return true;
+  } else if (words.length === 1 && containsWholeTerm(normalizedContext, words[0]!)) {
+    return true;
   }
   return false;
 }
@@ -333,7 +335,7 @@ function linkEntityMentions(
   keyPrefix: string,
   context: string,
   purchaseContext: string,
-  rowContext: string = context,
+  rowContext: string = "",
 ): ReactNode[] {
   if (!mentions.length || !value) return [value];
   const normalizedValue = normalizeForIndexSearch(value);
@@ -352,9 +354,9 @@ function linkEntityMentions(
       const needsNameContext = mention.kind === "product-sku" && /^\d+$/.test(mention.ref.entity_id);
       const explicitSkuInContext = hasExplicitSkuLabel(safeContext, mention.ref.entity_id);
       const numericContextIsUnique = countWholeTerm(safeContext, mention.term) === 1
-        && (explicitSkuInContext || countWholeTerm(safeRowContext, mention.term) === 1);
+        && (explicitSkuInContext || countWholeTerm(safeRowContext || safeContext, mention.term) === 1);
       const notInAmountColumn = !isAmountOrQuantityContext(safeContext);
-      const labelInRow = containsProductLabelMatch(safeRowContext, mention.ref.label);
+      const labelInRow = containsProductLabelMatch(safeRowContext || safeContext, mention.ref.label);
       const productSkuHasContext = mention.kind !== "product-sku"
         || !needsNameContext
         || (numericContextIsUnique
@@ -422,7 +424,7 @@ function canLinkMarkdownEntity(
   refs: EntityRef[],
   context: string,
   purchaseContext: string,
-  rowContext: string = context,
+  rowContext: string = "",
 ): boolean {
   const visibleLabel = visibleMarkdownText(label).trim();
   const visibleContext = visibleMarkdownText(context);
@@ -441,7 +443,8 @@ function canLinkMarkdownEntity(
     ));
     const canonicalName = ref.label_is_unique === true
       && matchingNames.length === 1
-      && visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO");
+      && (visibleLabel.toLocaleLowerCase("es-CO") === ref.label.toLocaleLowerCase("es-CO")
+        || containsWholeTerm(visibleLabel, ref.label));
     const verifiedNit = containsWholeTerm(visibleLabel, ref.entity_id)
       && (hasExplicitNitLabel(visibleLabel, ref.entity_id) || hasExplicitNitLabel(visibleContext, ref.entity_id))
       && countWholeTerm(visibleContext, ref.entity_id) === 1;
@@ -455,34 +458,38 @@ function canLinkMarkdownEntity(
       && isSameProductName
       && !containsWholeTerm(visibleRowContext, ref.entity_id);
     const isNumericSku = /^\d+$/.test(ref.entity_id);
-    const mentionsNumericSkuAsLabel = isNumericSku && containsWholeTerm(visibleLabel, ref.entity_id);
+    const labelIncludesProductName = containsProductLabelMatch(visibleLabel, ref.label);
+    const mentionsNumericSkuAsLabel = isNumericSku
+      && containsWholeTerm(visibleLabel, ref.entity_id)
+      && !labelIncludesProductName;
     const numericSkuNeedsName = mentionsNumericSkuAsLabel
       && (isAmountOrQuantityContext(visibleContext)
-        || !containsProductLabelMatch(visibleRowContext, ref.label)
+        || !containsProductLabelMatch(visibleRowContext || visibleContext, ref.label)
         || countWholeTerm(visibleContext, ref.entity_id) !== 1);
     return !ambiguousProductName && !numericSkuNeedsName;
   }
   return true;
 }
 
-function parseInline(value: string): InlinePart[] {
+function parseInline(value: string, keyPrefix: string = "inline"): InlinePart[] {
   const parts: InlinePart[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
+  const regex = new RegExp(INLINE_TOKEN.source, INLINE_TOKEN.flags);
 
-  while ((match = INLINE_TOKEN.exec(value)) !== null) {
-    if (match.index > cursor) parts.push({ kind: "text", value: value.slice(cursor, match.index), key: `text-${cursor}` });
+  while ((match = regex.exec(value)) !== null) {
+    if (match.index > cursor) parts.push({ kind: "text", value: value.slice(cursor, match.index), key: `${keyPrefix}-text-${cursor}` });
     const [token, linkToken, linkLabel, linkHref, strong, strongAlt, code, emphasis, emphasisAlt, bareUrl] = match;
-    if (linkToken && linkLabel && linkHref) parts.push({ kind: "link", value: linkLabel, href: isSafeServerHref(linkHref) ? linkHref : undefined, key: `link-${match.index}` });
-    else if (strong ?? strongAlt) parts.push({ kind: "strong", value: strong ?? strongAlt ?? "", key: `strong-${match.index}` });
-    else if (code) parts.push({ kind: "code", value: code, key: `code-${match.index}` });
-    else if (emphasis ?? emphasisAlt) parts.push({ kind: "emphasis", value: emphasis ?? emphasisAlt ?? "", key: `emphasis-${match.index}` });
+    if (linkToken && linkLabel && linkHref) parts.push({ kind: "link", value: linkLabel, href: isSafeServerHref(linkHref) ? linkHref : undefined, key: `${keyPrefix}-link-${match.index}` });
+    else if (strong ?? strongAlt) parts.push({ kind: "strong", value: strong ?? strongAlt ?? "", key: `${keyPrefix}-strong-${match.index}` });
+    else if (code) parts.push({ kind: "code", value: code, key: `${keyPrefix}-code-${match.index}` });
+    else if (emphasis ?? emphasisAlt) parts.push({ kind: "emphasis", value: emphasis ?? emphasisAlt ?? "", key: `${keyPrefix}-emphasis-${match.index}` });
     else if (bareUrl) { /* URLs are intentionally not rendered as clickable content. */ }
-    else parts.push({ kind: "text", value: token, key: `text-${match.index}` });
+    else parts.push({ kind: "text", value: token, key: `${keyPrefix}-text-${match.index}` });
     cursor = match.index + token.length;
   }
 
-  if (cursor < value.length) parts.push({ kind: "text", value: value.slice(cursor), key: `text-${cursor}` });
+  if (cursor < value.length) parts.push({ kind: "text", value: value.slice(cursor), key: `${keyPrefix}-text-${cursor}` });
   return parts;
 }
 
@@ -492,12 +499,13 @@ function renderInline(
   entityRefs: EntityRef[] = [],
   context: string = value,
   purchaseContext: string = context,
-  rowContext: string = context,
+  rowContext: string = "",
+  keyPrefix: string = "inline",
 ): ReactNode[] {
-  return parseInline(value).map((part) => {
+  return parseInline(value, keyPrefix).map((part) => {
     switch (part.kind) {
-      case "strong": return <strong key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext, rowContext)}</strong>;
-      case "emphasis": return <em key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext, rowContext)}</em>;
+      case "strong": return <strong key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext, rowContext, part.key)}</strong>;
+      case "emphasis": return <em key={part.key}>{renderInline(part.value, mentions, entityRefs, context, purchaseContext, rowContext, part.key)}</em>;
       case "code": {
         const codeMention = mentions.find((mention) => (
           ["product-sku", "supplier-nit", "purchase-document"].includes(mention.kind)
@@ -508,7 +516,7 @@ function renderInline(
         const codeMentionIsSafe = codeMention?.kind === "product-sku"
           ? (!/^\d+$/.test(codeMention.ref.entity_id)
             || (!isAmountOrQuantityContext(visibleContext)
-              && containsProductLabelMatch(visibleRowContext, codeMention.ref.label)
+              && containsProductLabelMatch(visibleRowContext || visibleContext, codeMention.ref.label)
               && countWholeTerm(visibleContext, codeMention.ref.entity_id) === 1))
           : codeMention?.kind === "supplier-nit"
             ? countWholeTerm(visibleContext, codeMention.ref.entity_id) === 1
@@ -535,7 +543,7 @@ function renderInline(
           purchaseContext,
           rowContext,
         )
-          ? <a key={part.key} href={part.href} className="font-medium text-primary underline underline-offset-2 hover:text-primary-light">{renderInline(part.value)}</a>
+          ? <a key={part.key} href={part.href} className="font-medium text-primary underline underline-offset-2 hover:text-primary-light">{renderInline(part.value, [], [], part.value, part.value, "", part.key)}</a>
           : part.value;
       }
       default: return linkEntityMentions(part.value, mentions, part.key, context, purchaseContext, rowContext);
@@ -564,6 +572,27 @@ function parseTableRow(line: string): string[] {
     .map((cell) => cell.trim());
 }
 
+function isSkuColumnHeader(headerCell: string): boolean {
+  return /\b(?:sku|c[oó]d(?:igo)?(?:\s+producto)?|referencia|ean)\b/i.test(headerCell)
+    && !/\b(?:clase|bodega|vendedor)\b/i.test(headerCell);
+}
+
+function isProductNameColumnHeader(headerCell: string): boolean {
+  return /\b(?:producto|descripci[oó]n|[ií]tem|art[ií]culo|nombre)\b/i.test(headerCell)
+    && !/\b(?:proveedor|cliente|vendedor|bodega)\b/i.test(headerCell);
+}
+
+function isSupplierColumnHeader(headerCell: string): boolean {
+  return /\b(?:proveedor|laboratorio|fabricante)\b/i.test(headerCell);
+}
+
+function stripInlineFormatting(cell: string): string {
+  return visibleMarkdownText(cell)
+    .replace(/^`+|`+$/g, "")
+    .replace(/^\*\*|\*\*$/g, "")
+    .trim();
+}
+
 function MarkdownTable({
   rows,
   mentions,
@@ -575,13 +604,28 @@ function MarkdownTable({
 }): JSX.Element {
   const header = rows[0] ?? [];
   const body = rows.slice(2); // skip separator row
+  const productRefsBySku = new Map<string, EntityRef>();
+  const supplierRefsByName = new Map<string, EntityRef>();
+  const supplierRefsByNit = new Map<string, EntityRef>();
+
+  for (const ref of entityRefs) {
+    if (ref.entity_type === "product" && ref.domain === "inventory") {
+      productRefsBySku.set(ref.entity_id.trim().toLocaleLowerCase("es-CO"), ref);
+    } else if (ref.entity_type === "supplier" && ref.domain === "purchases") {
+      supplierRefsByNit.set(ref.entity_id.trim().toLocaleLowerCase("es-CO"), ref);
+      if (ref.label_is_unique !== false) {
+        supplierRefsByName.set(normalizeWhitespace(ref.label).toLocaleLowerCase("es-CO"), ref);
+      }
+    }
+  }
+
   return (
     <div className="my-3 w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain rounded-lg border border-border [-webkit-overflow-scrolling:touch] [touch-action:pan-x_pan-y]">
       <table className="w-max min-w-full text-xs">
         <thead>
           <tr className="bg-surface-alt">
             {header.map((cell, i) => (
-              <th key={`th-${i}`} className="border-b border-border px-2.5 py-1.5 text-left font-semibold text-text-primary">{renderInline(cell, mentions, entityRefs, cell)}</th>
+              <th key={`th-${i}`} className="border-b border-border px-2.5 py-1.5 text-left font-semibold text-text-primary">{renderInline(cell, mentions, entityRefs, cell, cell, "", `th-${i}`)}</th>
             ))}
           </tr>
         </thead>
@@ -597,20 +641,92 @@ function MarkdownTable({
                   : []
               ))
               .join(" | ");
+
+            // Check if any SKU column in this row matches a known product EntityRef
+            let rowProductRef: EntityRef | undefined;
+            header.forEach((headerCell, colIdx) => {
+              if (!rowProductRef && isSkuColumnHeader(headerCell)) {
+                const candidateSku = stripInlineFormatting(row[colIdx] ?? "").toLocaleLowerCase("es-CO");
+                if (candidateSku && productRefsBySku.has(candidateSku)) {
+                  rowProductRef = productRefsBySku.get(candidateSku);
+                }
+              }
+            });
+
             return (
               <tr key={`tr-${ri}`} className={ri % 2 === 0 ? "bg-surface" : "bg-surface-alt/50"}>
-                {row.map((cell, ci) => (
-                  <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
-                    {renderInline(
-                      cell,
-                      mentions,
-                      entityRefs,
-                      `${header[ci] ?? ""}: ${cell}`,
-                      purchaseRowContext,
-                      entireRowContext,
-                    )}
-                  </td>
-                ))}
+                {row.map((cell, ci) => {
+                  const headerCell = header[ci] ?? "";
+                  const cleanCell = stripInlineFormatting(cell);
+                  const hasMarkdownLink = /\[([^\]]+)\]\(([^)\s]+)\)/.test(cell);
+
+                  // Direct cell linking for SKU or Product Name columns when the row's SKU is a known product ref
+                  if (!hasMarkdownLink && rowProductRef && cleanCell && cleanCell !== "—" && cleanCell !== "-") {
+                    if (isSkuColumnHeader(headerCell) && cleanCell.toLocaleLowerCase("es-CO") === rowProductRef.entity_id.toLocaleLowerCase("es-CO")) {
+                      return (
+                        <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
+                          <a
+                            href={rowProductRef.href}
+                            aria-label={`Ver ficha de ${rowProductRef.label} (${rowProductRef.entity_id})`}
+                            className="font-medium text-primary underline underline-offset-2 hover:text-primary-light"
+                          >
+                            {cleanCell}
+                          </a>
+                        </td>
+                      );
+                    }
+                    if (
+                      isProductNameColumnHeader(headerCell)
+                      && !isSkuColumnHeader(headerCell)
+                      && (rowProductRef.label_is_unique !== false || containsProductLabelMatch(cleanCell, rowProductRef.label))
+                    ) {
+                      return (
+                        <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
+                          <a
+                            href={rowProductRef.href}
+                            aria-label={`Ver ficha de ${rowProductRef.label}`}
+                            className="font-medium text-primary underline underline-offset-2 hover:text-primary-light"
+                          >
+                            {cleanCell}
+                          </a>
+                        </td>
+                      );
+                    }
+                  }
+
+                  // Direct cell linking for Supplier column when it matches a supplier EntityRef
+                  if (!hasMarkdownLink && isSupplierColumnHeader(headerCell) && cleanCell && cleanCell !== "—" && cleanCell !== "-") {
+                    const supplierRef = supplierRefsByName.get(normalizeWhitespace(cleanCell).toLocaleLowerCase("es-CO"))
+                      ?? supplierRefsByNit.get(cleanCell.toLocaleLowerCase("es-CO"));
+                    if (supplierRef) {
+                      return (
+                        <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
+                          <a
+                            href={supplierRef.href}
+                            aria-label={`Ver ficha de proveedor ${supplierRef.label}`}
+                            className="font-medium text-primary underline underline-offset-2 hover:text-primary-light"
+                          >
+                            {cleanCell}
+                          </a>
+                        </td>
+                      );
+                    }
+                  }
+
+                  return (
+                    <td key={`td-${ri}-${ci}`} className="border-t border-border/50 px-2.5 py-1.5 text-text-secondary">
+                      {renderInline(
+                        cell,
+                        mentions,
+                        entityRefs,
+                        `${headerCell}: ${cell}`,
+                        purchaseRowContext,
+                        entireRowContext,
+                        `td-${ri}-${ci}`,
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}

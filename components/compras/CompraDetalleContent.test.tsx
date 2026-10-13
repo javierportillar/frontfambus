@@ -14,8 +14,13 @@ vi.mock("@/lib/api/hooks", () => ({
   usePurchasesDayGrouped: vi.fn(),
 }));
 
+const markdownPropsSpy = vi.fn();
+
 vi.mock("@/components/chat/MarkdownContent", () => ({
-  MarkdownContent: ({ content }: { content: string }) => <pre>{content}</pre>,
+  MarkdownContent: (props: { content: string; entityRefs?: unknown[]; accessContext?: unknown }) => {
+    markdownPropsSpy(props);
+    return <pre>{props.content}</pre>;
+  },
 }));
 
 const invoice = {
@@ -169,4 +174,106 @@ describe("CompraDetalleContent assessment retry", () => {
     expect(screen.getByText("Proveedor de prueba")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /perfil del proveedor/i })).not.toBeInTheDocument();
   });
+
+  it("passes product, omitted supplier opportunity, supplier, and invoice entityRefs to MarkdownContent", () => {
+    vi.mocked(usePurchasesDayGrouped).mockReturnValue(swr({
+      date: "2026-10-05",
+      total_compras: 250_000,
+      total_documentos: 1,
+      documentos: [{ ...invoice, nit_proveedor: "900123456" }],
+    }) as unknown as ReturnType<typeof usePurchasesDayGrouped>);
+    vi.mocked(usePurchaseAssessment).mockReturnValue({
+      ...swr({
+        ...fallbackAssessment,
+        nit_proveedor: "900123456",
+        deterministic_metrics: {
+          ...fallbackAssessment.deterministic_metrics,
+          products: [
+            { cod_producto: "SKU-1", nombre: "Producto de prueba" },
+          ],
+          supplier_opportunities: {
+            top_productos_omitidos: [
+              { cod_producto: "SKU-STAR", nombre: "Aceite Estrella 10W40" },
+            ],
+          },
+        },
+      }),
+      mutate,
+    } as unknown as ReturnType<typeof usePurchaseAssessment>);
+
+    render(<CompraDetalleContent date="2026-10-05" documentNumber="FC-9001" classCode="FC" />);
+
+    expect(markdownPropsSpy).toHaveBeenCalled();
+    const lastProps = markdownPropsSpy.mock.calls.at(-1)?.[0] as {
+      entityRefs?: Array<{ entity_type: string; entity_id: string; href: string }>;
+      accessContext?: { enabledFeatures: readonly string[] };
+    };
+    const refs = lastProps.entityRefs ?? [];
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entity_type: "product",
+          entity_id: "SKU-1",
+          href: "/dashboards/productos/SKU-1",
+        }),
+        expect.objectContaining({
+          entity_type: "product",
+          entity_id: "SKU-STAR",
+          href: "/dashboards/productos/SKU-STAR",
+        }),
+        expect.objectContaining({
+          entity_type: "supplier",
+          entity_id: "900123456",
+          href: "/dashboards/proveedores/900123456",
+        }),
+      ]),
+    );
+    expect(lastProps.accessContext?.enabledFeatures).toEqual(
+      expect.arrayContaining(["inventario", "ventas-summary"]),
+    );
+  });
+
+  it("renders explicit numeric SKU Markdown links inside table cells and strategy bullets mentioning stock, ventas, and unidades", async () => {
+    const { MarkdownContent: ActualMarkdownContent } = await vi.importActual<
+      typeof import("@/components/chat/MarkdownContent")
+    >("@/components/chat/MarkdownContent");
+
+    const markdown = [
+      "| Producto | Señal |",
+      "| --- | --- |",
+      "| [51138 — LLANTA OHERO REF 130/90X10](/dashboards/productos/51138) | Zombie histórico |",
+      "",
+      "- **Plan de evacuación**: Liquidar [51138 — LLANTA OHERO REF 130/90X10](/dashboards/productos/51138) porque tiene stock alto, 0 ventas recientes y 12 unidades en exceso.",
+    ].join("\n");
+
+    render(
+      <ActualMarkdownContent
+        content={markdown}
+        entityRefs={[{
+          entity_type: "product",
+          entity_id: "51138",
+          label: "LLANTA OHERO REF 130/90X10",
+          label_is_unique: false,
+          domain: "inventory",
+          href: "/dashboards/productos/51138",
+        }]}
+        accessContext={{
+          role: "admin",
+          enabledFeatures: ["inventario", "ventas-summary", "analisis", "chat-ia"],
+          allowedModules: ["inventario", "compras", "ventas"],
+          currentTenant: "motoshop",
+        }}
+      />,
+    );
+
+    const links = screen.getAllByRole("link", {
+      name: /LLANTA OHERO REF 130\/90X10/i,
+    });
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "/dashboards/productos/51138");
+    }
+  });
 });
+
+

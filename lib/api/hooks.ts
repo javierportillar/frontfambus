@@ -1959,6 +1959,15 @@ export interface PurchaseAssessment {
       porcentaje_valor_en_senales_de_revision: number | null;
     };
     products?: Array<Record<string, unknown>>;
+    supplier_opportunities?: {
+      nit_proveedor?: string | null;
+      skus_catalogo_historico_proveedor?: number;
+      skus_con_rotacion_omitidos?: number;
+      total_oportunidades_omitidas?: number;
+      costo_estimado_oportunidades_omitidas_cop?: number | null;
+      ingresos_180d_oportunidades_omitidas_cop?: number | null;
+      top_productos_omitidos?: Array<Record<string, unknown>>;
+    };
   };
   markdown: string | null;
   source_cutoffs: Record<string, string | null>;

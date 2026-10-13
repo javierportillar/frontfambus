@@ -233,7 +233,7 @@ describe("AssistantMessage rendered states", () => {
     );
   });
 
-  it("keeps numeric invoice amounts plain and links the unique product name in a table", () => {
+  it("keeps numeric invoice amounts plain and links both the SKU code and unique product name in a table", () => {
     const message = makeMessage({
       content: "| Código | Producto | Valor |\n| --- | --- | --- |\n| 123456 | Product alpha | $123456 |",
       entity_refs: [{
@@ -247,15 +247,57 @@ describe("AssistantMessage rendered states", () => {
     render(<AssistantMessage message={message} context={baseContext} />);
 
     const row = screen.getByRole("row", { name: /\$123456/ });
-    const skuCell = within(row).getByRole("cell", { name: "123456" });
+    const skuCell = within(row).getByRole("cell", { name: "Ver ficha de Product alpha (123456)" });
     const productCell = within(row).getByRole("cell", { name: "Ver ficha de Product alpha" });
     const amountCell = within(row).getByRole("cell", { name: "$123456" });
-    expect(within(skuCell).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(skuCell).getByRole("link", { name: "Ver ficha de Product alpha (123456)" })).toHaveAttribute(
+      "href", "/dashboards/productos/123456",
+    );
     expect(within(productCell).getByRole("link", { name: "Ver ficha de Product alpha" })).toHaveAttribute(
       "href", "/dashboards/productos/123456",
     );
     expect(within(amountCell).queryByRole("link")).not.toBeInTheDocument();
   });
+
+  it("links numeric SKUs, abbreviated product names, and suppliers in Markdown table rows", () => {
+    const message = makeMessage({
+      content: [
+        "| # | SKU | Producto | Stock | Proveedor |",
+        "| --- | --- | --- | --- | --- |",
+        "| 1 | 51138 | Aceite 10W40 | 0 | Unique Supplier |",
+      ].join("\n"),
+      entity_refs: [
+        {
+          entity_type: "product",
+          entity_id: "51138",
+          label: "ACEITE MOTOR SINTETICO 10W40",
+          label_is_unique: false,
+          domain: "inventory",
+          href: "/dashboards/productos/51138",
+        },
+        {
+          entity_type: "supplier",
+          entity_id: "900333333-3",
+          label: "Unique Supplier",
+          label_is_unique: true,
+          domain: "purchases",
+          href: "/dashboards/proveedores/900333333-3",
+        },
+      ],
+    });
+    render(<AssistantMessage message={message} context={baseContext} />);
+
+    expect(
+      screen.getByRole("link", { name: "Ver ficha de ACEITE MOTOR SINTETICO 10W40 (51138)" }),
+    ).toHaveAttribute("href", "/dashboards/productos/51138");
+    expect(
+      screen.getByRole("link", { name: "Ver ficha de ACEITE MOTOR SINTETICO 10W40" }),
+    ).toHaveAttribute("href", "/dashboards/productos/51138");
+    expect(
+      screen.getByRole("link", { name: "Ver ficha de proveedor Unique Supplier" }),
+    ).toHaveAttribute("href", "/dashboards/proveedores/900333333-3");
+  });
+
 
   it("does not render product links without Inventory access or for an untrusted destination", () => {
     const productRef = {

@@ -37,15 +37,16 @@ export function isSafeAssistantEntityHref(
 ): boolean {
   if (!isSafeServerHref(href)) return false;
   const encodedId = encodeURIComponent(entityId);
+  if (entityType === "supplier" && domain === "purchases" && isValidSupplierNit(entityId)) {
+    return href === supplierProfileHref(entityId) || href === `/dashboards/compras/proveedores/${encodedId}`;
+  }
   const expected = entityType === "product" && domain === "inventory"
     ? `/dashboards/productos/${encodedId}`
     : entityType === "alert" && domain === "alerts"
       ? `/inventario/alertas/${encodedId}`
       : entityType === "purchase_document" && domain === "purchases"
         ? purchaseDocumentHrefFromEntityId(entityId)
-        : entityType === "supplier" && domain === "purchases" && isValidSupplierNit(entityId)
-          ? supplierProfileHref(entityId)
-      : null;
+        : null;
   return expected !== null && href === expected;
 }
 
