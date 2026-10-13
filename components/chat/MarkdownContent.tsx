@@ -576,7 +576,7 @@ function MarkdownTable({
   const header = rows[0] ?? [];
   const body = rows.slice(2); // skip separator row
   return (
-    <div className="my-3 overflow-x-auto rounded-lg border border-border">
+    <div className="my-3 w-full max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-border">
       <table className="w-full text-xs">
         <thead>
           <tr className="bg-surface-alt">
@@ -647,7 +647,7 @@ export function MarkdownContent({
       index += 1;
       while (index < lines.length && !/^\s*```\s*$/.test(lines[index] ?? "")) { codeLines.push(lines[index] ?? ""); index += 1; }
       if (index < lines.length) index += 1;
-      blocks.push(<pre key={`code-${start}`} className="my-2 overflow-x-auto rounded-lg bg-surface px-3 py-2 text-xs text-text-primary"><code className={fence[1] ? `language-${fence[1]}` : undefined}>{codeLines.join("\n")}</code></pre>);
+      blocks.push(<pre key={`code-${start}`} className="my-2 max-w-full overflow-x-auto rounded-lg bg-surface px-3 py-2 text-xs text-text-primary"><code className={fence[1] ? `language-${fence[1]}` : undefined}>{codeLines.join("\n")}</code></pre>);
       blockNumber += 1;
       continue;
     }
@@ -719,5 +719,5 @@ export function MarkdownContent({
     blockNumber += 1;
   }
 
-  return <div className="markdown-content">{blocks}</div>;
+  return <div className="markdown-content min-w-0 max-w-full break-words">{blocks}</div>;
 }

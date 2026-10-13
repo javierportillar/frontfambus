@@ -464,7 +464,7 @@ export default function ChatPage(): JSX.Element {
           ref={messagesScrollRef}
           role="region"
           aria-label="Mensajes de la conversación"
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-background px-5 py-8 lg:px-10 lg:py-10"
+          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-background px-5 py-8 lg:px-10 lg:py-10"
           aria-live="polite"
           onScroll={handleMessagesScroll}
         >
@@ -493,17 +493,17 @@ export default function ChatPage(): JSX.Element {
               {error && <p role="alert" className="mt-5 rounded-xl bg-warning/10 p-3 text-sm text-warning">{error}</p>}
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl space-y-5">
+            <div className="mx-auto w-full min-w-0 max-w-3xl space-y-5">
               {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div key={message.id} className={`flex min-w-0 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                   {message.role === "assistant" ? (
-                    <div>
+                    <div className="flex w-full min-w-0 flex-col items-start">
                       <AssistantMessage message={message} context={accessContext} />
                       <MessageTime message={message} />
                     </div>
                   ) : (
-                    <div className="max-w-[88%] rounded-2xl bg-primary px-4 py-3 text-sm text-primary-fg shadow-sm">
-                      <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                    <div className="min-w-0 max-w-[88%] rounded-2xl bg-primary px-4 py-3 text-sm text-primary-fg shadow-sm">
+                      <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
                       <MessageTime message={message} />
                     </div>
                   )}

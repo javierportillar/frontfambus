@@ -473,7 +473,7 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1">
         <nav aria-label="Conversaciones" className={`hidden min-h-0 shrink-0 flex-col overflow-hidden border-r border-border p-3 transition-[width] duration-200 sm:flex ${desktopConvosOpen ? "w-48" : "w-14"}`}>
           <div className={`mb-3 flex items-center ${desktopConvosOpen ? "justify-between gap-2" : "flex-col gap-2"}`}>
             <button onClick={() => void newConversation()} className={`flex items-center justify-center rounded-lg bg-primary text-primary-fg transition-colors hover:bg-primary-light ${desktopConvosOpen ? "min-w-0 flex-1 px-3 py-2.5 text-xs font-semibold" : "h-9 w-9 text-lg"}`} aria-label="Nueva conversación" title="Nueva conversación">
@@ -500,7 +500,7 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             ref={messagesScrollRef}
-            className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5"
+            className="min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5"
             role="region"
             aria-label="Mensajes de la conversación"
             aria-live="polite"
@@ -508,8 +508,8 @@ export function ChatDrawer({ open, onClose }: { open: boolean; onClose: () => vo
           >
             {messages.length === 0 && <p className="py-12 text-center text-sm text-text-muted">Preguntá por ventas, stock, productos dormidos o inventario.</p>}
             {messages.map((message) => (
-              <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                {message.role === "assistant" ? <AssistantMessage message={message} context={accessContext} /> : <div className="max-w-[90%] rounded-xl bg-primary px-3 py-2 text-sm text-primary-fg"><p className="whitespace-pre-wrap leading-relaxed">{message.content}</p></div>}
+              <div key={message.id} className={`flex min-w-0 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                {message.role === "assistant" ? <AssistantMessage message={message} context={accessContext} /> : <div className="min-w-0 max-w-[90%] rounded-xl bg-primary px-3 py-2 text-sm text-primary-fg"><p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p></div>}
               </div>
             ))}
             {loading && (
