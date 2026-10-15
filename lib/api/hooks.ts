@@ -5,6 +5,21 @@ import { useAuthStore } from "@/lib/auth/store";
 import { isValidBusinessDate, isValidSupplierNit } from "@/lib/compras/routes";
 import { isValidCustomerId } from "@/lib/clientes/routes";
 import { sendChatMessage, type ChatReply } from "./chat";
+import {
+  type ClusterStatus,
+  type ClusterNodeStatus,
+  type BackendNodeInfo,
+  type BackendNodeId,
+  type NodeHealthStatus,
+} from "./backendFailover";
+
+export type {
+  ClusterStatus,
+  ClusterNodeStatus,
+  BackendNodeInfo,
+  BackendNodeId,
+  NodeHealthStatus,
+};
 
 interface Product {
   codprod: string;
@@ -1361,6 +1376,32 @@ export function usePipelineRun(id: number | null) {
 
 export function usePipelineSummary() {
   return useMetrics<PipelineSummary>("/api/admin/pipeline/summary");
+}
+
+export function useBackendStatus() {
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const qs = currentTenant ? `?tenant=${encodeURIComponent(currentTenant)}` : "";
+  const url = `/api/admin/backend-status${qs}`;
+  const swrKey: readonly [string, string] = [currentTenant ?? "_no_tenant", url];
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR<ClusterStatus>(
+    swrKey,
+    (k: readonly [string, string]) => apiFetchJson<ClusterStatus>(k[1]),
+    {
+      refreshInterval: 30_000,
+      refreshWhenHidden: false,
+      revalidateOnFocus: true,
+      dedupingInterval: 5_000,
+    },
+  );
+
+  return {
+    data,
+    error,
+    isLoading: isLoading || (isValidating && data === undefined),
+    isValidating,
+    mutate,
+  };
 }
 
 // ── V1.8.1: Data Catalog ──────────────────────────────────────────────

@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Table } from "@/components/ui/Table";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { BackendSourceCard } from "@/components/admin/BackendSourceCard";
 import {
   BarChart,
   Bar,
@@ -268,6 +269,8 @@ export default function PipelinePage(): JSX.Element {
           Ver tablas generadas →
         </Link>
       </div>
+
+      {role === "admin" && <BackendSourceCard />}
 
       <SummaryCards />
 

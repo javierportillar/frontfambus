@@ -1,11 +1,49 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   fetchWithFailover,
+  identifyNode,
+  checkClusterStatus,
   PRIMARY_API_BASE,
   MOTOSHOP_LOCAL_BASE,
   MASVITAL_LOCAL_BASE,
   resolveFallbackUrls,
 } from "./backendFailover";
+
+describe("identifyNode", () => {
+  it("identifies Render primary node", () => {
+    const node = identifyNode(PRIMARY_API_BASE);
+    expect(node.id).toBe("render");
+    expect(node.name).toBe("Render (Nube)");
+    expect(node.isPrimary).toBe(true);
+  });
+
+  it("identifies MotoShop local node", () => {
+    const node = identifyNode(MOTOSHOP_LOCAL_BASE);
+    expect(node.id).toBe("motoshop");
+    expect(node.name).toBe("PC MotoShop (Local)");
+    expect(node.isPrimary).toBe(false);
+  });
+
+  it("identifies MasVital local node", () => {
+    const node = identifyNode(MASVITAL_LOCAL_BASE);
+    expect(node.id).toBe("masvital");
+    expect(node.name).toBe("PC MasVital (Local)");
+    expect(node.isPrimary).toBe(false);
+  });
+
+  it("identifies arbitrary URLs containing host keywords", () => {
+    expect(identifyNode("https://motoshop-local.fragloesja.uk/health").id).toBe("motoshop");
+    expect(identifyNode("https://masvital-local.fragloesja.uk/health").id).toBe("masvital");
+    expect(identifyNode("https://api.fragloesja.uk/health").id).toBe("render");
+  });
+
+  it("identifies unknown URLs as custom", () => {
+    const node = identifyNode("https://custom-backend.internal:8000");
+    expect(node.id).toBe("custom");
+    expect(node.name).toBe("Servidor Personalizado");
+    expect(node.isPrimary).toBe(false);
+  });
+});
 
 describe("resolveFallbackUrls", () => {
   it("prioritizes motoshop node when tenant is motoshop or unspecified", () => {
@@ -44,6 +82,7 @@ describe("fetchWithFailover", () => {
     const result = await fetchWithFailover("/api/health", { method: "GET" });
 
     expect(result.isFallback).toBe(false);
+    expect(result.activeNode.id).toBe("render");
     expect(result.resp.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0]?.[0]).toBe(`${PRIMARY_API_BASE}/api/health`);
@@ -67,6 +106,7 @@ describe("fetchWithFailover", () => {
     });
 
     expect(result.isFallback).toBe(true);
+    expect(result.activeNode.id).toBe("motoshop");
     expect(result.resp.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[0]?.[0]).toBe(`${PRIMARY_API_BASE}/api/health`);
@@ -92,6 +132,7 @@ describe("fetchWithFailover", () => {
     });
 
     expect(result.isFallback).toBe(true);
+    expect(result.activeNode.id).toBe("masvital");
     expect(result.resp.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(3);
     expect(mockFetch.mock.calls[0]?.[0]).toBe(`${PRIMARY_API_BASE}/api/health`);
@@ -117,8 +158,98 @@ describe("fetchWithFailover", () => {
     });
 
     expect(result.isFallback).toBe(true);
+    expect(result.activeNode.id).toBe("masvital");
     expect(result.resp.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[1]?.[0]).toBe(`${MASVITAL_LOCAL_BASE}/api/health`);
   });
 });
+
+describe("checkClusterStatus", () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("detects primary as active when Render is online", async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes(PRIMARY_API_BASE)) {
+        return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    });
+
+    const status = await checkClusterStatus("motoshop");
+
+    expect(status.activeNode?.id).toBe("render");
+    expect(status.nodes).toHaveLength(3);
+    const renderNode = status.nodes.find((n) => n.id === "render");
+    expect(renderNode?.status).toBe("online");
+    expect(renderNode?.isActive).toBe(true);
+    const motoshopNode = status.nodes.find((n) => n.id === "motoshop");
+    expect(motoshopNode?.isActive).toBe(false);
+  });
+
+  it("falls back to MotoShop PC when Render is suspended and tenant is motoshop", async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("api.fragloesja.uk")) {
+        return Promise.resolve(new Response("Suspended", { status: 503 }));
+      }
+      if (url.includes("motoshop-local")) {
+        return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+      }
+      return Promise.reject(new Error("offline"));
+    });
+
+    const status = await checkClusterStatus("motoshop");
+
+    expect(status.activeNode?.id).toBe("motoshop");
+    const renderNode = status.nodes.find((n) => n.id === "render");
+    expect(renderNode?.status).toBe("suspended");
+    expect(renderNode?.isActive).toBe(false);
+
+    const motoshopNode = status.nodes.find((n) => n.id === "motoshop");
+    expect(motoshopNode?.status).toBe("online");
+    expect(motoshopNode?.isActive).toBe(true);
+
+    const masvitalNode = status.nodes.find((n) => n.id === "masvital");
+    expect(masvitalNode?.status).toBe("offline");
+    expect(masvitalNode?.isActive).toBe(false);
+  });
+
+  it("prioritizes MasVital PC when Render is suspended and tenant is masvital", async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("api.fragloesja.uk")) {
+        return Promise.resolve(new Response("Suspended", { status: 503 }));
+      }
+      // Both local PCs are online
+      return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    });
+
+    const status = await checkClusterStatus("masvital");
+
+    expect(status.activeNode?.id).toBe("masvital");
+    const masvitalNode = status.nodes.find((n) => n.id === "masvital");
+    expect(masvitalNode?.isActive).toBe(true);
+    const motoshopNode = status.nodes.find((n) => n.id === "motoshop");
+    expect(motoshopNode?.isActive).toBe(false);
+  });
+
+  it("returns null activeNode when all nodes are offline", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("Network timeout"));
+
+    const status = await checkClusterStatus("motoshop");
+
+    expect(status.activeNode).toBeNull();
+    status.nodes.forEach((n) => {
+      expect(n.status).toBe("offline");
+      expect(n.isActive).toBe(false);
+    });
+  });
+});
+
