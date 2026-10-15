@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
+import { fetchWithFailover } from "@/lib/api/backendFailover";
 
 export async function GET(req: NextRequest) {
   const token = req.cookies.get("motoshop_token")?.value;
@@ -18,7 +17,7 @@ export async function GET(req: NextRequest) {
       headers.set("X-Tenant", tenant);
     }
 
-    const resp = await fetch(`${API_BASE}/api/auth/me`, {
+    const { resp, isFallback } = await fetchWithFailover(`/api/auth/me`, {
       headers,
       cache: "no-store",
     });
@@ -29,7 +28,11 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await resp.json();
-    return NextResponse.json(data);
+    const res = NextResponse.json(data);
+    if (isFallback) {
+      res.headers.set("x-backend-source", "fallback");
+    }
+    return res;
   } catch {
     return NextResponse.json(
       { detail: "No se pudo conectar con el servidor" },

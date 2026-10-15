@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { fetchWithFailover } from "@/lib/api/backendFailover";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
 const AUTHORIZATION_TTL_MS = 15_000;
@@ -34,13 +35,24 @@ async function verifyMasVitalIdentity(
   fetcher: typeof fetch,
 ): Promise<CatalogAuthorization> {
   try {
-    const response = await fetcher(`${API_BASE}/api/auth/me`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "X-Tenant": "masvital",
-      },
-      cache: "no-store",
-    });
+    const response =
+      fetcher === fetch
+        ? (
+            await fetchWithFailover(`/api/auth/me`, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "X-Tenant": "masvital",
+              },
+              cache: "no-store",
+            })
+          ).resp
+        : await fetcher(`${API_BASE}/api/auth/me`, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "X-Tenant": "masvital",
+            },
+            cache: "no-store",
+          });
 
     if (!response.ok) {
       return {
