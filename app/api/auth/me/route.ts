@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithFailover } from "@/lib/api/backendFailover";
 
+function decodeToken(token: string): Record<string, unknown> {
+  try {
+    const b64 = token.split(".")[1] ?? "";
+    return JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
+  } catch {
+    return {};
+  }
+}
+
 export async function GET(req: NextRequest) {
   const token = req.cookies.get("motoshop_token")?.value;
 
@@ -11,10 +20,26 @@ export async function GET(req: NextRequest) {
   try {
     // This endpoint is session- and tenant-specific, so it must never be
     // reused from Next's data cache across requests.
+    const payload = decodeToken(token);
+    const allowedTenants = Array.isArray(payload.tenants_allowed)
+      ? (payload.tenants_allowed as string[])
+      : [];
+
     const headers = new Headers({ Authorization: `Bearer ${token}` });
-    const tenant = req.headers.get("x-tenant") ?? req.cookies.get("motoshop_tenant")?.value;
-    if (tenant) {
-      headers.set("X-Tenant", tenant);
+    const rawTenant = req.headers.get("x-tenant") ?? req.cookies.get("motoshop_tenant")?.value;
+
+    let effectiveTenant: string | null = null;
+    if (allowedTenants.length > 0) {
+      if (rawTenant && allowedTenants.includes(rawTenant)) {
+        effectiveTenant = rawTenant;
+      } else if (allowedTenants.length === 1) {
+        effectiveTenant = allowedTenants[0] ?? null;
+      }
+    } else {
+      effectiveTenant = rawTenant ?? null;
+    }
+    if (effectiveTenant) {
+      headers.set("X-Tenant", effectiveTenant);
     }
 
     const { resp, isFallback } = await fetchWithFailover(`/api/auth/me`, {

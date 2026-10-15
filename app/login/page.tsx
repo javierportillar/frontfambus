@@ -100,8 +100,9 @@ function LoginForm(): JSX.Element {
         addToast("Seleccioná un negocio", "success");
         window.location.assign("/select-tenant");
       }
-    } catch {
-      addToast("Error de conexión", "error");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error de conexión";
+      addToast(msg, "error");
     } finally {
       setLoading(false);
     }
