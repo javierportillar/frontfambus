@@ -60,6 +60,16 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     headers.set("Idempotency-Key", idempotencyKey);
   }
 
+  // Forward conditional request headers for cache validation (304 Not Modified)
+  const ifNoneMatch = req.headers.get("if-none-match");
+  if (ifNoneMatch) {
+    headers.set("If-None-Match", ifNoneMatch);
+  }
+  const ifModifiedSince = req.headers.get("if-modified-since");
+  if (ifModifiedSince) {
+    headers.set("If-Modified-Since", ifModifiedSince);
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers,
@@ -72,14 +82,43 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
 
   try {
     const resp = await fetch(targetUrl, init);
-    const contentType = resp.headers.get("content-type") ?? "application/json";
     const respHeaders: Record<string, string> = {
-      "content-type": contentType,
       "access-control-allow-origin": "*",
     };
+
+    const contentType = resp.headers.get("content-type");
+    if (contentType) {
+      respHeaders["content-type"] = contentType;
+    } else if (resp.status !== 304 && resp.status !== 204) {
+      respHeaders["content-type"] = "application/json";
+    }
+
     const contentDisposition = resp.headers.get("content-disposition");
     if (contentDisposition) {
       respHeaders["content-disposition"] = contentDisposition;
+    }
+
+    const etag = resp.headers.get("etag");
+    if (etag) {
+      respHeaders["etag"] = etag;
+    }
+
+    const cacheControl = resp.headers.get("cache-control");
+    if (cacheControl) {
+      respHeaders["cache-control"] = cacheControl;
+    }
+
+    const vary = resp.headers.get("vary");
+    if (vary) {
+      respHeaders["vary"] = vary;
+    }
+
+    if (resp.status === 304) {
+      return new NextResponse(null, {
+        status: 304,
+        statusText: resp.statusText,
+        headers: respHeaders,
+      });
     }
 
     return new NextResponse(resp.body, {

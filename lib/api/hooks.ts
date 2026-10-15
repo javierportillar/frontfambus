@@ -63,6 +63,9 @@ export function useProducts(query: string, page = 1, limit = 20) {
     (k: readonly [string, string]) => fetchWithOfflineFallback<ProductsResponse>(k[0], k[1], CACHE_TTL_CATALOG),
     {
       revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
       dedupingInterval: 30_000,
       keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
@@ -79,6 +82,9 @@ export function useStock(sku: string | null) {
     (k: readonly [string, string]) => fetchWithOfflineFallback<StockResponse>(k[0], k[1], CACHE_TTL_STOCK),
     {
       revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
       dedupingInterval: 10_000,
       keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },
@@ -165,9 +171,11 @@ interface CohortesResponse {
 }
 
 const DEDUP_METRICS = 60_000; // 1 min (DT-F3-10)
+export const DEFAULT_METRICS_REFRESH_INTERVAL = 300_000; // 5 min default (DT-PERF-CACHE)
 
-interface UseMetricsOptions {
+export interface UseMetricsOptions {
   keepPreviousData?: boolean;
+  refreshInterval?: number;
 }
 
 export const PURCHASES_DAY_METRICS_OPTIONS = {
@@ -176,6 +184,10 @@ export const PURCHASES_DAY_METRICS_OPTIONS = {
 
 export function resolveMetricsKeepPreviousData(options?: UseMetricsOptions): boolean {
   return options?.keepPreviousData ?? true;
+}
+
+export function resolveMetricsRefreshInterval(options?: UseMetricsOptions): number {
+  return options?.refreshInterval ?? DEFAULT_METRICS_REFRESH_INTERVAL;
 }
 
 function useMetrics<T>(key: string | null, options?: UseMetricsOptions): {
@@ -205,10 +217,12 @@ function useMetrics<T>(key: string | null, options?: UseMetricsOptions): {
   const fetcher = (k: readonly [string, string]): Promise<T> => apiFetchJson<T>(k[1]);
 
   const { data, error, isLoading, isValidating, mutate } = useSWR<T>(swrKey, fetcher, {
-    revalidateOnFocus: false,
+    revalidateOnFocus: true,
     revalidateOnReconnect: true,
-    dedupingInterval: DEDUP_METRICS,
-    refreshInterval: 60_000, // refresh cada 60s (F7-PERF-1)
+    refreshWhenHidden: false,
+    refreshWhenOffline: false,
+    dedupingInterval: Math.max(DEDUP_METRICS, 10_000),
+    refreshInterval: resolveMetricsRefreshInterval(options),
     // Sensitive views can opt out so data from a previous key/tenant is never retained.
     keepPreviousData: resolveMetricsKeepPreviousData(options),
     // RESILIENCIA COLD START (2026-06-16): Render Free duerme el servidor;
@@ -996,6 +1010,8 @@ export function useExpiryLots(status: "active" | "depleted" | "all" = "active") 
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
       dedupingInterval: 15_000,
       keepPreviousData: true,
     },
@@ -1179,6 +1195,9 @@ export function useForecast(sku: string | null, horizon: number) {
   const swrKey: readonly [string, string] | null = url ? [tenant, url] : null;
   return useSWR<ForecastResponse>(swrKey, (k: readonly [string, string]) => apiFetchJson<ForecastResponse>(k[1]), {
     revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    refreshWhenHidden: false,
+    refreshWhenOffline: false,
     dedupingInterval: FORECAST_DEDUP,
     refreshInterval: 5 * 60_000,
     keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
@@ -1230,6 +1249,9 @@ export function useAlerts(urgency?: string) {
     (k: readonly [string, string]) => apiFetchJson<AlertsResponse>(k[1]),
     {
       revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
       dedupingInterval: FORECAST_DEDUP,
       refreshInterval: 5 * 60_000,
       keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
@@ -1262,6 +1284,9 @@ export function useForecastNarrative() {
     },
     {
       revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
       dedupingInterval: 60 * 60 * 1000, // 1h cache cliente
       refreshInterval: 0, // no auto-refresh
       keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
@@ -1515,6 +1540,9 @@ export function useProductMovements(sku: string | null) {
     (k: readonly [string, string]) => apiFetchJson<ProductMovementsResponse>(k[1]),
     {
       revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
       dedupingInterval: 60_000,
       keepPreviousData: true, // mantener data al cambiar tabs/filtros (evita "sin datos" prematuro)
     },

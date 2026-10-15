@@ -21,7 +21,13 @@ export function StaleDataBanner(): JSX.Element | null {
   const { data, error } = useSWR<FreshnessResponse>(
     "/api/health/data-freshness",
     apiFetchJson<FreshnessResponse>,
-    { refreshInterval: 5 * 60 * 1000 },
+    {
+      refreshInterval: 5 * 60 * 1000,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+    },
   );
 
   if (error) {
