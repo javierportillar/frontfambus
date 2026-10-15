@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
+import { fetchWithFailover } from "@/lib/api/backendFailover";
 
 function decodeToken(token: string): Record<string, unknown> {
   try {
@@ -23,13 +22,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const resp = await fetch(`${API_BASE}/api/auth/login`, {
+    const { resp, isFallback } = await fetchWithFailover(`/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
 
     if (!resp.ok) {
+      if (resp.status >= 500) {
+        return NextResponse.json(
+          { detail: "Servidor temporalmente no disponible o suspendido. Intente nuevamente." },
+          { status: 503 },
+        );
+      }
       const error = await resp.json().catch(() => ({ detail: "Credenciales inválidas" }));
       return NextResponse.json(error, { status: resp.status });
     }

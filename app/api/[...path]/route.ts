@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchWithFailover } from "@/lib/api/backendFailover";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
-
 async function proxyRequest(req: NextRequest, path: string): Promise<NextResponse> {
   const url = new URL(req.url);
-  const targetUrl = `${API_BASE}/api/${path}${url.search}`;
+  const pathAndQuery = `/api/${path}${url.search}`;
 
   const headers = new Headers();
   const cookieHeader = req.headers.get("cookie");
@@ -81,9 +80,10 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   }
 
   try {
-    const resp = await fetch(targetUrl, init);
+    const { resp, isFallback } = await fetchWithFailover(pathAndQuery, init);
     const respHeaders: Record<string, string> = {
       "access-control-allow-origin": "*",
+      "x-backend-source": isFallback ? "fallback" : "primary",
     };
 
     const contentType = resp.headers.get("content-type");

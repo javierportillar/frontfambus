@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
+import { fetchWithFailover } from "@/lib/api/backendFailover";
 
 export async function POST(req: NextRequest) {
   const refreshToken = req.cookies.get("motoshop_refresh")?.value;
@@ -10,7 +9,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const resp = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const { resp } = await fetchWithFailover(`/api/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: refreshToken }),
