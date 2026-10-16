@@ -150,11 +150,16 @@ export async function fetchWithFailover(
   pathAndQuery: string,
   init: RequestInit,
   timeoutMs = 8000,
+  fallbackTimeoutMs = 5000,
 ): Promise<FailoverResult> {
   const normalizedPath = pathAndQuery.startsWith("/")
     ? pathAndQuery
     : `/${pathAndQuery}`;
   const primaryUrl = `${PRIMARY_API_BASE}${normalizedPath}`;
+
+  const isLlm = normalizedPath.startsWith("/api/llm") || normalizedPath.startsWith("/llm");
+  const effectiveTimeout = timeoutMs !== 8000 ? timeoutMs : (isLlm ? 60000 : 8000);
+  const effectiveFallbackTimeout = fallbackTimeoutMs !== 5000 ? fallbackTimeoutMs : (isLlm ? 50000 : 5000);
 
   const tenant = extractTenant(init.headers);
   const fallbackUrls = resolveFallbackUrls(tenant);
@@ -164,7 +169,7 @@ export async function fetchWithFailover(
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
     if (init.signal) {
       if (init.signal.aborted) {
@@ -193,6 +198,7 @@ export async function fetchWithFailover(
         fallbackUrls,
         normalizedPath,
         init,
+        effectiveFallbackTimeout,
       );
       if (fallbackResult) {
         return fallbackResult;
@@ -214,6 +220,7 @@ export async function fetchWithFailover(
         fallbackUrls,
         normalizedPath,
         init,
+        effectiveFallbackTimeout,
       );
       if (fallbackResult) {
         return fallbackResult;
