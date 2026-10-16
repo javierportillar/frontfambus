@@ -197,6 +197,9 @@ export async function fetchWithFailover(
     };
   } catch (err) {
     primaryError = err;
+    if (init.signal?.aborted) {
+      throw err;
+    }
     if (fallbackUrls.length > 0) {
       const fallbackResult = await executeFallbackCascade(
         fallbackUrls,
@@ -218,10 +221,20 @@ async function executeFallbackCascade(
   perNodeTimeoutMs = 5000,
 ): Promise<FailoverResult | null> {
   for (const baseUrl of fallbackUrls) {
+    if (init.signal?.aborted) {
+      throw init.signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+    }
+
     const targetUrl = `${baseUrl}${path}`;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), perNodeTimeoutMs);
+
+      if (init.signal) {
+        init.signal.addEventListener("abort", () => controller.abort(), {
+          once: true,
+        });
+      }
 
       const resp = await fetch(targetUrl, {
         ...init,
@@ -239,7 +252,10 @@ async function executeFallbackCascade(
         };
       }
       // If node returns 502/503/504, it might be starting up or in trouble; try next node
-    } catch {
+    } catch (err) {
+      if (init.signal?.aborted) {
+        throw err;
+      }
       // Continue to next node in the pool
     }
   }
@@ -303,14 +319,31 @@ async function probeNode(
   }
 }
 
+const clusterStatusCache = new Map<string, { timestamp: number; data: ClusterStatus }>();
+const CLUSTER_CACHE_TTL_MS = 5000;
+
+export function clearClusterStatusCache(): void {
+  clusterStatusCache.clear();
+}
+
 /**
  * Probes all candidate base nodes (Render, MotoShop PC, MasVital PC) on /health in parallel
  * to return live cluster status, latency, and the currently active node for the given tenant.
+ * Uses a short 5-second TTL cache to prevent probe storms across concurrent requests.
  */
 export async function checkClusterStatus(
   tenant: string | null,
   probeTimeoutMs = 3000,
+  skipCache = false,
 ): Promise<ClusterStatus> {
+  const cacheKey = (tenant ?? "_default").toLowerCase();
+  const now = Date.now();
+  const cached = clusterStatusCache.get(cacheKey);
+
+  if (!skipCache && cached && now - cached.timestamp < CLUSTER_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   const candidateBases = [
     PRIMARY_API_BASE,
     MOTOSHOP_LOCAL_BASE,
@@ -353,10 +386,13 @@ export async function checkClusterStatus(
     isActive: activeNode !== null && p.info.id === activeNode.id,
   }));
 
-  return {
+  const result: ClusterStatus = {
     activeNode,
     currentTenant: tenant,
     nodes,
-    checkedAt: new Date().toISOString(),
+    checkedAt: new Date(now).toISOString(),
   };
+
+  clusterStatusCache.set(cacheKey, { timestamp: now, data: result });
+  return result;
 }

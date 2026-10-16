@@ -4,6 +4,14 @@ import { checkClusterStatus } from "@/lib/api/backendFailover";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const token =
+    req.cookies.get("motoshop_token")?.value ??
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+
+  if (!token) {
+    return NextResponse.json({ detail: "No autenticado" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const tenant =
     searchParams.get("tenant") ??

@@ -3,6 +3,7 @@ import {
   fetchWithFailover,
   identifyNode,
   checkClusterStatus,
+  clearClusterStatusCache,
   PRIMARY_API_BASE,
   MOTOSHOP_LOCAL_BASE,
   MASVITAL_LOCAL_BASE,
@@ -64,6 +65,7 @@ describe("fetchWithFailover", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    clearClusterStatusCache();
   });
 
   afterEach(() => {
@@ -170,6 +172,7 @@ describe("checkClusterStatus", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    clearClusterStatusCache();
   });
 
   afterEach(() => {
@@ -250,6 +253,39 @@ describe("checkClusterStatus", () => {
       expect(n.status).toBe("offline");
       expect(n.isActive).toBe(false);
     });
+  });
+
+  it("caches cluster status within TTL window to avoid redundant probes", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+    );
+    global.fetch = mockFetch;
+
+    const first = await checkClusterStatus("motoshop");
+    const second = await checkClusterStatus("motoshop");
+
+    expect(first.checkedAt).toBe(second.checkedAt);
+    // 3 candidate nodes probed once in the first call
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("propagates client abort signal to fallback requests", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Suspended", { status: 503 }))
+      .mockImplementationOnce((_url, init: RequestInit) => {
+        expect(init.signal?.aborted).toBe(true);
+        return Promise.reject(new DOMException("The operation was aborted", "AbortError"));
+      });
+
+    global.fetch = mockFetch;
+
+    await expect(
+      fetchWithFailover("/api/health", { method: "GET", signal: controller.signal }),
+    ).rejects.toThrow();
   });
 });
 
