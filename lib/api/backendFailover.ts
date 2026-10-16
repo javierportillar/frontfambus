@@ -21,11 +21,20 @@ export interface BackendNodeInfo {
 
 export type NodeHealthStatus = "online" | "suspended" | "offline";
 
+export interface NodeFreshnessInfo {
+  status: "OK" | "WARN" | "STALE" | "CRITICAL" | "ERROR";
+  backend: string;
+  lagHours: number | null;
+  fileMtimeUtc: string | null;
+  fileSizeBytes?: number | null;
+}
+
 export interface ClusterNodeStatus extends BackendNodeInfo {
   status: NodeHealthStatus;
   statusCode: number | null;
   latencyMs: number | null;
   isActive: boolean;
+  freshness?: NodeFreshnessInfo | null;
 }
 
 export interface ClusterStatus {
@@ -266,11 +275,13 @@ async function executeFallbackCascade(
 async function probeNode(
   baseUrl: string,
   timeoutMs: number,
+  tenant: string | null,
 ): Promise<{
   info: BackendNodeInfo;
   status: NodeHealthStatus;
   statusCode: number | null;
   latencyMs: number | null;
+  freshness?: NodeFreshnessInfo | null;
 }> {
   const info = identifyNode(baseUrl);
   const targetUrl = `${baseUrl.replace(/\/$/, "")}/health`;
@@ -287,11 +298,37 @@ async function probeNode(
     clearTimeout(timer);
 
     if (res.status < 400) {
+      let freshness: NodeFreshnessInfo | null = null;
+      try {
+        const tenantParam = tenant ? `?tenant=${encodeURIComponent(tenant)}` : "";
+        const freshUrl = `${baseUrl.replace(/\/$/, "")}/api/health/data-freshness${tenantParam}`;
+        const freshCtrl = new AbortController();
+        const freshTimer = setTimeout(() => freshCtrl.abort(), 2000);
+        const freshRes = await fetch(freshUrl, {
+          method: "GET",
+          signal: freshCtrl.signal,
+        });
+        clearTimeout(freshTimer);
+        if (freshRes.ok) {
+          const freshJson = await freshRes.json();
+          freshness = {
+            status: freshJson.status,
+            backend: freshJson.backend,
+            lagHours: typeof freshJson.lag_hours === "number" ? freshJson.lag_hours : null,
+            fileMtimeUtc: freshJson.file_mtime_utc ?? null,
+            fileSizeBytes: freshJson.file_size_bytes ?? null,
+          };
+        }
+      } catch {
+        // Freshness probe is non-blocking and optional
+      }
+
       return {
         info,
         status: "online",
         statusCode: res.status,
         latencyMs,
+        freshness,
       };
     } else if (res.status === 502 || res.status === 503 || res.status === 504) {
       return {
@@ -299,6 +336,7 @@ async function probeNode(
         status: "suspended",
         statusCode: res.status,
         latencyMs,
+        freshness: null,
       };
     } else {
       return {
@@ -306,6 +344,7 @@ async function probeNode(
         status: "offline",
         statusCode: res.status,
         latencyMs,
+        freshness: null,
       };
     }
   } catch {
@@ -315,6 +354,7 @@ async function probeNode(
       status: "offline",
       statusCode: null,
       latencyMs: null,
+      freshness: null,
     };
   }
 }
@@ -351,7 +391,7 @@ export async function checkClusterStatus(
   ];
 
   const probeResults = await Promise.all(
-    candidateBases.map((base) => probeNode(base, probeTimeoutMs)),
+    candidateBases.map((base) => probeNode(base, probeTimeoutMs, tenant)),
   );
 
   const renderProbe = probeResults.find((p) => p.info.id === "render");
@@ -384,6 +424,7 @@ export async function checkClusterStatus(
     statusCode: p.statusCode,
     latencyMs: p.latencyMs,
     isActive: activeNode !== null && p.info.id === activeNode.id,
+    freshness: p.freshness ?? null,
   }));
 
   const result: ClusterStatus = {

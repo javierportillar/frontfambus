@@ -265,8 +265,8 @@ describe("checkClusterStatus", () => {
     const second = await checkClusterStatus("motoshop");
 
     expect(first.checkedAt).toBe(second.checkedAt);
-    // 3 candidate nodes probed once in the first call
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // 3 candidate nodes probed once for health + once for data-freshness
+    expect(mockFetch).toHaveBeenCalledTimes(6);
   });
 
   it("propagates client abort signal to fallback requests", async () => {

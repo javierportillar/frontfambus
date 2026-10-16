@@ -49,15 +49,22 @@ function NodeIcon({ id }: { id: string }): JSX.Element {
 
 function getNodeDisplayStatus(node: ClusterNodeStatus): {
   label: string;
-  badgeVariant: "success" | "warning" | "default" | "error";
+  badgeVariant: "success" | "warning" | "default" | "error" | "info";
   dotColor: string;
 } {
   if (node.status === "online") {
-    const label = node.id === "render" ? "Online" : "Online [DuckDB]";
+    if (node.isActive) {
+      const label = node.id === "render" ? "Online (Principal)" : "Atendiendo tráfico [DuckDB]";
+      return {
+        label,
+        badgeVariant: "success",
+        dotColor: "bg-success",
+      };
+    }
     return {
-      label,
-      badgeVariant: "success",
-      dotColor: "bg-success",
+      label: "En espera (Standby)",
+      badgeVariant: "default",
+      dotColor: "bg-info",
     };
   }
   if (node.status === "suspended") {
@@ -73,6 +80,34 @@ function getNodeDisplayStatus(node: ClusterNodeStatus): {
     badgeVariant: "default",
     dotColor: "bg-text-muted/40",
   };
+}
+
+function formatFreshnessDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("es-CO", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatLag(lagHours: number | null | undefined): string {
+  if (lagHours == null) return "";
+  if (lagHours < 0.1) return "hace instantes";
+  if (lagHours < 1) {
+    const mins = Math.round(lagHours * 60);
+    return `hace ${mins} min`;
+  }
+  const hours = Math.floor(lagHours);
+  const mins = Math.round((lagHours - hours) * 60);
+  return mins > 0 ? `hace ${hours}h ${mins}m` : `hace ${hours}h`;
 }
 
 function formatUrlHost(url: string): string {
@@ -141,6 +176,7 @@ export function BackendSourceCard(): JSX.Element {
   const activeNode = data?.activeNode;
   const nodes = data?.nodes ?? [];
   const checkedAtTime = formatTime(data?.checkedAt);
+  const activeFreshness = nodes.find((n) => n.isActive)?.freshness;
 
   return (
     <Card variant="default" hover={false} className="border-border bg-surface shadow-sm">
@@ -179,6 +215,16 @@ export function BackendSourceCard(): JSX.Element {
               >
                 {tenantDisplay?.name ?? currentTenantSlug}
               </Badge>
+
+              {activeFreshness?.fileMtimeUtc && (
+                <span className="text-xs text-text-muted font-normal">
+                  · Últimos datos procesados:{" "}
+                  <strong className="font-mono text-text-primary">
+                    {formatFreshnessDate(activeFreshness.fileMtimeUtc)}
+                  </strong>{" "}
+                  ({formatLag(activeFreshness.lagHours)})
+                </span>
+              )}
             </div>
           </div>
 
@@ -246,16 +292,48 @@ export function BackendSourceCard(): JSX.Element {
                       </span>
                     </div>
 
-                    {node.isActive && (
+                    {node.isActive ? (
                       <Badge variant="success" size="sm" className="font-semibold">
                         Activo
                       </Badge>
-                    )}
+                    ) : node.status === "online" ? (
+                      <Badge variant="default" size="sm" className="font-medium text-text-muted">
+                        Standby
+                      </Badge>
+                    ) : null}
                   </div>
 
-                  <p className="font-mono text-xs text-text-muted truncate mb-3" title={node.url}>
+                  <p className="font-mono text-xs text-text-muted truncate mb-2" title={node.url}>
                     {host}
                   </p>
+
+                  {/* Data Freshness Box */}
+                  {node.freshness?.fileMtimeUtc && (
+                    <div className="mb-3 rounded-lg border border-border/70 bg-surface/80 p-2 text-xs space-y-1">
+                      <div className="flex items-center justify-between text-text-secondary">
+                        <span className="text-[0.6875rem] font-medium uppercase tracking-wider text-text-muted">
+                          Datos procesados
+                        </span>
+                        {node.freshness.status === "OK" ? (
+                          <span className="text-[0.625rem] font-semibold text-success">Al día</span>
+                        ) : node.freshness.status === "WARN" ? (
+                          <span className="text-[0.625rem] font-semibold text-warning">
+                            Atraso ({formatLag(node.freshness.lagHours)})
+                          </span>
+                        ) : (
+                          <span className="text-[0.625rem] font-semibold text-error">Desactualizado</span>
+                        )}
+                      </div>
+                      <div className="flex items-baseline justify-between font-mono text-xs text-text-primary">
+                        <span>{formatFreshnessDate(node.freshness.fileMtimeUtc)}</span>
+                        {node.freshness.lagHours != null && (
+                          <span className="text-[0.6875rem] text-text-muted">
+                            {formatLag(node.freshness.lagHours)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-border/60">

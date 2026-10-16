@@ -152,4 +152,68 @@ describe("BackendSourceCard", () => {
     expect(screen.getByText("Suspendido [503]")).toBeInTheDocument();
     expect(screen.getByText("Activo")).toBeInTheDocument();
   });
+
+  it("renders Standby badge for non-active online nodes and displays data freshness timestamp", () => {
+    vi.mocked(hooks.useBackendStatus).mockReturnValue({
+      data: {
+        activeNode: {
+          id: "motoshop",
+          name: "PC MotoShop (Local)",
+          url: "https://motoshop-local.fragloesja.uk",
+          isPrimary: false,
+        },
+        currentTenant: "motoshop",
+        nodes: [
+          {
+            id: "motoshop",
+            name: "PC MotoShop (Local)",
+            url: "https://motoshop-local.fragloesja.uk",
+            isPrimary: false,
+            status: "online",
+            statusCode: 200,
+            latencyMs: 15,
+            isActive: true,
+            freshness: {
+              status: "OK",
+              backend: "duckdb",
+              lagHours: 0.25,
+              fileMtimeUtc: "2026-10-15T21:43:52.000Z",
+              fileSizeBytes: 118239232,
+            },
+          },
+          {
+            id: "masvital",
+            name: "PC MasVital (Local)",
+            url: "https://masvital-local.fragloesja.uk",
+            isPrimary: false,
+            status: "online",
+            statusCode: 200,
+            latencyMs: 22,
+            isActive: false,
+            freshness: {
+              status: "WARN",
+              backend: "duckdb",
+              lagHours: 3.2,
+              fileMtimeUtc: "2026-10-15T18:30:00.000Z",
+              fileSizeBytes: 10485760,
+            },
+          },
+        ],
+        checkedAt: "2026-10-15T22:00:00.000Z",
+      },
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      mutate: vi.fn(),
+    });
+
+    render(<BackendSourceCard />);
+
+    expect(screen.getByText("Activo")).toBeInTheDocument();
+    expect(screen.getByText("Standby")).toBeInTheDocument();
+    expect(screen.getByText(/Atendiendo tráfico \[DuckDB\]/i)).toBeInTheDocument();
+    expect(screen.getByText(/En espera \(Standby\)/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Datos procesados/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Al día/i)).toBeInTheDocument();
+  });
 });
