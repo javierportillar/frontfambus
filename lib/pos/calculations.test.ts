@@ -6,6 +6,7 @@ import {
   calculateChange,
   calculateDifference,
   calculateLineValues,
+  calculateSplitPayments,
 } from "./calculations";
 import type { CartItem, CashMovement } from "./types";
 
@@ -198,5 +199,40 @@ describe("lib/pos/calculations - sgHermes Mathematical Parity", () => {
     const shortageDiff = calculateDifference(350000, balance.expectedCash);
     expect(shortageDiff.status).toBe("SHORTAGE");
     expect(shortageDiff.difference).toBe(-5000);
+  });
+
+  describe("calculateSplitPayments - sgHermes Varias Formas de Pago", () => {
+    it("validates exact balance matching sgHermes screenshot (4000 banco + 5600 efectivo = 9600)", () => {
+      const payments = [
+        { amount: 4000 }, // Consignacion Banco
+        { amount: 5600 }, // Efectivo
+      ];
+      const result = calculateSplitPayments(9600, payments);
+
+      expect(result.totalPaid).toBe(9600);
+      expect(result.remainingDifference).toBe(0);
+      expect(result.isBalanced).toBe(true);
+      expect(result.status).toBe("EXACT");
+    });
+
+    it("identifies underpaid split payment with remaining difference", () => {
+      const payments = [{ amount: 4000 }];
+      const result = calculateSplitPayments(9600, payments);
+
+      expect(result.totalPaid).toBe(4000);
+      expect(result.remainingDifference).toBe(5600);
+      expect(result.isBalanced).toBe(false);
+      expect(result.status).toBe("UNDERPAID");
+    });
+
+    it("identifies overpaid split payment with negative difference", () => {
+      const payments = [{ amount: 6000 }, { amount: 5000 }];
+      const result = calculateSplitPayments(9600, payments);
+
+      expect(result.totalPaid).toBe(11000);
+      expect(result.remainingDifference).toBe(-1400);
+      expect(result.isBalanced).toBe(false);
+      expect(result.status).toBe("OVERPAID");
+    });
   });
 });

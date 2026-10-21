@@ -4,14 +4,17 @@ import { useEffect, useRef, useState, useId, useTransition } from "react";
 import { usePOSStore } from "@/lib/pos/store";
 import { submitSale, saveCashSession } from "@/lib/api/pos";
 import { formatMoneyFull } from "@/lib/format/currency";
-import { calculateChange } from "@/lib/pos/calculations";
+import {
+  calculateChange,
+  calculateSplitPayments,
+} from "@/lib/pos/calculations";
 import {
   sanitizeBancolombiaReference,
   parseBancolombiaQRText,
 } from "@/lib/pos/bancolombia";
 import { listTerceros } from "@/lib/erp/client";
 import type { Tercero } from "@/lib/erp/types";
-import type { PaymentMethod, SalePayload } from "@/lib/pos/types";
+import type { PaymentMethod, PaymentEntry, SalePayload } from "@/lib/pos/types";
 
 interface PaymentModalProps {
   tenant?: string;
@@ -51,6 +54,15 @@ export function PaymentModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Modo de pago: Una forma de pago vs Varias formas de pago (sgHermes)
+  const [paymentMode, setPaymentMode] = useState<"UNA_FORMA" | "VARIAS_FORMAS">("UNA_FORMA");
+
+  // Pagos divididos / múltiples (Varias formas de pago - sgHermes)
+  const [splitPayments, setSplitPayments] = useState<PaymentEntry[]>([]);
+  const [newSplitMethod, setNewSplitMethod] = useState<PaymentMethod>("EFECTIVO");
+  const [newSplitAmount, setNewSplitAmount] = useState<number>(totals.total);
+  const [newSplitReference, setNewSplitReference] = useState("");
+
   // Edición rápida de cliente
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [customerNit, setCustomerNit] = useState(customer.nit);
@@ -73,6 +85,7 @@ export function PaymentModal({
   // Sincronizar efectivo recibido cuando se abre el modal
   useEffect(() => {
     if (isPaymentModalOpen) {
+      setPaymentMode("UNA_FORMA");
       setCashReceived(totals.total);
       setSelectedMethod("EFECTIVO");
       setReference("");
@@ -85,6 +98,10 @@ export function PaymentModal({
       setCustomerName(customer.name);
       setQrRawText("");
       setQrFeedback(null);
+      setSplitPayments([]);
+      setNewSplitMethod("EFECTIVO");
+      setNewSplitAmount(totals.total);
+      setNewSplitReference("");
     }
   }, [customer.name, customer.nit, isPaymentModalOpen, totals.total]);
 
@@ -164,8 +181,37 @@ export function PaymentModal({
 
   const isCashComplete = selectedMethod !== "EFECTIVO" || cashReceived >= totals.total;
 
+  const splitSummary = calculateSplitPayments(totals.total, splitPayments);
+  const isMultiPaymentValid = splitSummary.isBalanced && splitPayments.length > 0;
+
   function handleAddCashShortcut(amount: number): void {
     setCashReceived((prev) => (prev > 0 ? prev + amount : amount));
+  }
+
+  function handleAddSplitPayment(): void {
+    if (newSplitAmount <= 0) {
+      setErrorMessage("El valor de la forma de pago debe ser mayor a cero.");
+      return;
+    }
+    setErrorMessage(null);
+    const entry: PaymentEntry = {
+      id: `split-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      method: newSplitMethod,
+      amount: newSplitAmount,
+      reference: sanitizeBancolombiaReference(newSplitReference) || undefined,
+    };
+    const nextList = [...splitPayments, entry];
+    setSplitPayments(nextList);
+    setNewSplitReference("");
+    const nextSummary = calculateSplitPayments(totals.total, nextList);
+    setNewSplitAmount(Math.max(0, nextSummary.remainingDifference));
+  }
+
+  function handleRemoveSplitPayment(id: string): void {
+    const nextList = splitPayments.filter((p) => p.id !== id);
+    setSplitPayments(nextList);
+    const nextSummary = calculateSplitPayments(totals.total, nextList);
+    setNewSplitAmount(Math.max(0, nextSummary.remainingDifference));
   }
 
   function handleSelectConsumidorFinal(): void {
@@ -262,9 +308,40 @@ export function PaymentModal({
 
   async function handleConfirmSale(): Promise<void> {
     if (cart.length === 0) return;
-    if (!isCashComplete && selectedMethod === "EFECTIVO") {
-      setErrorMessage("El efectivo recibido es menor al total a pagar.");
-      return;
+
+    let paymentsPayload: PaymentEntry[];
+    let effectiveCashReceived: number;
+    let effectiveChange: number;
+
+    if (paymentMode === "UNA_FORMA") {
+      if (!isCashComplete && selectedMethod === "EFECTIVO") {
+        setErrorMessage("El efectivo recibido es menor al total a pagar.");
+        return;
+      }
+      paymentsPayload = [
+        {
+          id: `pay-${Date.now()}`,
+          method: selectedMethod,
+          amount: totals.total,
+          reference: reference.trim() || undefined,
+        },
+      ];
+      effectiveCashReceived = selectedMethod === "EFECTIVO" ? cashReceived : totals.total;
+      effectiveChange = change;
+    } else {
+      // VARIAS FORMAS DE PAGO (sgHermes)
+      if (!isMultiPaymentValid) {
+        setErrorMessage(
+          `La suma de las formas de pago debe ser exactamente igual al total (${formatMoneyFull(totals.total)}). Diferencia pendiente: ${formatMoneyFull(splitSummary.remainingDifference)}`,
+        );
+        return;
+      }
+      paymentsPayload = [...splitPayments];
+      const cashPortion = splitPayments
+        .filter((p) => p.method === "EFECTIVO")
+        .reduce((sum, p) => sum + p.amount, 0);
+      effectiveCashReceived = cashPortion;
+      effectiveChange = 0;
     }
 
     setIsSubmitting(true);
@@ -277,16 +354,9 @@ export function PaymentModal({
       customer,
       items: [...cart],
       totals,
-      payments: [
-        {
-          id: `pay-${Date.now()}`,
-          method: selectedMethod,
-          amount: totals.total,
-          reference: reference.trim() || undefined,
-        },
-      ],
-      cashReceived: selectedMethod === "EFECTIVO" ? cashReceived : totals.total,
-      changeGiven: change,
+      payments: paymentsPayload,
+      cashReceived: effectiveCashReceived,
+      changeGiven: effectiveChange,
       sessionId: session?.id,
       cashier: cashierName,
       tenant,
@@ -298,7 +368,12 @@ export function PaymentModal({
       const result = await submitSale(salePayload);
       if (result.success) {
         // Actualizar resumen en sesión de caja y persistir a almacenamiento local
-        recordSaleInSession(totals.total, selectedMethod === "EFECTIVO");
+        const totalCash = paymentsPayload
+          .filter((p) => p.method === "EFECTIVO")
+          .reduce((sum, p) => sum + p.amount, 0);
+        const hasCash = totalCash > 0;
+
+        recordSaleInSession(totalCash > 0 ? totalCash : totals.total, hasCash);
         const currentSession = usePOSStore.getState().session;
         if (currentSession) {
           await saveCashSession(currentSession);
@@ -328,7 +403,7 @@ export function PaymentModal({
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
-      className="fixed inset-0 z-50 m-auto flex h-[92vh] max-h-[720px] w-[95vw] max-w-xl flex-col overflow-hidden rounded-3xl border border-border bg-surface text-text-primary shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm p-0 animate-in fade-in zoom-in-95 duration-150"
+      className="fixed inset-0 z-50 m-auto flex h-[92vh] max-h-[760px] w-[95vw] max-w-2xl flex-col overflow-hidden rounded-3xl border border-border bg-surface text-text-primary shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm p-0 animate-in fade-in zoom-in-95 duration-150"
       onCancel={(e) => {
         e.preventDefault();
         closePaymentModal();
@@ -563,250 +638,532 @@ export function PaymentModal({
           )}
         </div>
 
-        {/* Métodos de Pago */}
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
-            Método de Pago
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {(
-              [
-                { id: "EFECTIVO", label: "Efectivo", icon: "💵" },
-                { id: "DATAFONO", label: "Datáfono / Tarjeta", icon: "💳" },
-                { id: "TRANSFERENCIA", label: "Transferencia", icon: "📱" },
-                { id: "CREDITO", label: "A Crédito", icon: "📝" },
-              ] as const
-            ).map((m) => {
-              const isSelected = selectedMethod === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedMethod(m.id);
-                    if (m.id !== "EFECTIVO") {
-                      setCashReceived(totals.total);
-                    }
-                  }}
-                  className={`flex flex-col items-center justify-center rounded-2xl border p-3 text-center transition-all ${
-                    isSelected
-                      ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-2 ring-primary/20"
-                      : "border-border bg-surface hover:bg-surface-alt text-text-secondary"
-                  }`}
-                >
-                  <span className="text-xl mb-1">{m.icon}</span>
-                  <span className="text-xs font-semibold leading-tight">{m.label}</span>
-                </button>
-              );
-            })}
+        {/* Selector de Modo: Una forma de pago vs Varias formas de pago (sgHermes) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-surface-alt/70 p-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">
+              Modo de Cobro:
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPaymentMode("UNA_FORMA")}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                paymentMode === "UNA_FORMA"
+                  ? "bg-primary text-primary-fg shadow-xs"
+                  : "bg-surface border border-border text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <span>🔘</span>
+              <span>Una forma de pago</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentMode("VARIAS_FORMAS");
+                if (splitPayments.length === 0) {
+                  setNewSplitAmount(totals.total);
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                paymentMode === "VARIAS_FORMAS"
+                  ? "bg-primary text-primary-fg shadow-xs"
+                  : "bg-surface border border-border text-text-muted hover:text-text-primary"
+              }`}
+            >
+              <span>📑</span>
+              <span>Varias formas de pago (sgHermes)</span>
+            </button>
           </div>
         </div>
 
-        {/* Panel específico de Efectivo con atajos COP */}
-        {selectedMethod === "EFECTIVO" && (
-          <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <label htmlFor="cashReceivedInput" className="text-xs font-bold uppercase tracking-wide text-text-secondary">
-                Efectivo Recibido (COP)
-              </label>
-              <button
-                type="button"
-                onClick={() => setCashReceived(totals.total)}
-                className="text-xs font-bold text-primary hover:underline"
-              >
-                Monto Exacto
-              </button>
-            </div>
-
-            <div className="relative">
-              <span className="absolute left-3.5 top-3 text-base font-bold text-text-muted">
-                $
-              </span>
-              <input
-                id="cashReceivedInput"
-                ref={cashInputRef}
-                type="number"
-                step="50"
-                value={cashReceived || ""}
-                onChange={(e) => setCashReceived(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                placeholder="0"
-                className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 pl-8 text-xl font-black text-text-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-xs"
-              />
-            </div>
-
-            {/* Atajos de billetes colombianos */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] font-bold text-text-muted mr-1">Billetes:</span>
-              {[10000, 20000, 50000, 100000].map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => handleAddCashShortcut(val)}
-                  className="rounded-lg border border-border bg-surface-alt px-2.5 py-1 text-xs font-black text-text-secondary hover:bg-surface-dark hover:text-text-inverse hover:border-surface-dark transition-colors active:scale-95"
-                >
-                  +{formatMoneyFull(val)}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setCashReceived(0)}
-                className="rounded-lg border border-border bg-surface-alt px-2 py-1 text-xs font-medium text-text-muted hover:text-rose-600 transition-colors"
-              >
-                Cero
-              </button>
-            </div>
-
-            {/* Banner de Cambio / Vueltas */}
-            <div
-              className={`flex items-center justify-between rounded-xl p-3 border ${
-                cashReceived >= totals.total
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-800"
-                  : "bg-amber-500/10 border-amber-500/30 text-amber-800"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">
-                  {cashReceived >= totals.total ? "💵" : "⚠️"}
+        {paymentMode === "VARIAS_FORMAS" ? (
+          /* ======================================================== */
+          /* MODO VARIAS FORMAS DE PAGO (sgHermes FORMAS DE PAGO)     */
+          /* ======================================================== */
+          <div className="space-y-3.5">
+            {/* Formulario de agregar pago parcial */}
+            <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3.5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                  <span>➕</span>
+                  <span>Añadir Forma de Pago</span>
                 </span>
-                <span className="text-xs font-bold uppercase tracking-wider">
-                  {cashReceived >= totals.total ? "Cambio a devolver:" : "Faltante:"}
+                <span className="text-[11px] font-semibold text-text-muted">
+                  Saldo pendiente por cubrir:{" "}
+                  <strong
+                    className={
+                      splitSummary.remainingDifference > 0
+                        ? "text-amber-800 font-bold"
+                        : "text-emerald-800 font-bold"
+                    }
+                  >
+                    {formatMoneyFull(Math.max(0, splitSummary.remainingDifference))}
+                  </strong>
                 </span>
               </div>
-              <div className="text-xl font-black">
-                {cashReceived >= totals.total
-                  ? formatMoneyFull(change)
-                  : formatMoneyFull(totals.total - cashReceived)}
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                {/* Selector de Método */}
+                <div className="sm:col-span-4">
+                  <label
+                    htmlFor="newSplitMethodSelect"
+                    className="text-[11px] font-bold text-text-muted block mb-1"
+                  >
+                    Forma de Pago
+                  </label>
+                  <select
+                    id="newSplitMethodSelect"
+                    value={newSplitMethod}
+                    onChange={(e) => setNewSplitMethod(e.target.value as PaymentMethod)}
+                    className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-xs font-bold text-text-primary focus:border-primary focus:outline-none"
+                  >
+                    <option value="EFECTIVO">💵 EFECTIVO (F01)</option>
+                    <option value="TRANSFERENCIA">📱 TRANSFERENCIA / BANCO (F07)</option>
+                    <option value="DATAFONO">💳 DATÁFONO / TARJETA (F03)</option>
+                    <option value="CREDITO">📝 CRÉDITO / CARTERA (F10)</option>
+                  </select>
+                </div>
+
+                {/* Monto a abonar */}
+                <div className="sm:col-span-4">
+                  <label
+                    htmlFor="newSplitAmountInput"
+                    className="text-[11px] font-bold text-text-muted block mb-1"
+                  >
+                    Valor a Aplicar (COP)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs font-bold text-text-muted">
+                      $
+                    </span>
+                    <input
+                      id="newSplitAmountInput"
+                      type="number"
+                      step="50"
+                      value={newSplitAmount || ""}
+                      onChange={(e) =>
+                        setNewSplitAmount(Math.max(0, parseInt(e.target.value, 10) || 0))
+                      }
+                      placeholder="0"
+                      className="w-full rounded-xl border border-border bg-surface px-3 py-2 pl-7 text-xs font-black text-text-primary focus:border-primary focus:outline-none tabular-nums"
+                    />
+                  </div>
+                </div>
+
+                {/* Referencia o Comprobante */}
+                <div className="sm:col-span-4">
+                  <label
+                    htmlFor="newSplitRefInput"
+                    className="text-[11px] font-bold text-text-muted block mb-1"
+                  >
+                    Referencia / Comprobante
+                  </label>
+                  <input
+                    id="newSplitRefInput"
+                    type="text"
+                    value={newSplitReference}
+                    onChange={(e) => setNewSplitReference(e.target.value)}
+                    placeholder="Ej. Ref 0092055984"
+                    className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Botón de añadir y atajo para saldo restante */}
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setNewSplitAmount(Math.max(0, splitSummary.remainingDifference))
+                  }
+                  disabled={splitSummary.remainingDifference <= 0}
+                  className="text-[11px] font-bold text-primary hover:underline disabled:opacity-50 disabled:no-underline"
+                >
+                  Cubrir saldo restante ({formatMoneyFull(Math.max(0, splitSummary.remainingDifference))})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAddSplitPayment}
+                  className="rounded-xl bg-primary px-4 py-2 text-xs font-black text-primary-fg hover:bg-primary-dark transition-colors shadow-xs active:scale-95 flex items-center gap-1.5"
+                >
+                  <span>+</span>
+                  <span>Agregar Pago</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Tabla de pagos agregados (sgHermes) */}
+            <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
+              <div className="bg-surface-alt px-3.5 py-2 border-b border-border flex items-center justify-between text-xs">
+                <span className="font-bold uppercase tracking-wider text-text-secondary">
+                  Detalles de pago ({splitPayments.length}{" "}
+                  {splitPayments.length === 1 ? "forma" : "formas"})
+                </span>
+                <span className="text-[11px] text-text-muted font-mono">
+                  Paridad tabla `detapago`
+                </span>
+              </div>
+
+              {splitPayments.length === 0 ? (
+                <div className="p-6 text-center text-xs text-text-muted">
+                  No has agregado formas de pago todavía. Selecciona una forma arriba y pulsa
+                  &quot;Agregar Pago&quot;.
+                </div>
+              ) : (
+                <div className="divide-y divide-border overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-surface-alt/50 text-[11px] font-bold text-text-muted uppercase">
+                        <th className="py-2 px-3">Item</th>
+                        <th className="py-2 px-3">Forma de Pago</th>
+                        <th className="py-2 px-3 text-right">Valor</th>
+                        <th className="py-2 px-3">Referencia / Comprobante</th>
+                        <th className="py-2 px-3 text-center">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {splitPayments.map((p, idx) => (
+                        <tr key={p.id} className="hover:bg-surface-alt/50 transition-colors">
+                          <td className="py-2 px-3 font-mono text-[11px] text-text-muted">
+                            {idx}
+                          </td>
+                          <td className="py-2 px-3 font-bold text-text-primary">
+                            {p.method === "EFECTIVO" && "💵 EFECTIVO"}
+                            {p.method === "TRANSFERENCIA" && "📱 CONSIGNACION BANCO"}
+                            {p.method === "DATAFONO" && "💳 TARJETA / DATAFONO"}
+                            {p.method === "CREDITO" && "📝 CUENTAS X COBRAR"}
+                          </td>
+                          <td className="py-2 px-3 text-right font-black text-text-primary tabular-nums">
+                            {formatMoneyFull(p.amount)}
+                          </td>
+                          <td className="py-2 px-3 font-mono text-[11px] text-text-secondary">
+                            {p.reference || "—"}
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSplitPayment(p.id)}
+                              className="rounded-lg p-1 text-text-muted hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                              title="Eliminar forma de pago"
+                              aria-label="Eliminar"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Barra de Totales y Diferencia (idéntica a la ventana de sgHermes) */}
+              <div className="bg-surface-dark text-text-inverse px-4 py-3 border-t border-border grid grid-cols-3 gap-2 text-center items-center">
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">
+                    Total
+                  </span>
+                  <span className="text-sm font-black text-text-inverse tabular-nums">
+                    {formatMoneyFull(totals.total)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">
+                    Debe sumar
+                  </span>
+                  <span className="text-sm font-black text-primary tabular-nums">
+                    {formatMoneyFull(splitSummary.totalPaid)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-text-muted block">
+                    Diferencia
+                  </span>
+                  <span
+                    className={`inline-block px-2.5 py-0.5 rounded-lg text-sm font-black tabular-nums ${
+                      splitSummary.isBalanced && splitPayments.length > 0
+                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                        : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                    }`}
+                  >
+                    {formatMoneyFull(splitSummary.remainingDifference)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        )}
-
-        {/* Campos específicos para Transferencia con Asistente QR Bancolombia */}
-        {selectedMethod === "TRANSFERENCIA" && (
-          <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <label htmlFor="refInput" className="text-xs font-bold uppercase tracking-wide text-text-secondary">
-                Referencia / Comprobante Bancolombia / Nequi
+        ) : (
+          /* ======================================================== */
+          /* MODO UNA SOLA FORMA DE PAGO (FLUJO DIRECTO)              */
+          /* ======================================================== */
+          <>
+            {/* Métodos de Pago */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+                Método de Pago
               </label>
-              {customer.nit !== "222222222222" && (
-                <button
-                  type="button"
-                  onClick={handleSelectConsumidorFinal}
-                  className="text-xs font-bold text-primary hover:underline"
-                >
-                  Asignar Consumidor Final
-                </button>
-              )}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(
+                  [
+                    { id: "EFECTIVO", label: "Efectivo", icon: "💵" },
+                    { id: "DATAFONO", label: "Datáfono / Tarjeta", icon: "💳" },
+                    { id: "TRANSFERENCIA", label: "Transferencia", icon: "📱" },
+                    { id: "CREDITO", label: "A Crédito", icon: "📝" },
+                  ] as const
+                ).map((m) => {
+                  const isSelected = selectedMethod === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMethod(m.id);
+                        if (m.id !== "EFECTIVO") {
+                          setCashReceived(totals.total);
+                        }
+                      }}
+                      className={`flex flex-col items-center justify-center rounded-2xl border p-3 text-center transition-all ${
+                        isSelected
+                          ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-2 ring-primary/20"
+                          : "border-border bg-surface hover:bg-surface-alt text-text-secondary"
+                      }`}
+                    >
+                      <span className="text-xl mb-1">{m.icon}</span>
+                      <span className="text-xs font-semibold leading-tight">{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <input
-              id="refInput"
-              type="text"
-              value={reference}
-              onChange={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
-              onBlur={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
-              placeholder="Ej. 0092055984 (el sufijo 'null' se remueve automáticamente)"
-              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-semibold focus:border-primary focus:outline-none font-mono"
-            />
-
-            {/* Asistente inteligente QR Bancolombia */}
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
-                  <span>⚡</span>
-                  <span>Asistente Comprobante QR Bancolombia</span>
+            {/* Panel específico de Efectivo con atajos COP */}
+            {selectedMethod === "EFECTIVO" && (
+              <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="cashReceivedInput"
+                    className="text-xs font-bold uppercase tracking-wide text-text-secondary"
+                  >
+                    Efectivo Recibido (COP)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCashReceived(totals.total)}
+                    className="text-xs font-bold text-primary hover:underline"
+                  >
+                    Monto Exacto
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handlePasteFromClipboard}
-                  className="rounded-lg bg-surface border border-primary/30 px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/10 transition-colors"
-                >
-                  📋 Pegar del Portapapeles
-                </button>
-              </div>
 
-              <p className="text-[11px] text-text-secondary leading-snug">
-                Pega la línea copiada de movimientos Bancolombia (ej: <code className="font-mono bg-surface px-1 py-0.5 rounded text-[10px]">PAGO QR JUAN PEREZ 0092055984 null $ 45.000</code>).
-                Extrae el nombre del pagador y la referencia sin el <code className="text-rose-600 font-mono">null</code>.
-              </p>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={qrRawText}
-                  onChange={(e) => {
-                    setQrRawText(e.target.value);
-                    if (e.target.value.trim()) {
-                      handleProcessQRText(e.target.value);
+                <div className="relative">
+                  <span className="absolute left-3.5 top-3 text-base font-bold text-text-muted">
+                    $
+                  </span>
+                  <input
+                    id="cashReceivedInput"
+                    ref={cashInputRef}
+                    type="number"
+                    step="50"
+                    value={cashReceived || ""}
+                    onChange={(e) =>
+                      setCashReceived(Math.max(0, parseInt(e.target.value, 10) || 0))
                     }
-                  }}
-                  placeholder="Pega aquí el movimiento o descripción del QR..."
-                  className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleProcessQRText(qrRawText)}
-                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-black text-primary-fg shrink-0 hover:bg-primary-dark transition-colors"
-                >
-                  Procesar
-                </button>
-              </div>
+                    placeholder="0"
+                    className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 pl-8 text-xl font-black text-text-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-xs"
+                  />
+                </div>
 
-              {/* Feedback del procesamiento */}
-              {qrFeedback && (
+                {/* Atajos de billetes colombianos */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-bold text-text-muted mr-1">Billetes:</span>
+                  {[10000, 20000, 50000, 100000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => handleAddCashShortcut(val)}
+                      className="rounded-lg border border-border bg-surface-alt px-2.5 py-1 text-xs font-black text-text-secondary hover:bg-surface-dark hover:text-text-inverse hover:border-surface-dark transition-colors active:scale-95"
+                    >
+                      +{formatMoneyFull(val)}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setCashReceived(0)}
+                    className="rounded-lg border border-border bg-surface-alt px-2 py-1 text-xs font-medium text-text-muted hover:text-rose-600 transition-colors"
+                  >
+                    Cero
+                  </button>
+                </div>
+
+                {/* Banner de Cambio / Vueltas */}
                 <div
-                  className={`rounded-lg p-2.5 text-xs font-medium space-y-1 ${
-                    qrFeedback.matched
-                      ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-900"
-                      : "bg-amber-500/10 border border-amber-500/30 text-amber-900"
+                  className={`flex items-center justify-between rounded-xl p-3 border ${
+                    cashReceived >= totals.total
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-800"
+                      : "bg-amber-500/10 border-amber-500/30 text-amber-800"
                   }`}
                 >
-                  {qrFeedback.matched ? (
-                    <>
-                      {qrFeedback.name && (
-                        <p className="font-bold flex items-center gap-1">
-                          <span>✓</span>
-                          <span>Cliente asignado:</span>
-                          <span className="font-black text-emerald-950 underline">{qrFeedback.name}</span>
-                        </p>
-                      )}
-                      {qrFeedback.ref && (
-                        <p className="font-mono text-[11px]">
-                          ✓ Referencia asignada: <strong className="font-bold">{qrFeedback.ref}</strong> (sufijo &apos;null&apos; eliminado)
-                        </p>
-                      )}
-                      {qrFeedback.amountMismatch && qrFeedback.detectedAmount && (
-                        <p className="text-amber-800 font-bold text-[11px] pt-0.5">
-                          ⚠️ Aviso: El monto en el comprobante ({formatMoneyFull(qrFeedback.detectedAmount)}) no coincide exactamente con el total ({formatMoneyFull(totals.total)}).
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-amber-800 text-[11px]">
-                      No se detectó un patrón de Pago QR o referencia en el texto ingresado.
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">
+                      {cashReceived >= totals.total ? "💵" : "⚠️"}
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wider">
+                      {cashReceived >= totals.total ? "Cambio a devolver:" : "Faltante:"}
+                    </span>
+                  </div>
+                  <div className="text-xl font-black">
+                    {cashReceived >= totals.total
+                      ? formatMoneyFull(change)
+                      : formatMoneyFull(totals.total - cashReceived)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Campos específicos para Transferencia con Asistente QR Bancolombia */}
+            {selectedMethod === "TRANSFERENCIA" && (
+              <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="refInput"
+                    className="text-xs font-bold uppercase tracking-wide text-text-secondary"
+                  >
+                    Referencia / Comprobante Bancolombia / Nequi
+                  </label>
+                  {customer.nit !== "222222222222" && (
+                    <button
+                      type="button"
+                      onClick={handleSelectConsumidorFinal}
+                      className="text-xs font-bold text-primary hover:underline"
+                    >
+                      Asignar Consumidor Final
+                    </button>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* Campos adicionales para Datáfono */}
-        {selectedMethod === "DATAFONO" && (
-          <div className="rounded-2xl border border-border bg-surface p-4 space-y-2">
-            <label htmlFor="refInputDatafono" className="text-xs font-bold uppercase tracking-wide text-text-secondary">
-              Número de Aprobación Datáfono / Voucher
-            </label>
-            <input
-              id="refInputDatafono"
-              type="text"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="Ej. Aprobación 8921 / Voucher Visa"
-              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium focus:border-primary focus:outline-none"
-            />
-          </div>
+                <input
+                  id="refInput"
+                  type="text"
+                  value={reference}
+                  onChange={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
+                  onBlur={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
+                  placeholder="Ej. 0092055984 (el sufijo 'null' se remueve automáticamente)"
+                  className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-semibold focus:border-primary focus:outline-none font-mono"
+                />
+
+                {/* Asistente inteligente QR Bancolombia */}
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                      <span>⚡</span>
+                      <span>Asistente Comprobante QR Bancolombia</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handlePasteFromClipboard}
+                      className="rounded-lg bg-surface border border-primary/30 px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      📋 Pegar del Portapapeles
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-text-secondary leading-snug">
+                    Pega la línea copiada de movimientos Bancolombia (ej:{" "}
+                    <code className="font-mono bg-surface px-1 py-0.5 rounded text-[10px]">
+                      PAGO QR JUAN PEREZ 0092055984 null $ 45.000
+                    </code>
+                    ). Extrae el nombre del pagador y la referencia sin el{" "}
+                    <code className="text-rose-600 font-mono">null</code>.
+                  </p>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={qrRawText}
+                      onChange={(e) => {
+                        setQrRawText(e.target.value);
+                        if (e.target.value.trim()) {
+                          handleProcessQRText(e.target.value);
+                        }
+                      }}
+                      placeholder="Pega aquí el movimiento o descripción del QR..."
+                      className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleProcessQRText(qrRawText)}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-black text-primary-fg shrink-0 hover:bg-primary-dark transition-colors"
+                    >
+                      Procesar
+                    </button>
+                  </div>
+
+                  {/* Feedback del procesamiento */}
+                  {qrFeedback && (
+                    <div
+                      className={`rounded-lg p-2.5 text-xs font-medium space-y-1 ${
+                        qrFeedback.matched
+                          ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-900"
+                          : "bg-amber-500/10 border border-amber-500/30 text-amber-900"
+                      }`}
+                    >
+                      {qrFeedback.matched ? (
+                        <>
+                          {qrFeedback.name && (
+                            <p className="font-bold flex items-center gap-1">
+                              <span>✓</span>
+                              <span>Cliente asignado:</span>
+                              <span className="font-black text-emerald-950 underline">
+                                {qrFeedback.name}
+                              </span>
+                            </p>
+                          )}
+                          {qrFeedback.ref && (
+                            <p className="font-mono text-[11px]">
+                              ✓ Referencia asignada:{" "}
+                              <strong className="font-bold">{qrFeedback.ref}</strong> (sufijo &apos;null&apos; eliminado)
+                            </p>
+                          )}
+                          {qrFeedback.amountMismatch && qrFeedback.detectedAmount && (
+                            <p className="text-amber-800 font-bold text-[11px] pt-0.5">
+                              ⚠️ Aviso: El monto en el comprobante ({formatMoneyFull(qrFeedback.detectedAmount)}) no coincide exactamente con el total ({formatMoneyFull(totals.total)}).
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-amber-800 text-[11px]">
+                          No se detectó un patrón de Pago QR o referencia en el texto ingresado.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Campos adicionales para Datáfono */}
+            {selectedMethod === "DATAFONO" && (
+              <div className="rounded-2xl border border-border bg-surface p-4 space-y-2">
+                <label
+                  htmlFor="refInputDatafono"
+                  className="text-xs font-bold uppercase tracking-wide text-text-secondary"
+                >
+                  Número de Aprobación Datáfono / Voucher
+                </label>
+                <input
+                  id="refInputDatafono"
+                  type="text"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  placeholder="Ej. Aprobación 8921 / Voucher Visa"
+                  className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium focus:border-primary focus:outline-none"
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -822,10 +1179,10 @@ export function PaymentModal({
 
         <button
           type="button"
-          disabled={isSubmitting || !isCashComplete}
+          disabled={isSubmitting || (paymentMode === "UNA_FORMA" ? !isCashComplete : !isMultiPaymentValid)}
           onClick={handleConfirmSale}
           className={`w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl px-7 py-3 text-sm font-black text-primary-fg shadow-lg transition-all ${
-            isSubmitting || !isCashComplete
+            isSubmitting || (paymentMode === "UNA_FORMA" ? !isCashComplete : !isMultiPaymentValid)
               ? "bg-primary/50 cursor-not-allowed opacity-75"
               : "bg-primary hover:bg-primary-dark active:scale-95"
           }`}

@@ -254,20 +254,42 @@ export function ReceiptPrint({
 
               {/* Resumen de Pago */}
               <div className="py-2 border-b border-dashed border-neutral-400 text-[11px] space-y-0.5">
-                <div className="flex justify-between">
-                  <span>FORMA DE PAGO:</span>
-                  <span className="font-bold">
-                    {sale.payments.map((p) => p.method).join(", ") || "EFECTIVO"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>VALOR RECIBIDO:</span>
-                  <span>{formatMoneyFull(sale.cashReceived)}</span>
-                </div>
-                <div className="flex justify-between font-bold">
-                  <span>CAMBIO:</span>
-                  <span>{formatMoneyFull(sale.changeGiven)}</span>
-                </div>
+                {sale.payments.length > 1 ? (
+                  <>
+                    <div className="flex justify-between font-bold">
+                      <span>FORMAS DE PAGO ({sale.payments.length}):</span>
+                    </div>
+                    {sale.payments.map((p, idx) => (
+                      <div key={p.id || idx} className="flex justify-between pl-2 text-[10px]">
+                        <span>
+                          • {p.method}
+                          {p.reference ? ` (${p.reference})` : ""}:
+                        </span>
+                        <span className="font-semibold">{formatMoneyFull(p.amount)}</span>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="flex justify-between">
+                    <span>FORMA DE PAGO:</span>
+                    <span className="font-bold">
+                      {sale.payments[0]?.method || "EFECTIVO"}
+                      {sale.payments[0]?.reference ? ` (${sale.payments[0].reference})` : ""}
+                    </span>
+                  </div>
+                )}
+                {sale.cashReceived > 0 && (
+                  <div className="flex justify-between">
+                    <span>VALOR RECIBIDO:</span>
+                    <span>{formatMoneyFull(sale.cashReceived)}</span>
+                  </div>
+                )}
+                {sale.changeGiven > 0 && (
+                  <div className="flex justify-between font-bold">
+                    <span>CAMBIO:</span>
+                    <span>{formatMoneyFull(sale.changeGiven)}</span>
+                  </div>
+                )}
               </div>
 
               {/* Información DIAN: CUFE y Verificación */}

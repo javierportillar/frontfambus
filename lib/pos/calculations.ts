@@ -202,3 +202,49 @@ export function calculateDifference(
   if (diff > 0) return { difference: diff, status: "SURPLUS" };
   return { difference: diff, status: "SHORTAGE" };
 }
+
+/**
+ * Resumen de liquidación para pagos divididos / múltiples (sgHermes).
+ * Valida si la suma de las formas de pago es idéntica al total a cobrar.
+ */
+export interface SplitPaymentSummary {
+  totalPaid: number;
+  remainingDifference: number; // targetTotal - totalPaid (0 = balanceado)
+  isBalanced: boolean;
+  status: "EXACT" | "UNDERPAID" | "OVERPAID";
+}
+
+export function calculateSplitPayments(
+  targetTotal: number,
+  payments: readonly { amount: number }[],
+): SplitPaymentSummary {
+  const target = Math.max(0, Math.round(Number(targetTotal) || 0));
+  const totalPaid = payments.reduce(
+    (sum, p) => sum + Math.max(0, Math.round(Number(p.amount) || 0)),
+    0,
+  );
+  const diff = target - totalPaid;
+
+  if (diff === 0) {
+    return {
+      totalPaid,
+      remainingDifference: 0,
+      isBalanced: true,
+      status: "EXACT",
+    };
+  }
+  if (diff > 0) {
+    return {
+      totalPaid,
+      remainingDifference: diff,
+      isBalanced: false,
+      status: "UNDERPAID",
+    };
+  }
+  return {
+    totalPaid,
+    remainingDifference: diff,
+    isBalanced: false,
+    status: "OVERPAID",
+  };
+}
