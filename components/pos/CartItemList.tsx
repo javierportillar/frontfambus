@@ -143,13 +143,14 @@ export function CartItemList({ onOpenSearch }: CartItemListProps): JSX.Element {
 
                   <input
                     type="number"
-                    min="1"
+                    step="any"
+                    min="0.001"
                     value={item.candet}
                     onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      updateQuantity(item.id, Number.isNaN(val) ? 1 : val);
+                      const val = parseFloat(e.target.value);
+                      updateQuantity(item.id, Number.isNaN(val) ? 0 : val);
                     }}
-                    className="h-8 w-12 text-center text-sm font-black text-text-primary bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="h-8 w-16 text-center text-sm font-black text-text-primary bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     aria-label="Cantidad"
                   />
 

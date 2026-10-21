@@ -211,7 +211,7 @@ export function PaymentModal({
                 Finalizar Venta y Cobro
               </h2>
               <p className="text-xs text-text-muted">
-                {cart.length} ítems • {totals.itemCount} unidades
+                {cart.length} ítems • {totals.itemCount % 1 === 0 ? totals.itemCount : Number(totals.itemCount.toFixed(3))} {totals.itemCount === 1 ? "unidad" : "unidades/peso"}
               </p>
             </div>
           </div>

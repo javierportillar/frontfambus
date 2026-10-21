@@ -89,6 +89,26 @@ describe("lib/pos/calculations - sgHermes Mathematical Parity", () => {
     expect(totals.lineCount).toBe(2);
   });
 
+  it("handles MasVital bulk/granel fractional quantities (e.g. 21.428g at $70 COP)", () => {
+    // MasVital Factura 935: 21.428 gramos de almendras a $70 COP
+    const line = calculateLineValues(70, 21.428, 0, 0, 0);
+    expect(line.valuni).toBe(70);
+    expect(line.candet).toBe(21.428);
+    // 70 * 21.428 = 1499.96 -> Math.round is 1500
+    expect(line.totdet).toBe(1500);
+
+    const items: CartItem[] = [
+      {
+        id: "OLAM001",
+        product: { sku: "OLAM001", name: "Almendra Americana", price: 70, unit: "GRAMO" },
+        ...line,
+      },
+    ];
+    const totals = calculateCartTotals(items);
+    expect(totals.total).toBe(1500);
+    expect(totals.itemCount).toBe(21.428);
+  });
+
   it("handles complex multi-item cart with mixed discounts and VAT", () => {
     const l1 = calculateLineValues(100000, 1, 10, 19, 0); // 100k - 10k + 17.1k = 107.1k
     const l2 = calculateLineValues(40000, 3, 0, 0, 0); // 120k exento
