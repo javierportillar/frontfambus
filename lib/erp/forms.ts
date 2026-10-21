@@ -315,30 +315,25 @@ export function buildPriceEntry(row: PriceFormRow): ProductPriceEntry {
   const entry: ProductPriceEntry = {
     codlis: row.codlis.trim().toUpperCase(),
     pvtipo: row.modo === "2" ? "2" : "1",
+    iva_rate: row.ivaRate.trim() || "0",
   };
   const precio = row.precio.trim();
   if (precio) {
     if (row.modo === "2") entry.pvconi = precio;
     else entry.pvsini = precio;
   }
-  const rate = row.ivaRate.trim();
-  if (rate) entry.iva_rate = rate;
   return entry;
 }
 
 /** Body de una fila de unidad de venta (`UnitEntry`). */
 export function buildUnitEntry(row: UnitFormRow): UnitEntry {
-  const entry: UnitEntry = {
+  return {
     codmed: row.codmed.trim().toUpperCase(),
     divmul: row.divmul === "D" ? "D" : "M",
+    facumed: row.facumed.trim() || "1",
+    pventa: row.pventa.trim() || "0",
+    tipovc: row.tipovc.trim() || "1",
   };
-  const facumed = row.facumed.trim();
-  if (facumed) entry.facumed = facumed;
-  const pventa = row.pventa.trim();
-  if (pventa) entry.pventa = pventa;
-  const tipovc = row.tipovc.trim();
-  if (tipovc) entry.tipovc = tipovc;
-  return entry;
 }
 
 /** Body de una fila de código de barras (`BarcodeEntry`). */

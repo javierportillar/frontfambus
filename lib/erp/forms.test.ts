@@ -120,7 +120,7 @@ describe("buildTerceroCreatePayload", () => {
     });
 
     expect(payload.emails).toHaveLength(10);
-    expect(payload.emails[0]).toBe("a0@acme.test");
+    expect(payload.emails?.[0]).toBe("a0@acme.test");
   });
 });
 
@@ -196,9 +196,9 @@ describe("buildProductoCreatePayload", () => {
   it("arma maestro + unidades + barras + precios respetando el orden de las filas", () => {
     const state = productoFormFromRecord(PRODUCTO);
     state.prices.push(emptyPriceRow("L2"));
-    state.prices[1].precio = "20000";
-    state.prices[1].ivaRate = "19";
-    state.prices[1].modo = "2";
+    state.prices[1]!.precio = "20000";
+    state.prices[1]!.ivaRate = "19";
+    state.prices[1]!.modo = "2";
 
     const payload = buildProductoCreatePayload(state);
 
@@ -214,13 +214,13 @@ describe("buildProductoCreatePayload", () => {
 
   it("no manda el precio en el lado que no corresponde al modo", () => {
     const state = productoFormFromRecord(PRODUCTO);
-    state.prices[0].modo = "2";
-    state.prices[0].precio = "11900";
+    state.prices[0]!.modo = "2";
+    state.prices[0]!.precio = "11900";
 
     const [entry] = buildProductoCreatePayload(state).prices ?? [];
 
-    expect(entry.pvconi).toBe("11900");
-    expect(entry.pvsini).toBeUndefined();
+    expect(entry?.pvconi).toBe("11900");
+    expect(entry?.pvsini).toBeUndefined();
   });
 });
 
