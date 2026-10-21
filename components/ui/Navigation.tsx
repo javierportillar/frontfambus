@@ -180,13 +180,20 @@ const Icons = {
   ),
   dian: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
       <polyline points="14 2 14 8 20 8" />
       <path d="M16 13H8" />
       <path d="M16 17H8" />
       <path d="M10 9H8" />
       <circle cx="17" cy="18" r="3" stroke="currentColor" strokeWidth={1.5} />
       <path d="m16 18 1 1 2-2" stroke="currentColor" strokeWidth={1.5} />
+    </svg>
+  ),
+  maestros: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+      <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
     </svg>
   ),
 };
@@ -209,6 +216,7 @@ const iconMap: Record<string, ReactNode> = {
   "plan-compras": Icons.planCompras,
   catalogo: Icons.catalogo,
   chat: Icons.assistant,
+  maestros: Icons.maestros,
 };
 
 // ─── Sidebar Desktop (≥ lg) ─────────────────────────────────────
@@ -662,6 +670,8 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Consola DIAN", href: "/dian/consola", icon: Icons.dian },
     { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
+    { label: "Maestros · Terceros", href: "/maestros/terceros", icon: Icons.maestros },
+    { label: "Maestros · Productos", href: "/maestros/productos", icon: Icons.maestros },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
     { label: "Proveedores", href: "/dashboards/proveedores", icon: Icons.proveedores, feature: "ventas-summary" },
     { label: "Clientes", href: "/dashboards/clientes", icon: Icons.clientes, feature: "ventas-summary" },
