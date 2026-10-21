@@ -162,6 +162,8 @@ export interface SalePayload {
   status: "COMPLETED" | "PENDING_SYNC" | "CANCELLED";
   offline?: boolean;
   syncError?: string;
+  cufe?: string | null;
+  qrUrl?: string | null;
 }
 
 /** Consumidor final estándar DIAN Colombia */

@@ -178,12 +178,24 @@ const Icons = {
       <path d="M6 12h.01M18 12h.01" />
     </svg>
   ),
+  dian: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <path d="M16 13H8" />
+      <path d="M16 17H8" />
+      <path d="M10 9H8" />
+      <circle cx="17" cy="18" r="3" stroke="currentColor" strokeWidth={1.5} />
+      <path d="m16 18 1 1 2-2" stroke="currentColor" strokeWidth={1.5} />
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, ReactNode> = {
   home: Icons.home,
   pos: Icons.pos,
   caja: Icons.caja,
+  dian: Icons.dian,
   ventas: Icons.ventas,
   compras: Icons.compras,
   proveedores: Icons.proveedores,
@@ -647,6 +659,7 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Inicio", href: "/", icon: Icons.home },
     { label: "Punto de Venta", href: "/pos", icon: Icons.pos },
     { label: "Caja", href: "/pos/caja", icon: Icons.caja },
+    { label: "Consola DIAN", href: "/dian/consola", icon: Icons.dian },
     { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },

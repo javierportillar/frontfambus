@@ -8,12 +8,16 @@ interface ReceiptPrintProps {
   sale: SalePayload | null;
   onClose?: () => void;
   tenant?: string;
+  cufe?: string | null;
+  qrUrl?: string | null;
 }
 
 export function ReceiptPrint({
   sale,
   onClose,
   tenant = "motoshop",
+  cufe,
+  qrUrl,
 }: ReceiptPrintProps): JSX.Element | null {
   const [paperWidth, setPaperWidth] = useState<"80mm" | "58mm">("80mm");
 
@@ -41,6 +45,15 @@ export function ReceiptPrint({
     dateStyle: "short",
     timeStyle: "medium",
   });
+
+  const effectiveCufe =
+    cufe || (sale as unknown as { cufe?: string | null })?.cufe || null;
+  const effectiveQrUrl =
+    qrUrl ||
+    (sale as unknown as { qrUrl?: string | null })?.qrUrl ||
+    (effectiveCufe
+      ? `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${effectiveCufe}`
+      : null);
 
   function handlePrint(): void {
     if (typeof window !== "undefined") {
@@ -156,10 +169,10 @@ export function ReceiptPrint({
                   IVA Régimen Común • Actividad ICA 4530
                 </p>
                 <p className="text-[9px] text-neutral-550 leading-tight">
-                  Res. DIAN 18764000001 del 2026-01-01
+                  Resolución DIAN No. 18760000001 de 2026-01-15
                 </p>
                 <p className="text-[9px] text-neutral-550 leading-tight">
-                  Prefijo POS del 1 al 100000
+                  Rango autoriz: POS-000001 a POS-999999
                 </p>
               </div>
 
@@ -255,6 +268,27 @@ export function ReceiptPrint({
                   <span>CAMBIO:</span>
                   <span>{formatMoneyFull(sale.changeGiven)}</span>
                 </div>
+              </div>
+
+              {/* Información DIAN: CUFE y Verificación */}
+              <div className="py-2 border-b border-dashed border-neutral-400 text-center text-[9px] text-neutral-700 leading-tight space-y-1">
+                <p className="font-bold text-black uppercase text-[10px]">
+                  Documento Equivalente Electrónico POS
+                </p>
+                {effectiveCufe ? (
+                  <>
+                    <p className="font-mono text-[8px] break-all bg-neutral-100 p-1 rounded border border-neutral-300 text-neutral-800">
+                      CUFE: {effectiveCufe}
+                    </p>
+                    <p className="text-[8px] text-neutral-600">
+                      Consulte su documento en: catalogo-vpfe.dian.gov.co
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[8px] text-neutral-500 italic">
+                    CUFE: En trámite de transmisión DIAN
+                  </p>
+                )}
               </div>
 
               {/* Mensaje de pie */}
