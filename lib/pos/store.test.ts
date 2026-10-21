@@ -189,4 +189,43 @@ describe("lib/pos/store - POS Zustand Store", () => {
     expect(usePOSStore.getState().isReceiptOpen).toBe(false);
     expect(usePOSStore.getState().lastSale).toBeNull();
   });
+
+  it("isolates carts and state per tenant when switching tenants", () => {
+    const store = usePOSStore.getState();
+
+    // 1. Estar en masvital y agregar Almendras
+    store.setTenant("masvital");
+    store.addItem({
+      sku: "OLAM001",
+      name: "Almendra Americana",
+      price: 70,
+      vatPct: 0,
+      category: "Frutos Secos",
+      stock: 500,
+      unit: "GRAMO",
+    }, 250);
+
+    expect(usePOSStore.getState().cart.length).toBe(1);
+    expect(usePOSStore.getState().cart[0]!.product.sku).toBe("OLAM001");
+
+    // 2. Cambiar a motoshop: el carrito de motoshop debe estar vacío
+    store.setTenant("motoshop");
+    expect(usePOSStore.getState().cart.length).toBe(0);
+
+    // 3. Agregar repuesto en motoshop
+    store.addItem(mockProduct1, 1);
+    expect(usePOSStore.getState().cart.length).toBe(1);
+    expect(usePOSStore.getState().cart[0]!.product.sku).toBe("MOT-001");
+
+    // 4. Volver a masvital: el carrito con almendras debe seguir intacto
+    store.setTenant("masvital");
+    expect(usePOSStore.getState().cart.length).toBe(1);
+    expect(usePOSStore.getState().cart[0]!.product.sku).toBe("OLAM001");
+    expect(usePOSStore.getState().cart[0]!.candet).toBe(250);
+
+    // 5. Volver a motoshop: el repuesto debe seguir intacto
+    store.setTenant("motoshop");
+    expect(usePOSStore.getState().cart.length).toBe(1);
+    expect(usePOSStore.getState().cart[0]!.product.sku).toBe("MOT-001");
+  });
 });

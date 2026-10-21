@@ -15,6 +15,13 @@ import {
 } from "./types";
 
 export interface POSState {
+  // Aislamiento Multi-Tenant
+  currentTenant: string;
+  setTenant: (_tenant: string) => void;
+  tenantCarts: Record<string, CartItem[]>;
+  tenantSessions: Record<string, CashSession | null>;
+  tenantCustomers: Record<string, Customer>;
+
   // Carrito
   cart: CartItem[];
   customer: Customer;
@@ -79,6 +86,11 @@ export interface POSState {
 }
 
 export const usePOSStore = create<POSState>((set, get) => ({
+  currentTenant: "motoshop",
+  tenantCarts: {},
+  tenantSessions: {},
+  tenantCustomers: {},
+
   cart: [],
   customer: DEFAULT_CUSTOMER,
   documentType: "FACTURA_VENTA",
@@ -92,6 +104,33 @@ export const usePOSStore = create<POSState>((set, get) => ({
   lastSale: null,
   isReceiptOpen: false,
   scannedNotification: null,
+
+  setTenant: (tenant: string) => {
+    const prevTenant = get().currentTenant;
+    if (prevTenant === tenant) return;
+
+    const currentCart = get().cart;
+    const currentSession = get().session;
+    const currentCustomer = get().customer;
+
+    const updatedCarts = { ...get().tenantCarts, [prevTenant]: currentCart };
+    const updatedSessions = { ...get().tenantSessions, [prevTenant]: currentSession };
+    const updatedCustomers = { ...get().tenantCustomers, [prevTenant]: currentCustomer };
+
+    set({
+      currentTenant: tenant,
+      tenantCarts: updatedCarts,
+      tenantSessions: updatedSessions,
+      tenantCustomers: updatedCustomers,
+      cart: updatedCarts[tenant] ?? [],
+      session: updatedSessions[tenant] ?? null,
+      customer: updatedCustomers[tenant] ?? DEFAULT_CUSTOMER,
+      payments: [],
+      cashReceived: 0,
+      isPaymentModalOpen: false,
+      isSearchModalOpen: false,
+    });
+  },
 
   addItem: (product: POSProduct, quantity = 1) => {
     const safeQty = Math.max(1, quantity);
@@ -107,13 +146,17 @@ export const usePOSStore = create<POSState>((set, get) => ({
         existing.ipoPct,
       );
 
-      set((state) => ({
-        cart: state.cart.map((item) =>
+      set((state) => {
+        const nextCart = state.cart.map((item) =>
           item.product.sku === product.sku
             ? { ...item, ...lineVals }
             : item,
-        ),
-      }));
+        );
+        return {
+          cart: nextCart,
+          tenantCarts: { ...state.tenantCarts, [state.currentTenant]: nextCart },
+        };
+      });
     } else {
       const vatPct = product.vatPct ?? 0;
       const ipoPct = product.ipoPct ?? 0;
@@ -131,16 +174,24 @@ export const usePOSStore = create<POSState>((set, get) => ({
         ...lineVals,
       };
 
-      set((state) => ({
-        cart: [...state.cart, newItem],
-      }));
+      set((state) => {
+        const nextCart = [...state.cart, newItem];
+        return {
+          cart: nextCart,
+          tenantCarts: { ...state.tenantCarts, [state.currentTenant]: nextCart },
+        };
+      });
     }
   },
 
   removeItem: (itemId: string) => {
-    set((state) => ({
-      cart: state.cart.filter((item) => item.id !== itemId),
-    }));
+    set((state) => {
+      const nextCart = state.cart.filter((item) => item.id !== itemId);
+      return {
+        cart: nextCart,
+        tenantCarts: { ...state.tenantCarts, [state.currentTenant]: nextCart },
+      };
+    });
   },
 
   updateQuantity: (itemId: string, quantity: number) => {
@@ -149,8 +200,8 @@ export const usePOSStore = create<POSState>((set, get) => ({
       return;
     }
 
-    set((state) => ({
-      cart: state.cart.map((item) => {
+    set((state) => {
+      const nextCart = state.cart.map((item) => {
         if (item.id !== itemId) return item;
         const lineVals = calculateLineValues(
           item.valuni,
@@ -160,13 +211,17 @@ export const usePOSStore = create<POSState>((set, get) => ({
           item.ipoPct,
         );
         return { ...item, ...lineVals };
-      }),
-    }));
+      });
+      return {
+        cart: nextCart,
+        tenantCarts: { ...state.tenantCarts, [state.currentTenant]: nextCart },
+      };
+    });
   },
 
   updateDiscount: (itemId: string, discountPct: number) => {
-    set((state) => ({
-      cart: state.cart.map((item) => {
+    set((state) => {
+      const nextCart = state.cart.map((item) => {
         if (item.id !== itemId) return item;
         const lineVals = calculateLineValues(
           item.valuni,
@@ -176,13 +231,17 @@ export const usePOSStore = create<POSState>((set, get) => ({
           item.ipoPct,
         );
         return { ...item, ...lineVals };
-      }),
-    }));
+      });
+      return {
+        cart: nextCart,
+        tenantCarts: { ...state.tenantCarts, [state.currentTenant]: nextCart },
+      };
+    });
   },
 
   updateUnitPrice: (itemId: string, valuni: number) => {
-    set((state) => ({
-      cart: state.cart.map((item) => {
+    set((state) => {
+      const nextCart = state.cart.map((item) => {
         if (item.id !== itemId) return item;
         const lineVals = calculateLineValues(
           valuni,
@@ -192,25 +251,36 @@ export const usePOSStore = create<POSState>((set, get) => ({
           item.ipoPct,
         );
         return { ...item, ...lineVals };
-      }),
-    }));
-  },
-
-  clearCart: () => {
-    set({
-      cart: [],
-      payments: [],
-      cashReceived: 0,
-      isPaymentModalOpen: false,
+      });
+      return {
+        cart: nextCart,
+        tenantCarts: { ...state.tenantCarts, [state.currentTenant]: nextCart },
+      };
     });
   },
 
+  clearCart: () => {
+    set((state) => ({
+      cart: [],
+      tenantCarts: { ...state.tenantCarts, [state.currentTenant]: [] },
+      payments: [],
+      cashReceived: 0,
+      isPaymentModalOpen: false,
+    }));
+  },
+
   setCustomer: (customer: Customer) => {
-    set({ customer });
+    set((state) => ({
+      customer,
+      tenantCustomers: { ...state.tenantCustomers, [state.currentTenant]: customer },
+    }));
   },
 
   resetCustomer: () => {
-    set({ customer: DEFAULT_CUSTOMER });
+    set((state) => ({
+      customer: DEFAULT_CUSTOMER,
+      tenantCustomers: { ...state.tenantCustomers, [state.currentTenant]: DEFAULT_CUSTOMER },
+    }));
   },
 
   setDocumentType: (documentType: DocumentType) => {
@@ -218,7 +288,10 @@ export const usePOSStore = create<POSState>((set, get) => ({
   },
 
   setSession: (session: CashSession | null) => {
-    set({ session });
+    set((state) => ({
+      session,
+      tenantSessions: { ...state.tenantSessions, [state.currentTenant]: session },
+    }));
   },
 
   addMovementToSession: (movement: CashMovement) => {

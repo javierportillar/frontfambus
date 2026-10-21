@@ -28,6 +28,12 @@ export default function CajaManagementPage(): JSX.Element {
   const user = useAuthStore((s) => s.user);
   const defaultCashier = user ?? "Cajero Principal";
 
+  const setTenant = usePOSStore((s) => s.setTenant);
+
+  useEffect(() => {
+    setTenant(currentTenant);
+  }, [currentTenant, setTenant]);
+
   const session = usePOSStore((s) => s.session);
   const setSession = usePOSStore((s) => s.setSession);
   const addMovementToSession = usePOSStore((s) => s.addMovementToSession);

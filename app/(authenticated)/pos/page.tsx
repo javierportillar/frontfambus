@@ -23,6 +23,13 @@ export default function POSPage(): JSX.Element {
   const user = useAuthStore((s) => s.user);
   const cashierName = user ?? "Cajero Principal";
 
+  const setTenant = usePOSStore((s) => s.setTenant);
+
+  // Sincronizar tenant en el store de POS para aislar el carrito y sesión
+  useEffect(() => {
+    setTenant(currentTenant);
+  }, [currentTenant, setTenant]);
+
   const cart = usePOSStore((s) => s.cart);
   const addItem = usePOSStore((s) => s.addItem);
   const openSearchModal = usePOSStore((s) => s.openSearchModal);
