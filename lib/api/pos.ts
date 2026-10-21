@@ -190,17 +190,27 @@ export async function searchPOSProducts(
   if (typeof window !== "undefined" && navigator.onLine) {
     try {
       const remote = await apiFetchJson<POSProduct[]>(
-        `/api/pos/products?q=${encodeURIComponent(clean)}`,
+        `/api/pos/products?q=${encodeURIComponent(clean)}&limit=200`,
       );
       if (Array.isArray(remote) && remote.length > 0) {
         return remote;
       }
     } catch {
-      // Continuar con fallback local si el endpoint no está disponible
+      // Intentar ruta alternativa de catálogo erp
+      try {
+        const remoteAlt = await apiFetchJson<POSProduct[]>(
+          `/api/erp/catalog/products/search?q=${encodeURIComponent(clean)}&limit=200`,
+        );
+        if (Array.isArray(remoteAlt) && remoteAlt.length > 0) {
+          return remoteAlt;
+        }
+      } catch {
+        // Continuar con fallback local si el endpoint no está disponible
+      }
     }
   }
 
-  // Si el tenant es masvital, intentar cargar su catálogo
+  // Si el tenant es masvital, intentar cargar su catálogo completo
   if (tenant === "masvital") {
     try {
       const masvitalData = await import("@/data/catalog/masvital.json");
@@ -219,13 +229,46 @@ export async function searchPOSProducts(
           image: p.image,
         }));
 
-        if (!clean) return mvProducts.slice(0, 30);
+        if (!clean) return mvProducts;
 
         return mvProducts.filter(
           (p) =>
             p.name.toLowerCase().includes(clean) ||
             p.sku.toLowerCase().includes(clean) ||
             (p.barcode && p.barcode.toLowerCase().includes(clean)),
+        );
+      }
+    } catch {
+      // Ignorar error y usar fallback
+    }
+  }
+
+  // Si el tenant es motoshop, cargar catálogo completo local
+  if (tenant === "motoshop" || !tenant) {
+    try {
+      const motoshopData = await import("@/data/catalog/motoshop.json");
+      if (motoshopData?.products) {
+        const msProducts: POSProduct[] = motoshopData.products.map((p) => ({
+          sku: p.sku,
+          name: p.name,
+          barcode: p.barcode || p.sku,
+          price: p.price ?? 0,
+          vatPct: 19,
+          ipoPct: 0,
+          stock: p.stock ?? 0,
+          category: p.category,
+          unit: p.presentation || "UNIDAD",
+          brand: p.brand,
+        }));
+
+        if (!clean) return msProducts.slice(0, 500);
+
+        return msProducts.filter(
+          (p) =>
+            p.name.toLowerCase().includes(clean) ||
+            p.sku.toLowerCase().includes(clean) ||
+            (p.barcode && p.barcode.toLowerCase().includes(clean)) ||
+            (p.category && p.category.toLowerCase().includes(clean)),
         );
       }
     } catch {
