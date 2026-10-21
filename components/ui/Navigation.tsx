@@ -163,10 +163,27 @@ const Icons = {
       <path d="M9 10h.01M12 10h.01M15 10h.01" strokeLinecap="round" />
     </svg>
   ),
+  pos: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+      <path d="M7 8h10M7 12h4" />
+    </svg>
+  ),
+  caja: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M6 12h.01M18 12h.01" />
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, ReactNode> = {
   home: Icons.home,
+  pos: Icons.pos,
+  caja: Icons.caja,
   ventas: Icons.ventas,
   compras: Icons.compras,
   proveedores: Icons.proveedores,
@@ -628,6 +645,8 @@ export function gerenteNavItems(): NavItem[] {
   //        Las rutas viejas redirigen automáticamente.
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
+    { label: "Punto de Venta", href: "/pos", icon: Icons.pos },
+    { label: "Caja", href: "/pos/caja", icon: Icons.caja },
     { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
     { label: "Movimientos", href: "/dashboards/movimientos", icon: Icons.ventas, feature: "ventas-summary" },
@@ -649,6 +668,8 @@ export function gerenteNavItems(): NavItem[] {
 export function vendedorNavItems(): NavItem[] {
   return [
     { label: "Inicio", href: "/", icon: Icons.home },
+    { label: "Punto de Venta", href: "/pos", icon: Icons.pos },
+    { label: "Caja", href: "/pos/caja", icon: Icons.caja },
     { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Alertas", href: "/alerts", icon: Icons.alerts, feature: "alerts" },
     { label: "Acciones", href: "/acciones", icon: Icons.acciones, feature: "acciones" },
