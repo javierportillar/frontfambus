@@ -246,10 +246,10 @@ export default function POSPage(): JSX.Element {
       </div>
 
       {/* Contenido Principal: Grid de 2 Columnas en Desktop */}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col lg:flex-row gap-6 p-4">
-        {/* Columna Izquierda (60%): Catálogo Táctil y Búsqueda Rápida */}
+      <main className="flex w-full flex-1 flex-col lg:flex-row gap-5 p-2 sm:p-4 min-w-0">
+        {/* Columna Izquierda: Catálogo Táctil y Búsqueda Rápida */}
         <section
-          className={`flex-1 flex-col gap-4 ${
+          className={`flex-1 min-w-0 flex-col gap-4 ${
             activeTabMobile === "CATALOGO" ? "flex" : "hidden lg:flex"
           }`}
         >
@@ -354,9 +354,9 @@ export default function POSPage(): JSX.Element {
           </div>
         </section>
 
-        {/* Columna Derecha (40%): Panel del Carrito y Liquidación */}
+        {/* Columna Derecha: Panel del Carrito y Liquidación */}
         <section
-          className={`flex-col gap-4 lg:w-[420px] shrink-0 ${
+          className={`flex-col gap-4 lg:w-[380px] xl:w-[420px] 2xl:w-[460px] shrink-0 ${
             activeTabMobile === "CARRITO" ? "flex" : "hidden lg:flex"
           }`}
         >

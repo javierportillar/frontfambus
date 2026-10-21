@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useId } from "react";
+import { useEffect, useRef, useState, useId, useTransition } from "react";
 import { usePOSStore } from "@/lib/pos/store";
 import { submitSale, saveCashSession } from "@/lib/api/pos";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { calculateChange } from "@/lib/pos/calculations";
+import {
+  sanitizeBancolombiaReference,
+  parseBancolombiaQRText,
+} from "@/lib/pos/bancolombia";
+import { listTerceros } from "@/lib/erp/client";
+import type { Tercero } from "@/lib/erp/types";
 import type { PaymentMethod, SalePayload } from "@/lib/pos/types";
 
 interface PaymentModalProps {
@@ -49,6 +55,20 @@ export function PaymentModal({
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
   const [customerNit, setCustomerNit] = useState(customer.nit);
   const [customerName, setCustomerName] = useState(customer.name);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [customerSearchResults, setCustomerSearchResults] = useState<Tercero[]>([]);
+  const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+  const [showManualCustomerInput, setShowManualCustomerInput] = useState(false);
+
+  // Asistente QR Bancolombia / Transferencia
+  const [qrRawText, setQrRawText] = useState("");
+  const [qrFeedback, setQrFeedback] = useState<{
+    name?: string;
+    ref?: string;
+    matched: boolean;
+    amountMismatch?: boolean;
+    detectedAmount?: number;
+  } | null>(null);
 
   // Sincronizar efectivo recibido cuando se abre el modal
   useEffect(() => {
@@ -58,10 +78,45 @@ export function PaymentModal({
       setReference("");
       setErrorMessage(null);
       setIsEditingCustomer(false);
+      setShowManualCustomerInput(false);
+      setCustomerSearchQuery("");
+      setCustomerSearchResults([]);
       setCustomerNit(customer.nit);
       setCustomerName(customer.name);
+      setQrRawText("");
+      setQrFeedback(null);
     }
   }, [customer.name, customer.nit, isPaymentModalOpen, totals.total]);
+
+  // Búsqueda en vivo de clientes por NIT o Nombre
+  useEffect(() => {
+    const query = customerSearchQuery.trim();
+    if (query.length < 2) {
+      setCustomerSearchResults([]);
+      setIsSearchingCustomer(false);
+      return;
+    }
+
+    let active = true;
+    setIsSearchingCustomer(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await listTerceros({ search: query, limit: 6 });
+        if (active) {
+          setCustomerSearchResults(results ?? []);
+        }
+      } catch {
+        if (active) setCustomerSearchResults([]);
+      } finally {
+        if (active) setIsSearchingCustomer(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [customerSearchQuery]);
 
   // Manejo de diálogo nativo
   useEffect(() => {
@@ -113,6 +168,43 @@ export function PaymentModal({
     setCashReceived((prev) => (prev > 0 ? prev + amount : amount));
   }
 
+  function handleSelectConsumidorFinal(): void {
+    const finalCustomer = {
+      ...customer,
+      nit: "222222222222",
+      name: "CONSUMIDOR FINAL",
+    };
+    setCustomer(finalCustomer);
+    setCustomerNit("222222222222");
+    setCustomerName("CONSUMIDOR FINAL");
+    setCustomerSearchQuery("");
+    setCustomerSearchResults([]);
+    setIsEditingCustomer(false);
+    setShowManualCustomerInput(false);
+  }
+
+  function handleSelectTercero(t: Tercero): void {
+    const displayName =
+      t.razsoc?.trim() ||
+      [t.nomter, t.nomter2, t.apeter, t.apeter2].filter(Boolean).join(" ").trim() ||
+      t.nomcom?.trim() ||
+      "Cliente";
+    const selected = {
+      ...customer,
+      nit: t.nitter,
+      name: displayName,
+      phone: t.telter || t.movter || customer.phone,
+      address: t.dirter || customer.address,
+    };
+    setCustomer(selected);
+    setCustomerNit(t.nitter);
+    setCustomerName(displayName);
+    setCustomerSearchQuery("");
+    setCustomerSearchResults([]);
+    setIsEditingCustomer(false);
+    setShowManualCustomerInput(false);
+  }
+
   function handleSaveCustomer(): void {
     setCustomer({
       ...customer,
@@ -120,6 +212,52 @@ export function PaymentModal({
       name: customerName.trim() || "Consumidor Final",
     });
     setIsEditingCustomer(false);
+    setShowManualCustomerInput(false);
+  }
+
+  function handleProcessQRText(textToProcess: string): void {
+    const parsed = parseBancolombiaQRText(textToProcess);
+    if (!parsed.rawMatched) {
+      setQrFeedback({ matched: false });
+      return;
+    }
+
+    if (parsed.reference) {
+      setReference(parsed.reference);
+    }
+
+    if (parsed.customerName) {
+      setCustomer({
+        ...customer,
+        name: parsed.customerName,
+      });
+      setCustomerName(parsed.customerName);
+    }
+
+    const amountDiffers =
+      parsed.amount !== undefined && Math.abs(parsed.amount - totals.total) > 1;
+
+    setQrFeedback({
+      name: parsed.customerName,
+      ref: parsed.reference,
+      matched: true,
+      amountMismatch: amountDiffers,
+      detectedAmount: parsed.amount,
+    });
+  }
+
+  async function handlePasteFromClipboard(): Promise<void> {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        const clipText = await navigator.clipboard.readText();
+        if (clipText) {
+          setQrRawText(clipText);
+          handleProcessQRText(clipText);
+        }
+      }
+    } catch {
+      // Si el navegador bloquea permisos de portapapeles, el usuario puede pegar manualmente
+    }
   }
 
   async function handleConfirmSale(): Promise<void> {
@@ -257,7 +395,7 @@ export function PaymentModal({
 
         {/* Sección de Cliente y Tipo de Documento */}
         <div className="rounded-2xl border border-border bg-surface-alt/70 p-3.5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4 text-text-muted">
                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
@@ -267,49 +405,142 @@ export function PaymentModal({
                 Cliente y Comprobante
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsEditingCustomer(!isEditingCustomer)}
-              className="text-xs font-bold text-primary hover:underline"
-            >
-              {isEditingCustomer ? "Guardar" : "Cambiar Cliente"}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleSelectConsumidorFinal}
+                className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                  customer.nit === "222222222222"
+                    ? "bg-primary text-primary-fg shadow-xs"
+                    : "bg-surface border border-border text-text-secondary hover:bg-surface-alt hover:text-text-primary"
+                }`}
+                title="Asignar Consumidor Final (NIT 222222222222)"
+              >
+                👤 Consumidor Final
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditingCustomer(!isEditingCustomer);
+                  setShowManualCustomerInput(false);
+                }}
+                className="rounded-lg bg-surface border border-border px-2.5 py-1 text-xs font-bold text-primary hover:bg-surface-alt transition-colors"
+              >
+                {isEditingCustomer ? "Cerrar" : "🔍 Buscar / Cambiar"}
+              </button>
+            </div>
           </div>
 
           {isEditingCustomer ? (
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="mt-3 space-y-2.5">
+              {/* Buscador de terceros en vivo */}
               <div>
-                <label className="text-[11px] font-bold text-text-muted">NIT / Documento</label>
-                <input
-                  type="text"
-                  value={customerNit}
-                  onChange={(e) => setCustomerNit(e.target.value)}
-                  placeholder="222222222222"
-                  className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
-                />
+                <label className="text-[11px] font-bold text-text-muted block mb-1">
+                  Buscar por Cédula, NIT o Nombre
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={customerSearchQuery}
+                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                    placeholder="Escribe el nombre o documento..."
+                    className="w-full rounded-xl border border-border bg-surface px-3 py-2 pl-8 text-xs font-medium focus:border-primary focus:outline-none"
+                    autoFocus
+                  />
+                  <span className="absolute left-2.5 top-2.5 text-xs text-text-muted">
+                    🔍
+                  </span>
+                  {isSearchingCustomer && (
+                    <span className="absolute right-3 top-2.5 text-xs font-bold text-primary animate-pulse">
+                      Buscando...
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-text-muted">Nombre o Razón Social</label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Consumidor Final"
-                  className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
-                />
-              </div>
-              <div className="sm:col-span-2 flex justify-end gap-2 mt-1">
+
+              {/* Lista de resultados de búsqueda */}
+              {customerSearchResults.length > 0 && (
+                <div className="max-h-36 overflow-y-auto rounded-xl border border-border bg-surface divide-y divide-border shadow-xs">
+                  {customerSearchResults.map((t) => {
+                    const name =
+                      t.razsoc?.trim() ||
+                      [t.nomter, t.nomter2, t.apeter, t.apeter2].filter(Boolean).join(" ").trim() ||
+                      t.nomcom?.trim() ||
+                      "Cliente";
+                    return (
+                      <button
+                        key={t.nitter}
+                        type="button"
+                        onClick={() => handleSelectTercero(t)}
+                        className="w-full text-left px-3 py-2 hover:bg-primary/10 transition-colors flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-text-primary truncate">{name}</p>
+                          <p className="text-[10px] font-mono text-text-muted">NIT: {t.nitter}</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-bold text-primary">
+                          Seleccionar ↵
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {customerSearchQuery.trim().length >= 2 && !isSearchingCustomer && customerSearchResults.length === 0 && (
+                <p className="text-[11px] text-text-muted italic px-1">
+                  No se encontraron terceros registrados con ese criterio.
+                </p>
+              )}
+
+              {/* Opción de ingreso manual */}
+              <div className="pt-1">
                 <button
                   type="button"
-                  onClick={handleSaveCustomer}
-                  className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-primary-fg"
+                  onClick={() => setShowManualCustomerInput(!showManualCustomerInput)}
+                  className="text-[11px] font-bold text-text-secondary hover:text-primary transition-colors flex items-center gap-1"
                 >
-                  Aplicar
+                  <span>{showManualCustomerInput ? "▼" : "▶"}</span>
+                  <span>O ingresar manualmente (nuevo cliente sin registrar)</span>
                 </button>
+
+                {showManualCustomerInput && (
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 rounded-xl border border-border bg-surface">
+                    <div>
+                      <label className="text-[11px] font-bold text-text-muted">NIT / Cédula</label>
+                      <input
+                        type="text"
+                        value={customerNit}
+                        onChange={(e) => setCustomerNit(e.target.value)}
+                        placeholder="222222222222"
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-text-muted">Nombre o Razón Social</label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Consumidor Final"
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 flex justify-end gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveCustomer}
+                        className="rounded-lg bg-primary px-3 py-1 text-xs font-bold text-primary-fg"
+                      >
+                        Aplicar Datos
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
-            <div className="mt-2 flex flex-wrap items-center justify-between text-xs">
+            <div className="mt-2 flex flex-wrap items-center justify-between text-xs gap-2">
               <div>
                 <span className="font-bold text-text-primary">{customer.name}</span>{" "}
                 <span className="font-mono text-text-muted">({customer.nit})</span>
@@ -450,18 +681,129 @@ export function PaymentModal({
           </div>
         )}
 
-        {/* Campos adicionales para Transferencia o Datáfono */}
-        {(selectedMethod === "TRANSFERENCIA" || selectedMethod === "DATAFONO") && (
-          <div className="rounded-2xl border border-border bg-surface p-4 space-y-2">
-            <label htmlFor="refInput" className="text-xs font-bold uppercase tracking-wide text-text-secondary">
-              Número de Referencia / Comprobante / Aprobación
-            </label>
+        {/* Campos específicos para Transferencia con Asistente QR Bancolombia */}
+        {selectedMethod === "TRANSFERENCIA" && (
+          <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <label htmlFor="refInput" className="text-xs font-bold uppercase tracking-wide text-text-secondary">
+                Referencia / Comprobante Bancolombia / Nequi
+              </label>
+              {customer.nit !== "222222222222" && (
+                <button
+                  type="button"
+                  onClick={handleSelectConsumidorFinal}
+                  className="text-xs font-bold text-primary hover:underline"
+                >
+                  Asignar Consumidor Final
+                </button>
+              )}
+            </div>
+
             <input
               id="refInput"
               type="text"
               value={reference}
+              onChange={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
+              onBlur={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
+              placeholder="Ej. 0092055984 (el sufijo 'null' se remueve automáticamente)"
+              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-semibold focus:border-primary focus:outline-none font-mono"
+            />
+
+            {/* Asistente inteligente QR Bancolombia */}
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                  <span>⚡</span>
+                  <span>Asistente Comprobante QR Bancolombia</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePasteFromClipboard}
+                  className="rounded-lg bg-surface border border-primary/30 px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/10 transition-colors"
+                >
+                  📋 Pegar del Portapapeles
+                </button>
+              </div>
+
+              <p className="text-[11px] text-text-secondary leading-snug">
+                Pega la línea copiada de movimientos Bancolombia (ej: <code className="font-mono bg-surface px-1 py-0.5 rounded text-[10px]">PAGO QR JUAN PEREZ 0092055984 null $ 45.000</code>).
+                Extrae el nombre del pagador y la referencia sin el <code className="text-rose-600 font-mono">null</code>.
+              </p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={qrRawText}
+                  onChange={(e) => {
+                    setQrRawText(e.target.value);
+                    if (e.target.value.trim()) {
+                      handleProcessQRText(e.target.value);
+                    }
+                  }}
+                  placeholder="Pega aquí el movimiento o descripción del QR..."
+                  className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleProcessQRText(qrRawText)}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-black text-primary-fg shrink-0 hover:bg-primary-dark transition-colors"
+                >
+                  Procesar
+                </button>
+              </div>
+
+              {/* Feedback del procesamiento */}
+              {qrFeedback && (
+                <div
+                  className={`rounded-lg p-2.5 text-xs font-medium space-y-1 ${
+                    qrFeedback.matched
+                      ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-900"
+                      : "bg-amber-500/10 border border-amber-500/30 text-amber-900"
+                  }`}
+                >
+                  {qrFeedback.matched ? (
+                    <>
+                      {qrFeedback.name && (
+                        <p className="font-bold flex items-center gap-1">
+                          <span>✓</span>
+                          <span>Cliente asignado:</span>
+                          <span className="font-black text-emerald-950 underline">{qrFeedback.name}</span>
+                        </p>
+                      )}
+                      {qrFeedback.ref && (
+                        <p className="font-mono text-[11px]">
+                          ✓ Referencia asignada: <strong className="font-bold">{qrFeedback.ref}</strong> (sufijo &apos;null&apos; eliminado)
+                        </p>
+                      )}
+                      {qrFeedback.amountMismatch && qrFeedback.detectedAmount && (
+                        <p className="text-amber-800 font-bold text-[11px] pt-0.5">
+                          ⚠️ Aviso: El monto en el comprobante ({formatMoneyFull(qrFeedback.detectedAmount)}) no coincide exactamente con el total ({formatMoneyFull(totals.total)}).
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-amber-800 text-[11px]">
+                      No se detectó un patrón de Pago QR o referencia en el texto ingresado.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Campos adicionales para Datáfono */}
+        {selectedMethod === "DATAFONO" && (
+          <div className="rounded-2xl border border-border bg-surface p-4 space-y-2">
+            <label htmlFor="refInputDatafono" className="text-xs font-bold uppercase tracking-wide text-text-secondary">
+              Número de Aprobación Datáfono / Voucher
+            </label>
+            <input
+              id="refInputDatafono"
+              type="text"
+              value={reference}
               onChange={(e) => setReference(e.target.value)}
-              placeholder="Ej. Nequi M123456 / Aprobación Datáfono 8921"
+              placeholder="Ej. Aprobación 8921 / Voucher Visa"
               className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium focus:border-primary focus:outline-none"
             />
           </div>
