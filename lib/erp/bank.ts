@@ -352,3 +352,180 @@ export async function listBankCandidates(
       typeof data.ultimaIngestaAt === "string" ? data.ultimaIngestaAt : null,
   };
 }
+
+/** Estados del ciclo de conciliación de un movimiento (espejo del backend). */
+export const BANK_MOVIMIENTO_ESTADOS = [
+  "PENDIENTE",
+  "APLICADO",
+  "AMBIGUA",
+  "SIN_MATCH",
+  "SOBREPAGO",
+  "IGNORADO",
+] as const;
+
+export type BankMovimientoEstado = (typeof BANK_MOVIMIENTO_ESTADOS)[number];
+
+/** Un movimiento raspado del portal, ya conciliado contra las facturas. */
+export interface BankMovimiento {
+  /** Identificador de dominio (`uuid5` del tenant + id externo). */
+  id: string;
+  /** Fecha del movimiento (`YYYY-MM-DD`); es la fecha del documento. */
+  fecha: string;
+  /** Importe como texto con dos decimales (`"100000.00"`): nunca `float`. */
+  valor: string;
+  descripcion: string;
+  /** Referencia saneada que publicó el banco (puede venir vacía). */
+  referencia: string;
+  pagadorNombre: string;
+  estado: BankMovimientoEstado;
+  /** Documento generado al aplicar (recibo o consignación), si ya se aplicó. */
+  reciboNumero: string | null;
+  /** Puntaje de la mejor candidata (0-100), si ya se concilió. */
+  confianza: number | null;
+  /** Señales que explican el puntaje, en una línea legible. */
+  razones: string | null;
+}
+
+/** Estados en los que el operador todavía puede resolver a mano. */
+export const BANK_ESTADOS_RESOLUBLES: readonly BankMovimientoEstado[] = [
+  "AMBIGUA",
+  "SOBREPAGO",
+  "SIN_MATCH",
+];
+
+function parseMovimiento(raw: unknown): BankMovimiento {
+  const data = isRecord(raw) ? raw : {};
+  const estado = BANK_MOVIMIENTO_ESTADOS.includes(
+    data.estado as BankMovimientoEstado,
+  )
+    ? (data.estado as BankMovimientoEstado)
+    : "PENDIENTE";
+  return {
+    id: typeof data.id === "string" ? data.id : "",
+    fecha: typeof data.fecha === "string" ? data.fecha : "",
+    valor: typeof data.valor === "string" ? data.valor : String(data.valor ?? ""),
+    descripcion: typeof data.descripcion === "string" ? data.descripcion : "",
+    referencia: typeof data.referencia === "string" ? data.referencia : "",
+    pagadorNombre:
+      typeof data.pagadorNombre === "string" ? data.pagadorNombre : "",
+    estado,
+    reciboNumero:
+      typeof data.reciboNumero === "string" ? data.reciboNumero : null,
+    confianza: typeof data.confianza === "number" ? data.confianza : null,
+    razones: typeof data.razones === "string" ? data.razones : null,
+  };
+}
+
+/** Parámetros de `GET /api/erp/bank/movements`. */
+export interface ListBankMovementsParams {
+  estado?: BankMovimientoEstado | "";
+  /** Inicio del rango (`YYYY-MM-DD`), inclusivo. */
+  desde?: string;
+  /** Fin del rango (`YYYY-MM-DD`), inclusivo. */
+  hasta?: string;
+}
+
+/**
+ * `GET /api/erp/bank/movements` — movimientos del tenant activo.
+ *
+ * El tenant sale del request (header `X-Tenant`), nunca de un parámetro: la
+ * lista no puede pedir movimientos ajenos.
+ */
+export async function listBankMovements(
+  params: ListBankMovementsParams = {},
+): Promise<BankMovimiento[]> {
+  const query = new URLSearchParams();
+  if (params.estado) query.set("estado", params.estado);
+  if (params.desde) query.set("desde", params.desde);
+  if (params.hasta) query.set("hasta", params.hasta);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+
+  const raw = await bankRequest<unknown>(`/movements${suffix}`, {
+    method: "GET",
+    headers: { "X-Request-Id": generateRequestId() },
+  });
+
+  const data = isRecord(raw) ? raw : {};
+  return Array.isArray(data.movimientos)
+    ? data.movimientos.map(parseMovimiento)
+    : [];
+}
+
+/** Estado de sincronización del nodo local para el tenant activo. */
+export interface BankSyncStatus {
+  ultimaIngestaAt: string | null;
+  nodo: string | null;
+  scraperHabilitado: boolean;
+  ventana: BankVentana | null;
+}
+
+/** `GET /api/erp/bank/sync-status` — última ingesta, nodo y ventana. */
+export async function getBankSyncStatus(): Promise<BankSyncStatus> {
+  const raw = await bankRequest<unknown>("/sync-status", {
+    method: "GET",
+    headers: { "X-Request-Id": generateRequestId() },
+  });
+
+  const data = isRecord(raw) ? raw : {};
+  const ventana = isRecord(data.ventana) ? data.ventana : null;
+  return {
+    ultimaIngestaAt:
+      typeof data.ultimaIngestaAt === "string" ? data.ultimaIngestaAt : null,
+    nodo: typeof data.nodo === "string" ? data.nodo : null,
+    scraperHabilitado: data.scraperHabilitado === true,
+    ventana: ventana
+      ? { desde: String(ventana.desde ?? ""), hasta: String(ventana.hasta ?? "") }
+      : null,
+  };
+}
+
+/** Resultado de aplicar un movimiento. */
+export interface BankApplyResult {
+  movimientoId: string;
+  /** Número del documento generado (recibo o consignación). */
+  documento: string;
+  prefijo: string;
+  /** `true` cuando el backend devolvió el documento ya existente. */
+  replay: boolean;
+}
+
+export interface ApplyBankMovementInput {
+  /** Factura a cobrar. `null` ⇒ consignación bancaria. */
+  facturaId?: string | null;
+  /** Clave de idempotencia: la misma en cada reintento de la misma acción. */
+  idempotencyKey: string;
+}
+
+/**
+ * `POST /api/erp/bank/reconciliation/{id}/apply` — confirma la aplicación.
+ *
+ * Es una escritura contable: la decide el operador, nunca la página sola. Con
+ * la misma `idempotencyKey` el backend no duplica el documento.
+ */
+export async function applyBankMovement(
+  movimientoId: string,
+  input: ApplyBankMovementInput,
+): Promise<BankApplyResult> {
+  const query = new URLSearchParams();
+  if (input.facturaId) query.set("factura_id", input.facturaId);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+
+  const raw = await bankRequest<unknown>(
+    `/reconciliation/${encodeURIComponent(movimientoId)}/apply${suffix}`,
+    {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": input.idempotencyKey,
+        "X-Request-Id": generateRequestId(),
+      },
+    },
+  );
+
+  const data = isRecord(raw) ? raw : {};
+  return {
+    movimientoId: String(data.movimiento_id ?? movimientoId),
+    documento: String(data.documento ?? ""),
+    prefijo: String(data.prefijo ?? ""),
+    replay: data.replay === true,
+  };
+}

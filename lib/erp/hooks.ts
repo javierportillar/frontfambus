@@ -9,6 +9,13 @@ import {
   listTerceros,
   type MastersListParams,
 } from "./client";
+import {
+  getBankSyncStatus,
+  listBankMovements,
+  type BankMovimiento,
+  type BankSyncStatus,
+  type ListBankMovementsParams,
+} from "./bank";
 import type { Producto, Tercero } from "./types";
 
 const DEDUPING_INTERVAL = 30_000;
@@ -101,4 +108,47 @@ export function useProducto(codprod: string | null) {
       keepPreviousData: false,
     },
   );
+}
+
+/**
+ * Movimientos bancarios del tenant activo.
+ *
+ * La clave de SWR incluye el tenant: al cambiar de tenant se vuelve a pedir
+ * la lista en vez de mostrar la del tenant anterior.
+ */
+export function useBankMovements(params: ListBankMovementsParams = {}) {
+  const tenant = useTenantKey();
+  const key = [
+    "erp-bank-movements",
+    tenant,
+    params.estado ?? "",
+    params.desde ?? "",
+    params.hasta ?? "",
+  ] as const;
+
+  return useSWR<BankMovimiento[]>(
+    key,
+    () =>
+      listBankMovements({
+        estado: params.estado,
+        desde: params.desde,
+        hasta: params.hasta,
+      }),
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: DEDUPING_INTERVAL,
+      keepPreviousData: true,
+    },
+  );
+}
+
+/** Estado de sincronización del nodo para el tenant activo. */
+export function useBankSyncStatus() {
+  const tenant = useTenantKey();
+  const key = ["erp-bank-sync-status", tenant] as const;
+
+  return useSWR<BankSyncStatus>(key, () => getBankSyncStatus(), {
+    revalidateOnFocus: false,
+    dedupingInterval: DEDUPING_INTERVAL,
+  });
 }
