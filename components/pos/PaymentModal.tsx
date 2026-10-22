@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, useId, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useId, useTransition } from "react";
 import { usePOSStore } from "@/lib/pos/store";
+import { useBankVerification } from "@/lib/api/hooks";
+import {
+  createBankVerification,
+  listBankCandidates,
+  esEstadoFinal,
+  type BankCandidato,
+} from "@/lib/erp/bank";
 import { submitSale, saveCashSession } from "@/lib/api/pos";
 import { formatMoneyFull } from "@/lib/format/currency";
 import {
@@ -82,9 +89,23 @@ export function PaymentModal({
     detectedAmount?: number;
   } | null>(null);
 
-  // Sincronizar efectivo recibido cuando se abre el modal
+  // Verificación bancaria contra el nodo local (el scrape vive fuera del request)
+  const [bankJobId, setBankJobId] = useState<string | null>(null);
+  const [bankCandidateList, setBankCandidateList] = useState<BankCandidato[] | null>(null);
+  const [bankStatusMessage, setBankStatusMessage] = useState<string | null>(null);
+  const [bankUnavailable, setBankUnavailable] = useState<string | null>(null);
+  const [isVerifyingBank, setIsVerifyingBank] = useState(false);
+  // El operador siempre manda: lo que escribió a mano no se pisa con lo del banco.
+  const referenceDirtyRef = useRef(false);
+  const customerDirtyRef = useRef(false);
+  const appliedCandidateRef = useRef<string | null>(null);
+
+  // Sincronizar efectivo recibido cuando se abre el modal.
+  // OJO: no depende del cliente. Si dependiera, prellenar el pagador desde la
+  // verificación bancaria reiniciaría el modal (y volvería a EFECTIVO).
   useEffect(() => {
     if (isPaymentModalOpen) {
+      const clienteActual = usePOSStore.getState().customer;
       setPaymentMode("UNA_FORMA");
       setCashReceived(totals.total);
       setSelectedMethod("EFECTIVO");
@@ -94,16 +115,109 @@ export function PaymentModal({
       setShowManualCustomerInput(false);
       setCustomerSearchQuery("");
       setCustomerSearchResults([]);
-      setCustomerNit(customer.nit);
-      setCustomerName(customer.name);
+      setCustomerNit(clienteActual.nit);
+      setCustomerName(clienteActual.name);
       setQrRawText("");
       setQrFeedback(null);
+      setBankJobId(null);
+      setBankCandidateList(null);
+      setBankStatusMessage(null);
+      setBankUnavailable(null);
+      setIsVerifyingBank(false);
+      referenceDirtyRef.current = false;
+      customerDirtyRef.current = false;
+      appliedCandidateRef.current = null;
       setSplitPayments([]);
       setNewSplitMethod("EFECTIVO");
       setNewSplitAmount(totals.total);
       setNewSplitReference("");
     }
-  }, [customer.name, customer.nit, isPaymentModalOpen, totals.total]);
+  }, [isPaymentModalOpen, totals.total]);
+
+  // ── Verificación bancaria ────────────────────────────────────────────
+  const { data: bankJob } = useBankVerification(bankJobId, {
+    refreshInterval: 2000,
+  });
+
+  const aplicarCandidato = useCallback(
+    (candidato: BankCandidato) => {
+      if (!referenceDirtyRef.current && candidato.referencia) {
+        setReference(sanitizeBancolombiaReference(candidato.referencia));
+      }
+      if (!customerDirtyRef.current && candidato.pagadorNombre) {
+        setCustomer({ ...customer, name: candidato.pagadorNombre });
+        setCustomerName(candidato.pagadorNombre);
+      }
+    },
+    [customer, setCustomer],
+  );
+
+  // El job avanza en segundo plano: traducimos su estado a la pantalla.
+  useEffect(() => {
+    if (!bankJob) return;
+
+    if (bankJob.estado === "esperando_otp") {
+      setBankStatusMessage(
+        "El banco pide un código: ingrésalo en la consola del nodo local",
+      );
+      return;
+    }
+    if (bankJob.estado === "sin_coincidencia") {
+      setBankStatusMessage("No encontramos transferencias con ese valor");
+      return;
+    }
+    if (bankJob.estado === "resuelto") {
+      const candidato = bankJob.resultado?.candidato ?? null;
+      if (candidato && appliedCandidateRef.current !== bankJob.job_id) {
+        appliedCandidateRef.current = bankJob.job_id;
+        aplicarCandidato(candidato);
+      }
+      return;
+    }
+    if (bankJob.estado === "fallido") {
+      setBankUnavailable("Verificación no disponible");
+    }
+    if (bankJob.estado === "expirado") {
+      setBankUnavailable("Verificación no disponible");
+    }
+  }, [bankJob, aplicarCandidato]);
+
+  // Con dos o más candidatos no elige el sistema: se le ofrecen al operador.
+  useEffect(() => {
+    if (bankJob?.estado !== "ambiguo") return;
+    let cancelado = false;
+    listBankCandidates({ valor: totals.total })
+      .then((resultado) => {
+        if (!cancelado) setBankCandidateList(resultado.candidatos);
+      })
+      .catch(() => {
+        if (!cancelado) setBankCandidateList([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [bankJob?.estado, totals.total]);
+
+  async function handleVerificarTransferencia(): Promise<void> {
+    setIsVerifyingBank(true);
+    setBankStatusMessage(null);
+    setBankUnavailable(null);
+    setBankCandidateList(null);
+    appliedCandidateRef.current = null;
+    try {
+      const job = await createBankVerification({
+        facturaId: `POS-${Date.now()}`,
+        valor: totals.total,
+      });
+      setBankJobId(job.job_id);
+    } catch {
+      // Cualquier fallo del nodo se trata igual: no hay verificación, el
+      // pegado manual sigue disponible y el cobro no se bloquea.
+      setBankUnavailable("Verificación no disponible");
+    } finally {
+      setIsVerifyingBank(false);
+    }
+  }
 
   // Búsqueda en vivo de clientes por NIT o Nombre
   useEffect(() => {
@@ -1048,11 +1162,69 @@ export function PaymentModal({
                   id="refInput"
                   type="text"
                   value={reference}
-                  onChange={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
+                  onChange={(e) => {
+                    // Lo que escribe el operador gana: el prellenado no lo pisa.
+                    referenceDirtyRef.current = true;
+                    setReference(sanitizeBancolombiaReference(e.target.value));
+                  }}
                   onBlur={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
                   placeholder="Ej. 0092055984 (el sufijo 'null' se remueve automáticamente)"
                   className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-semibold focus:border-primary focus:outline-none font-mono"
                 />
+
+                {/* Verificación contra el nodo local del banco */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleVerificarTransferencia()}
+                    disabled={isVerifyingBank}
+                    className="rounded-xl border border-primary bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
+                  >
+                    {isVerifyingBank ? "Verificando…" : "🔍 Verificar transferencia"}
+                  </button>
+                  {bankJob && !esEstadoFinal(bankJob.estado) && (
+                    <span className="text-xs font-medium text-text-muted">
+                      Esperando el banco…
+                    </span>
+                  )}
+                </div>
+
+                {bankStatusMessage && (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    {bankStatusMessage}
+                  </p>
+                )}
+
+                {bankUnavailable && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
+                  >
+                    {bankUnavailable}
+                  </p>
+                )}
+
+                {bankCandidateList && bankCandidateList.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-text-secondary">
+                      Elegí la transferencia correcta:
+                    </p>
+                    {bankCandidateList.map((candidato) => (
+                      <button
+                        key={candidato.id}
+                        type="button"
+                        onClick={() => aplicarCandidato(candidato)}
+                        className="w-full rounded-xl border border-border bg-surface-alt px-3 py-2 text-left text-xs font-semibold text-text-secondary transition-colors hover:border-primary hover:text-primary"
+                      >
+                        {candidato.pagadorNombre} · {candidato.referencia} ·{" "}
+                        {formatMoneyFull(Number(candidato.valor))}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Asistente inteligente QR Bancolombia */}
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2.5">
