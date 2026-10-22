@@ -63,6 +63,7 @@ export type PathAccessRule =
 
 const PATH_RULES: ReadonlyArray<readonly [string, PathAccessRule]> = [
   ["/catalogo", { tenantOnly: "masvital" }],
+  ["/banco/transferencias", { feature: "bank-reconciliation" }],
   ["/admin/usuarios", { adminOnly: true }],
   ["/admin/pipeline", { feature: "pipeline-observability" }],
   ["/admin/data-catalog", { feature: "data-catalog" }],

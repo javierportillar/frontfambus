@@ -668,6 +668,7 @@ export function gerenteNavItems(): NavItem[] {
     { label: "Punto de Venta", href: "/pos", icon: Icons.pos },
     { label: "Caja", href: "/pos/caja", icon: Icons.caja },
     { label: "Consola DIAN", href: "/dian/consola", icon: Icons.dian },
+    { label: "Transferencias", href: "/banco/transferencias", icon: Icons.caja, feature: "bank-reconciliation" },
     { label: "Asistente IA", href: "/chat", icon: Icons.assistant, feature: "chat-ia" },
     { label: "Catálogo", href: "/catalogo", icon: Icons.catalogo },
     { label: "Maestros · Terceros", href: "/maestros/terceros", icon: Icons.maestros },
