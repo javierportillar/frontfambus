@@ -69,6 +69,16 @@ export interface BankCandidato {
   referencia: string;
   /** Fecha del movimiento (`YYYY-MM-DD`). */
   fecha: string;
+  /**
+   * NIT del cliente de la factura. El nodo lo agrega de forma gradual: si no
+   * viene, la UI simplemente omite la fila (nunca muestra `undefined`).
+   */
+  nitter?: string;
+  /**
+   * Nombre del cliente de la factura. Igual que `nitter`, es opcional hasta
+   * que todos los nodos estén actualizados.
+   */
+  clienteNombre?: string;
 }
 
 /** Respuesta de `GET /api/erp/bank/candidates`. */
@@ -89,8 +99,14 @@ export interface BankJobResultado {
   cuenta?: string;
   paginas?: number;
   movimientos?: number;
-  /** Número de candidatos encontrados por el nodo. */
-  candidatos?: number;
+  /**
+   * Candidatos encontrados por el nodo cuando el job terminó `ambiguo`.
+   * El contrato nuevo trae la lista completa; el nodo viejo sólo mandaba el
+   * conteo, por eso también aceptamos el número y lo exponemos aparte.
+   */
+  candidatos?: BankCandidato[];
+  /** Conteo de candidatos que mandan los nodos viejos (`candidatos: 2`). */
+  candidatosTotal?: number;
   /** El candidato único (sólo cuando `estado === "resuelto"`). */
   candidato: BankCandidato | null;
 }
@@ -169,13 +185,24 @@ function parseCandidato(raw: unknown): BankCandidato {
       : typeof data.pagador_nombre === "string"
         ? data.pagador_nombre
         : "";
-  return {
+  const nitter = typeof data.nitter === "string" ? data.nitter.trim() : "";
+  const clienteNombreRaw =
+    typeof data.cliente_nombre === "string"
+      ? data.cliente_nombre
+      : typeof data.clienteNombre === "string"
+        ? data.clienteNombre
+        : "";
+  const candidato: BankCandidato = {
     id: typeof data.id === "string" ? data.id : "",
     valor: typeof data.valor === "string" ? data.valor : String(data.valor ?? ""),
     pagadorNombre,
     referencia: typeof data.referencia === "string" ? data.referencia : "",
     fecha: typeof data.fecha === "string" ? data.fecha : "",
   };
+  if (nitter) candidato.nitter = nitter;
+  const clienteNombre = clienteNombreRaw.trim();
+  if (clienteNombre) candidato.clienteNombre = clienteNombre;
+  return candidato;
 }
 
 function parseResultado(raw: unknown): BankJobResultado | null {
@@ -194,7 +221,11 @@ function parseResultado(raw: unknown): BankJobResultado | null {
   if (typeof raw.cuenta === "string") resultado.cuenta = raw.cuenta;
   if (typeof raw.paginas === "number") resultado.paginas = raw.paginas;
   if (typeof raw.movimientos === "number") resultado.movimientos = raw.movimientos;
-  if (typeof raw.candidatos === "number") resultado.candidatos = raw.candidatos;
+  if (Array.isArray(raw.candidatos)) {
+    resultado.candidatos = raw.candidatos.map(parseCandidato);
+  } else if (typeof raw.candidatos === "number") {
+    resultado.candidatosTotal = raw.candidatos;
+  }
   return resultado;
 }
 
@@ -351,4 +382,16 @@ export async function listBankCandidates(
     ultimaIngestaAt:
       typeof data.ultimaIngestaAt === "string" ? data.ultimaIngestaAt : null,
   };
+}
+
+/**
+ * `resultado` del job cuando el estado lo trae.
+ *
+ * `BankJob` es una union discriminada: el `resultado` solo existe en los
+ * estados finales con datos (`resuelto`, `sin_coincidencia`, `ambiguo`). Este
+ * helper evita repetir el estrechamiento en cada uso de la UI.
+ */
+export function resultadoDelJob(job: BankJob | null | undefined): BankJobResultado | null {
+  if (!job || !("resultado" in job)) return null;
+  return job.resultado ?? null;
 }

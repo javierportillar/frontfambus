@@ -241,7 +241,7 @@ describe("PaymentModal · verificación bancaria", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/No encontramos transferencias con ese valor/),
+        screen.getByText(/No se encontró un pago de \$.*476\.000 hoy/),
       ).toBeInTheDocument();
     });
     expect(referenciaInput()).toHaveValue("");
@@ -255,7 +255,7 @@ describe("PaymentModal · verificación bancaria", () => {
       estado: "ambiguo",
       expira_en: FUTURO,
       error: null,
-      resultado: { candidato: null, candidatos: 2 },
+      resultado: { candidato: null, candidatos: [CANDIDATO_UNICO, CANDIDATO_B] },
     };
     vi.mocked(createBankVerification).mockResolvedValue({
       job_id: "job-1",

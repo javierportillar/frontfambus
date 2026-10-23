@@ -225,7 +225,7 @@ test.describe("POS · botón Verificar (banco)", () => {
     await page.getByRole("button", { name: /Verificar/ }).click();
 
     await expect(page.getByRole("status")).toContainText(
-      "No encontramos transferencias",
+      "No se encontró un pago de",
     );
     await expect(page.locator("#refInput")).toHaveValue("");
     await expect(page.locator("dialog").getByRole("alert")).toHaveCount(0);

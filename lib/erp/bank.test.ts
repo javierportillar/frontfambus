@@ -95,6 +95,64 @@ describe("cliente de verificación bancaria", () => {
     expect(init?.method).toBe("GET");
   });
 
+  it("test_el_candidato_trae_nitter_y_cliente_nombre_cuando_existen", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, {
+        job_id: "job-cliente",
+        estado: "resuelto",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        resultado: {
+          ventana: { desde: "2026-10-22", hasta: "2026-10-22" },
+          movimientos: 6,
+          candidato: {
+            id: "cand-1",
+            valor: "476000.00",
+            pagador_nombre: "CRISTOPHER BENAMIDES P",
+            referencia: "0092055984",
+            fecha: "2026-10-22",
+            nitter: "900123456-7",
+            cliente_nombre: "Ferretería El Tornillo",
+          },
+        },
+      }),
+    );
+
+    const job = await getBankVerification("job-cliente");
+
+    if (job.estado !== "resuelto") throw new Error("el job no quedó resuelto");
+    expect(job.resultado?.candidato?.nitter).toBe("900123456-7");
+    expect(job.resultado?.candidato?.clienteNombre).toBe(
+      "Ferretería El Tornillo",
+    );
+  });
+
+  it("test_el_candidato_no_inventa_nitter_ni_cliente_si_faltan", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, {
+        job_id: "job-sin-cliente",
+        estado: "resuelto",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        resultado: {
+          ventana: { desde: "2026-10-22", hasta: "2026-10-22" },
+          movimientos: 6,
+          candidato: {
+            id: "cand-1",
+            valor: "476000.00",
+            pagador_nombre: "CRISTOPHER BENAMIDES P",
+            referencia: "0092055984",
+            fecha: "2026-10-22",
+          },
+        },
+      }),
+    );
+
+    const job = await getBankVerification("job-sin-cliente");
+
+    if (job.estado !== "resuelto") throw new Error("el job no quedó resuelto");
+    expect(job.resultado?.candidato?.nitter).toBeUndefined();
+    expect(job.resultado?.candidato?.clienteNombre).toBeUndefined();
+  });
+
   it("test_503_scraper_no_habilitado_se_traduce_a_error_de_nodo_no_a_excepcion_generica", async () => {
     mockedFetch.mockResolvedValueOnce(
       jsonResponse(503, {
