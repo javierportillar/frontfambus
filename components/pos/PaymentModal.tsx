@@ -1283,7 +1283,7 @@ export function PaymentModal({
                     className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
                   >
                     <p>
-                      No se encontró un pago de {formatMoneyFull(totals.total)} hoy.
+                      No entró un pago de {formatMoneyFull(totals.total)} hoy.
                     </p>
                     <button
                       type="button"
@@ -1345,8 +1345,11 @@ export function PaymentModal({
                     className="space-y-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
                   >
                     <p>
-                      No se pudo verificar la transferencia (código:{" "}
-                      {activeBankJob.error ?? activeBankJob.estado}).
+                      {activeBankJob?.estado === "expirado"
+                        ? "La PC no está en línea. Revisá la conexión del nodo local."
+                        : `No se pudo verificar la transferencia (código: ${
+                            activeBankJob.error ?? activeBankJob.estado
+                          }).`}
                     </p>
                     <button
                       type="button"
