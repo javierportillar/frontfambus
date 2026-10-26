@@ -55,6 +55,50 @@ describe("cliente de verificación bancaria", () => {
     );
   });
 
+  it("test_crear_verificacion_en_modo_pago_envia_nitter_y_nombre_sin_factura_id", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-pago",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({
+      valor: 115000,
+      nitter: "900123456",
+      nombreEsperado: "VALERIA CASTRILLON",
+    });
+
+    const [, init] = mockedFetch.mock.calls[0] ?? [];
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({
+      modo: "pago",
+      valor: "115000.00",
+      nitter: "900123456",
+      nombre_esperado: "VALERIA CASTRILLON",
+    });
+    expect(body).not.toHaveProperty("factura_id");
+  });
+
+  it("test_crear_verificacion_en_modo_pago_omite_señales_ausentes", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-pago-sin-señales",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({ valor: "115000.00" });
+
+    const [, init] = mockedFetch.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      modo: "pago",
+      valor: "115000.00",
+    });
+  });
+
   it("test_consultar_estado_del_job_por_job_id", async () => {
     mockedFetch.mockResolvedValueOnce(
       jsonResponse(200, {

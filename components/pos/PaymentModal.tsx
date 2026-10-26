@@ -39,6 +39,9 @@ interface PaymentModalProps {
 const BANK_VERIFICATION_TIMEOUT_MS = 300_000;
 const BANK_VERIFICATION_POLL_MS = 2_000;
 
+/** NITs de consumidor final: el backend los oculta y no son señal de match. */
+const NITS_CONSUMIDOR_FINAL = new Set(["222222222", "222222222222"]);
+
 export function PaymentModal({
   tenant = "motoshop",
   cashierName = "Cajero Principal",
@@ -256,9 +259,13 @@ export function PaymentModal({
     setIsVerifyingBank(true);
     appliedCandidateRef.current = null;
     try {
+      const nitter = customerNit.trim();
+      const nombreEsperado = customerName.trim();
       const job = await createBankVerification({
-        facturaId: `POS-${Date.now()}`,
         valor: totals.total,
+        nitter:
+          nitter && !NITS_CONSUMIDOR_FINAL.has(nitter) ? nitter : undefined,
+        nombreEsperado: nombreEsperado || undefined,
       });
       if (!job.job_id) throw new Error("La verificación no devolvió un job");
       setBankJobId(job.job_id);
@@ -1384,16 +1391,17 @@ export function PaymentModal({
                           {resolvedCandidate.pagadorNombre}
                         </dd>
                       </div>
-                      {resolvedCandidate.nitter && (
-                        <div>
-                          <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
-                            NIT del cliente
-                          </dt>
-                          <dd className="font-mono font-semibold text-emerald-950">
-                            {resolvedCandidate.nitter}
-                          </dd>
-                        </div>
-                      )}
+                      {resolvedCandidate.nitter &&
+                        !NITS_CONSUMIDOR_FINAL.has(resolvedCandidate.nitter) && (
+                          <div>
+                            <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                              NIT del cliente
+                            </dt>
+                            <dd className="font-mono font-semibold text-emerald-950">
+                              {resolvedCandidate.nitter}
+                            </dd>
+                          </div>
+                        )}
                       {resolvedCandidate.clienteNombre && (
                         <div>
                           <dt className="font-bold uppercase tracking-wide text-emerald-800/70">

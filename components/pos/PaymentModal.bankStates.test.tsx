@@ -45,6 +45,16 @@ const CANDIDATO_SIN_CLIENTE: BankCandidato = {
   fecha: "2026-10-21",
 };
 
+const CANDIDATO_CONSUMIDOR_FINAL: BankCandidato = {
+  id: "cand-3",
+  valor: "476000.00",
+  pagadorNombre: "CRISTOPHER BENAMIDES P",
+  referencia: "0092055984",
+  fecha: "2026-10-21",
+  nitter: "222222222",
+  clienteNombre: "CONSUMIDOR FINAL",
+};
+
 function abrirModal(): void {
   usePOSStore.setState({
     isPaymentModalOpen: true,
@@ -171,8 +181,7 @@ describe("PaymentModal · estados de la verificación bancaria", () => {
     ).toBeInTheDocument();
   });
 
-  it("sin nitter ni cliente_nombre no muestra filas vacías ni undefined", async () => {
-    iniciarJob("job-resuelto-sin-cliente");
+  it("sin nitter ni cliente_nombre no muestra filas vacías ni undefined", async () => {    iniciarJob("job-resuelto-sin-cliente");
     vi.mocked(getBankVerification).mockResolvedValue({
       job_id: "job-resuelto-sin-cliente",
       estado: "resuelto",
@@ -194,6 +203,31 @@ describe("PaymentModal · estados de la verificación bancaria", () => {
     expect(within(tarjeta).queryByText("NIT del cliente")).toBeNull();
     expect(within(tarjeta).queryByText("Cliente")).toBeNull();
     expect(within(tarjeta).queryByText(/undefined/i)).toBeNull();
+  });
+
+  it("oculta el NIT placeholder pero mantiene la fila de CONSUMIDOR FINAL", async () => {
+    iniciarJob("job-consumidor-final");
+    vi.mocked(getBankVerification).mockResolvedValue({
+      job_id: "job-consumidor-final",
+      estado: "resuelto",
+      expira_en: FUTURO,
+      error: null,
+      resultado: {
+        ventana: { desde: "2026-10-22", hasta: "2026-10-22" },
+        movimientos: 6,
+        candidato: CANDIDATO_CONSUMIDOR_FINAL,
+      },
+    } satisfies BankJob);
+
+    abrirModal();
+    renderModal();
+    clickVerificar();
+
+    const tarjeta = await screen.findByTestId("bank-verification-confirmation");
+    expect(within(tarjeta).queryByText("NIT del cliente")).toBeNull();
+    expect(within(tarjeta).queryByText("222222222")).toBeNull();
+    expect(within(tarjeta).getByText("Cliente")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("CONSUMIDOR FINAL")).toBeInTheDocument();
   });
 
   it("sin coincidencia no muestra check y ofrece reintentar con el monto exacto", async () => {

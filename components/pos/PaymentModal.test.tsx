@@ -47,7 +47,7 @@ const CANDIDATO_B: BankCandidato = {
 /** Jobs que devuelve el hook según el `job_id` que el componente está sondeando. */
 const jobsPorId: Record<string, BankJob> = {};
 
-function abrirModal(): void {
+function abrirModal(cliente?: { name: string; nit: string }): void {
   usePOSStore.setState({
     isPaymentModalOpen: true,
     cart: [
@@ -70,15 +70,25 @@ function abrirModal(): void {
         totdet: 476000,
       },
     ],
-    customer: {
-      id: "CF-222222222222",
-      name: "Consumidor Final",
-      nit: "222222222222",
-      phone: "",
-      email: "",
-      address: "",
-      city: "",
-    },
+    customer: cliente
+      ? {
+          id: `nit-${cliente.nit}`,
+          name: cliente.name,
+          nit: cliente.nit,
+          phone: "",
+          email: "",
+          address: "",
+          city: "",
+        }
+      : {
+          id: "CF-222222222222",
+          name: "Consumidor Final",
+          nit: "222222222222",
+          phone: "",
+          email: "",
+          address: "",
+          city: "",
+        },
   });
 }
 
@@ -241,7 +251,7 @@ describe("PaymentModal · verificación bancaria", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/No se encontró un pago de \$.*476\.000 hoy/),
+        screen.getByText(/No entró un pago de \$.*476\.000 hoy/),
       ).toBeInTheDocument();
     });
     expect(referenciaInput()).toHaveValue("");
@@ -388,5 +398,52 @@ describe("PaymentModal · verificación bancaria", () => {
       expect(referenciaInput()).toHaveValue("0092055984");
     });
     expect(usePOSStore.getState().customer.name).toBe("JUAN PEREZ");
+  });
+
+  it("test_verificar_envia_modo_pago_con_el_cliente_y_sin_factura_id", async () => {
+    vi.mocked(createBankVerification).mockResolvedValue({
+      job_id: "job-pago",
+      estado: "en_cola",
+      expira_en: FUTURO,
+      error: null,
+    });
+
+    abrirModal({ name: "VALERIA CASTRILLON", nit: "900123456" });
+    render(<PaymentModal />);
+    elegirTransferencia();
+    verificar();
+
+    await waitFor(() => {
+      expect(vi.mocked(createBankVerification)).toHaveBeenCalledTimes(1);
+    });
+    const input = vi.mocked(createBankVerification).mock.calls[0]?.[0];
+    expect(input).toEqual({
+      valor: 476000,
+      nitter: "900123456",
+      nombreEsperado: "VALERIA CASTRILLON",
+    });
+    expect(input).not.toHaveProperty("facturaId");
+  });
+
+  it("test_verificar_no_envia_el_nit_placeholder_de_consumidor_final", async () => {
+    vi.mocked(createBankVerification).mockResolvedValue({
+      job_id: "job-consumidor-final",
+      estado: "en_cola",
+      expira_en: FUTURO,
+      error: null,
+    });
+
+    abrirModal({ name: "CONSUMIDOR FINAL", nit: "222222222" });
+    render(<PaymentModal />);
+    elegirTransferencia();
+    verificar();
+
+    await waitFor(() => {
+      expect(vi.mocked(createBankVerification)).toHaveBeenCalledTimes(1);
+    });
+    const input = vi.mocked(createBankVerification).mock.calls[0]?.[0];
+    expect(input?.nitter).toBeUndefined();
+    expect(input?.nombreEsperado).toBe("CONSUMIDOR FINAL");
+    expect(input).not.toHaveProperty("facturaId");
   });
 });

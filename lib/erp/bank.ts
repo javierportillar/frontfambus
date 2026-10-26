@@ -294,14 +294,29 @@ async function bankRequest<T>(
 
 /** Body de `POST /api/erp/bank/verificaciones`. */
 export interface CreateBankVerificationInput {
-  /** Documento que se está cobrando (la factura de la captura). */
-  facturaId: string;
+  /**
+   * Documento que se está cobrando. Si viene, se usa el modo `factura`.
+   * Sin él se usa el modo `pago` (el POS cobra antes de que exista factura).
+   */
+  facturaId?: string;
   /** Importe a verificar (se envía como texto con dos decimales). */
   valor: string | number;
+  /**
+   * NIT del cliente (señal opcional del modo `pago`). Nunca decide el
+   * match: sólo agrega `coincide_nombre` al resultado.
+   */
+  nitter?: string;
+  /** Nombre esperado del cliente (señal opcional del modo `pago`). */
+  nombreEsperado?: string;
 }
 
 /**
  * `POST /api/erp/bank/verificaciones` — pide la verificación al nodo local.
+ *
+ * Dos modos excluyentes:
+ * - `facturaId` presente → `{ factura_id, valor }`.
+ * - `facturaId` ausente → `{ modo: "pago", valor, nitter?, nombre_esperado? }`.
+ *   En este modo `factura_id` es prohibido (el backend responde 422).
  *
  * Devuelve el job recién creado (estado `en_cola`): el front lo sondea con
  * `useBankVerification` hasta que llega a un estado final.
@@ -309,10 +324,17 @@ export interface CreateBankVerificationInput {
 export async function createBankVerification(
   input: CreateBankVerificationInput,
 ): Promise<BankJob> {
-  const body = JSON.stringify({
-    factura_id: input.facturaId,
-    valor: formatBankValor(input.valor),
-  });
+  const valor = formatBankValor(input.valor);
+  const body = input.facturaId
+    ? JSON.stringify({ factura_id: input.facturaId, valor })
+    : JSON.stringify({
+        modo: "pago",
+        valor,
+        ...(input.nitter ? { nitter: input.nitter } : {}),
+        ...(input.nombreEsperado
+          ? { nombre_esperado: input.nombreEsperado }
+          : {}),
+      });
   const raw = await bankRequest<unknown>("/verificaciones", {
     method: "POST",
     headers: {

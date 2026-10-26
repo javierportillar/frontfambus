@@ -106,6 +106,11 @@ async function mockVerificaciones(
     const request = route.request();
 
     if (request.method() === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      expect(body.modo).toBe("pago");
+      expect(body.valor).toBe("476000.00");
+      expect(body).not.toHaveProperty("factura_id");
+
       if (opciones.statusPost === 503) {
         await route.fulfill({
           status: 503,
