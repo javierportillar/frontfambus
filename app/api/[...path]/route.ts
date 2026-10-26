@@ -4,6 +4,7 @@ import {
   bankNodeLabelForBase,
   fetchFromBase,
   fetchWithFailoverDetailed,
+  resolveDistinctFailoverBase,
 } from "@/lib/api/backendFailover";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,11 @@ export const maxDuration = 120;
 
 const BANK_VERIFICACIONES_PATH = "/api/erp/bank/verificaciones";
 const BANK_JOB_PATH = /^\/api\/erp\/bank\/verificaciones\/[^/]+$/;
+/**
+ * Internal header used by the bank client for its single unpinned fallback: the
+ * proxy must pick a base distinct from the pinned node that just failed.
+ */
+const BANK_SKIP_NODE_HEADER = "x-bank-skip-node";
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -99,6 +105,9 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     const pinnedBase = isBankJobPoll
       ? bankNodeBaseForLabel(req.headers.get("x-bank-node"))
       : null;
+    const skipBase = isBankJobPoll
+      ? bankNodeBaseForLabel(req.headers.get(BANK_SKIP_NODE_HEADER))
+      : null;
 
     let resp: Response;
     let isFallback: boolean;
@@ -108,6 +117,19 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
       resp = await fetchFromBase(pinnedBase, pathAndQuery, init);
       isFallback = false;
       base = pinnedBase;
+    } else if (skipBase) {
+      const distinctBase = resolveDistinctFailoverBase(tenant, skipBase);
+      if (!distinctBase) {
+        // No node other than the failed pin: the client surfaces its original
+        // error, so a generic 502 is the honest answer here.
+        return NextResponse.json(
+          { detail: "API no disponible" },
+          { status: 502 },
+        );
+      }
+      resp = await fetchFromBase(distinctBase, pathAndQuery, init);
+      isFallback = true;
+      base = distinctBase;
     } else {
       const detailed = await fetchWithFailoverDetailed(pathAndQuery, init);
       resp = detailed.response;
@@ -118,7 +140,9 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     const nodeLabel = bankNodeLabelForBase(base);
     const respHeaders: Record<string, string> = {
       "access-control-allow-origin": "*",
-      "x-backend-source": isFallback ? "fallback" : "primary",
+      // Report the real answering node: a pinned local node must never claim
+      // to be "primary".
+      "x-backend-source": nodeLabel ?? (isFallback ? "fallback" : "primary"),
     };
 
     if (nodeLabel && (isBankCreate || isBankJobPoll)) {

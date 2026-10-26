@@ -173,6 +173,42 @@ export function bankNodeBaseForLabel(
   return match ? match.base : null;
 }
 
+/**
+ * Ordered failover candidates for a tenant: primary first, then the tenant-aware
+ * fallback list. Duplicates are collapsed and `skipBase` is removed, so callers
+ * never re-query the node that just failed.
+ */
+export function resolveFailoverCandidateOrder(
+  tenant: string | null,
+  skipBase: string | null = null,
+): string[] {
+  const skip = skipBase ? normalizeBaseForMatch(skipBase) : null;
+  const ordered = [PRIMARY_API_BASE, ...resolveFallbackUrls(tenant)];
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const base of ordered) {
+    const normalized = normalizeBaseForMatch(base);
+    if (skip !== null && normalized === skip) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(base);
+  }
+
+  return result;
+}
+
+/**
+ * First failover base distinct from `skipBase`, or `null` when no other node is
+ * configured. Used for the single fallback attempt after a pinned node dies.
+ */
+export function resolveDistinctFailoverBase(
+  tenant: string | null,
+  skipBase: string | null,
+): string | null {
+  return resolveFailoverCandidateOrder(tenant, skipBase)[0] ?? null;
+}
+
 export interface DetailedFailoverResult {
   response: Response;
   /** Base URL (without path) that answered the request. */

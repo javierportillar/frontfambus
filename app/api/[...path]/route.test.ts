@@ -240,4 +240,104 @@ describe("Proxy route [...path]", () => {
       `${PRIMARY_API_BASE}/api/erp/bank/verificaciones/job-1`,
     );
   });
+
+  it("returns 502 when the pinned node fetch throws", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("Connection refused"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones/job-1",
+      { headers: { "x-bank-node": "motoshop-local", "x-tenant": "motoshop" } },
+    );
+
+    const res = await GET(req, {
+      params: { path: ["erp", "bank", "verificaciones", "job-1"] },
+    });
+
+    expect(res.status).toBe(502);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${MOTOSHOP_LOCAL_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
+  });
+
+  it("pinned 502 then a single fallback that never re-queries the pinned base", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Service Unavailable", { status: 502 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ job_id: "job-1", estado: "ejecutando" }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pinnedReq = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones/job-1",
+      { headers: { "x-bank-node": "motoshop-local", "x-tenant": "motoshop" } },
+    );
+    const pinnedRes = await GET(pinnedReq, {
+      params: { path: ["erp", "bank", "verificaciones", "job-1"] },
+    });
+
+    expect(pinnedRes.status).toBe(502);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${MOTOSHOP_LOCAL_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
+
+    const fallbackReq = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones/job-1",
+      {
+        headers: {
+          "x-bank-skip-node": "motoshop-local",
+          "x-tenant": "motoshop",
+        },
+      },
+    );
+    const fallbackRes = await GET(fallbackReq, {
+      params: { path: ["erp", "bank", "verificaciones", "job-1"] },
+    });
+
+    expect(fallbackRes.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `${PRIMARY_API_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).not.toBe(
+      `${MOTOSHOP_LOCAL_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
+  });
+
+  it("pinned request reports the answering node in x-backend-source", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          job_id: "job-1",
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones/job-1",
+      { headers: { "x-bank-node": "motoshop-local", "x-tenant": "motoshop" } },
+    );
+
+    const res = await GET(req, {
+      params: { path: ["erp", "bank", "verificaciones", "job-1"] },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-backend-source")).toBe("motoshop-local");
+  });
 });

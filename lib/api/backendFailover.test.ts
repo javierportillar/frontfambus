@@ -13,6 +13,7 @@ import {
   MASVITAL_LOCAL_BASE,
   FALLBACK_API_BASE,
   resolveFallbackUrls,
+  resolveDistinctFailoverBase,
 } from "./backendFailover";
 
 describe("identifyNode", () => {
@@ -238,6 +239,37 @@ describe("bank node labels", () => {
     expect(bankNodeBaseForLabel("PRIMARY")).toBe(PRIMARY_API_BASE);
     expect(bankNodeBaseForLabel("nope")).toBeNull();
     expect(bankNodeBaseForLabel(null)).toBeNull();
+  });
+});
+
+describe("resolveDistinctFailoverBase", () => {
+  it("skips the pinned base and returns the next candidate in tenant order", () => {
+    expect(resolveDistinctFailoverBase("motoshop", MOTOSHOP_LOCAL_BASE)).toBe(
+      PRIMARY_API_BASE,
+    );
+    expect(resolveDistinctFailoverBase("masvital", MASVITAL_LOCAL_BASE)).toBe(
+      PRIMARY_API_BASE,
+    );
+    expect(resolveDistinctFailoverBase("motoshop", PRIMARY_API_BASE)).toBe(
+      MOTOSHOP_LOCAL_BASE,
+    );
+    expect(resolveDistinctFailoverBase("masvital", PRIMARY_API_BASE)).toBe(
+      MASVITAL_LOCAL_BASE,
+    );
+  });
+
+  it("returns null when every configured candidate is the skipped base", () => {
+    const original = process.env.FALLBACK_API_URLS;
+    process.env.FALLBACK_API_URLS = PRIMARY_API_BASE;
+    try {
+      expect(resolveDistinctFailoverBase("motoshop", PRIMARY_API_BASE)).toBeNull();
+    } finally {
+      if (original === undefined) {
+        delete process.env.FALLBACK_API_URLS;
+      } else {
+        process.env.FALLBACK_API_URLS = original;
+      }
+    }
   });
 });
 

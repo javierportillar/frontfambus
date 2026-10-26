@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "@/lib/api/client";
 import { ErpApiError } from "./errors";
 import {
+  BANK_SKIP_NODE_HEADER,
   BankNodeError,
   clearBankNodeAffinity,
   createBankVerification,
@@ -25,6 +26,18 @@ function jsonResponse(
     status,
     headers: new Headers(headers),
     json: async () => body,
+  } as unknown as Response;
+}
+
+/** Respuesta sin body legible: `json()` rechaza, como un 404 vacío. */
+function bodylessResponse(status: number): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers(),
+    json: async () => {
+      throw new Error("sin body");
+    },
   } as unknown as Response;
 }
 
@@ -402,7 +415,10 @@ describe("cliente de verificación bancaria", () => {
 
   it("test_job_no_encontrado_reintenta_tres_veces_el_nodo_fijado_y_despues_falla", async () => {
     const jobNotFoundBody = {
-      detail: { code: "job_no_encontrado", message: "job_no_encontrado" },
+      detail: {
+        error_codigo: "job_no_encontrado",
+        message: "El job todavía no está disponible en este nodo.",
+      },
     };
     mockedFetch.mockResolvedValueOnce(
       jsonResponse(202, {
@@ -432,5 +448,276 @@ describe("cliente de verificación bancaria", () => {
     }
     const [, fallbackInit] = polls[3] ?? [];
     expect(requestHeaders(fallbackInit)["X-Bank-Node"]).toBeUndefined();
+    expect(requestHeaders(fallbackInit)[BANK_SKIP_NODE_HEADER]).toBe(
+      "motoshop-local",
+    );
+  });
+
+  it("test_nodo_fijado_con_502_hace_un_solo_fallback_a_un_nodo_distinto", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-502",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "motoshop-local",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(502, { detail: "bad gateway" }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(
+        200,
+        {
+          job_id: "job-502",
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        },
+        { "X-Bank-Node": "primary" },
+      ),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    const job = await getBankVerification("job-502");
+
+    expect(job.estado).toBe("ejecutando");
+    expect(mockedFetch).toHaveBeenCalledTimes(3);
+
+    const polls = mockedFetch.mock.calls.slice(1);
+    expect(polls).toHaveLength(2);
+    expect(requestHeaders(polls[0]?.[1])["X-Bank-Node"]).toBe("motoshop-local");
+    expect(requestHeaders(polls[1]?.[1])["X-Bank-Node"]).toBeUndefined();
+    expect(requestHeaders(polls[1]?.[1])[BANK_SKIP_NODE_HEADER]).toBe(
+      "motoshop-local",
+    );
+  });
+
+  it("test_nodo_fijado_con_error_de_red_hace_el_mismo_fallback", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-red",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "masvital-local",
+      }),
+    );
+    mockedFetch.mockRejectedValueOnce(new Error("fetch failed"));
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(
+        200,
+        {
+          job_id: "job-red",
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        },
+        { "X-Bank-Node": "primary" },
+      ),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    const job = await getBankVerification("job-red");
+
+    expect(job.estado).toBe("ejecutando");
+    expect(mockedFetch).toHaveBeenCalledTimes(3);
+
+    const polls = mockedFetch.mock.calls.slice(1);
+    expect(polls).toHaveLength(2);
+    expect(requestHeaders(polls[0]?.[1])["X-Bank-Node"]).toBe("masvital-local");
+    expect(requestHeaders(polls[1]?.[1])["X-Bank-Node"]).toBeUndefined();
+    expect(requestHeaders(polls[1]?.[1])[BANK_SKIP_NODE_HEADER]).toBe(
+      "masvital-local",
+    );
+  });
+
+  it("test_404_con_otro_error_codigo_no_reintenta_ni_hace_fallback", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-404-otro",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "motoshop-local",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(404, {
+        detail: {
+          error_codigo: "ruta_no_encontrada",
+          message: "recurso no encontrado",
+        },
+      }),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    const error = await getBankVerification("job-404-otro").catch(
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(ErpApiError);
+    expect((error as ErpApiError).status).toBe(404);
+    // POST + un único poll del nodo fijado: sin reintentos ni fallback.
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("test_404_sin_body_se_trata_como_miss_y_reintenta_en_el_nodo_fijado", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-404-vacio",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "motoshop-local",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(bodylessResponse(404));
+    mockedFetch.mockResolvedValueOnce(bodylessResponse(404));
+    mockedFetch.mockResolvedValueOnce(bodylessResponse(404));
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(
+        200,
+        {
+          job_id: "job-404-vacio",
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        },
+        { "X-Bank-Node": "primary" },
+      ),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    const job = await getBankVerification("job-404-vacio");
+
+    expect(job.estado).toBe("ejecutando");
+    expect(mockedFetch).toHaveBeenCalledTimes(5);
+
+    const polls = mockedFetch.mock.calls.slice(1);
+    for (const [, init] of polls.slice(0, 3)) {
+      expect(requestHeaders(init)["X-Bank-Node"]).toBe("motoshop-local");
+    }
+    expect(requestHeaders(polls[3]?.[1])[BANK_SKIP_NODE_HEADER]).toBe(
+      "motoshop-local",
+    );
+  });
+
+  it("test_500_en_el_nodo_fijado_no_reintenta_y_hace_un_solo_fallback", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-500",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "motoshop-local",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(500, { detail: "boom" }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(500, { detail: "también boom" }),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    const error = await getBankVerification("job-500").catch(
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(ErpApiError);
+    expect((error as ErpApiError).status).toBe(500);
+    // POST + un poll fijado (sin bucle) + un único fallback.
+    expect(mockedFetch).toHaveBeenCalledTimes(3);
+
+    const polls = mockedFetch.mock.calls.slice(1);
+    expect(polls).toHaveLength(2);
+    expect(requestHeaders(polls[0]?.[1])["X-Bank-Node"]).toBe("motoshop-local");
+    expect(requestHeaders(polls[1]?.[1])[BANK_SKIP_NODE_HEADER]).toBe(
+      "motoshop-local",
+    );
+  });
+
+  it.each(["resuelto", "sin_coincidencia", "ambiguo", "fallido", "expirado"] as const)(
+    "test_el_estado_final_%s_borra_la_afinidad_del_job",
+    async (estado) => {
+      const jobId = `job-final-${estado}`;
+      mockedFetch.mockResolvedValueOnce(
+        jsonResponse(202, {
+          job_id: jobId,
+          estado: "en_cola",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+          nodo: "motoshop-local",
+        }),
+      );
+      mockedFetch.mockResolvedValueOnce(
+        jsonResponse(200, {
+          job_id: jobId,
+          estado,
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        }),
+      );
+      mockedFetch.mockResolvedValueOnce(
+        jsonResponse(200, {
+          job_id: jobId,
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        }),
+      );
+
+      await createBankVerification({ valor: 100_000 });
+      const terminal = await getBankVerification(jobId);
+      expect(terminal.estado).toBe(estado);
+
+      await getBankVerification(jobId);
+
+      const secondPoll = mockedFetch.mock.calls[2]?.[1];
+      expect(requestHeaders(secondPoll)["X-Bank-Node"]).toBeUndefined();
+    },
+  );
+
+  it("test_el_header_del_proxy_gana_sobre_el_nodo_del_body", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(
+        202,
+        {
+          job_id: "job-header-gana",
+          estado: "en_cola",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+          nodo: "motoshop-local",
+        },
+        { "X-Bank-Node": "masvital-local" },
+      ),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, {
+        job_id: "job-header-gana",
+        estado: "ejecutando",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    await getBankVerification("job-header-gana");
+
+    const [, pollInit] = mockedFetch.mock.calls[1] ?? [];
+    expect(requestHeaders(pollInit)["X-Bank-Node"]).toBe("masvital-local");
+  });
+
+  it("test_ignora_un_nodo_del_body_que_no_es_un_label_conocido", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-label-desconocido",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "nodo-inventado.example",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, {
+        job_id: "job-label-desconocido",
+        estado: "ejecutando",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    await getBankVerification("job-label-desconocido");
+
+    const [, pollInit] = mockedFetch.mock.calls[1] ?? [];
+    expect(requestHeaders(pollInit)["X-Bank-Node"]).toBeUndefined();
   });
 });

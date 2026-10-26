@@ -29,6 +29,20 @@ const BANK_BASE = "/api/erp/bank";
 /** Header used by the proxy to pin bank job polls to the node that owns the job. */
 export const BANK_NODE_HEADER = "X-Bank-Node";
 
+/**
+ * Internal header for the single unpinned fallback: the proxy must choose a
+ * base distinct from the pinned node that just failed.
+ */
+export const BANK_SKIP_NODE_HEADER = "X-Bank-Skip-Node";
+
+/** Stable labels the proxy understands (see `lib/api/backendFailover.ts`). */
+const KNOWN_BANK_NODE_LABELS: ReadonlySet<string> = new Set([
+  "primary",
+  "motoshop-local",
+  "masvital-local",
+  "fallback",
+]);
+
 /** Trusted nodes per job: written when the POST response names the node. */
 const bankJobNodes = new Map<string, string>();
 
@@ -46,8 +60,8 @@ function delay(ms: number): Promise<void> {
 function nodeFromBody(raw: unknown): string | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.nodo !== "string") return null;
-  const rawNode = raw.nodo.trim();
-  return rawNode.length > 0 ? rawNode : null;
+  const rawNode = raw.nodo.trim().toLowerCase();
+  return KNOWN_BANK_NODE_LABELS.has(rawNode) ? rawNode : null;
 }
 
 function nodeFromResponse(resp: Response): string | null {
@@ -63,13 +77,14 @@ function captureNode(jobId: string, resp: Response): string | null {
 
 function esJobNoEncontrado(status: number, body: unknown): boolean {
   if (status !== 404) return false;
+  // Body ausente o ilegible: un 404 en el poll de un job se trata como miss.
+  // Sin JSON no hay `error_codigo` que consultar y descartar el miss rompería
+  // el reintento del race inicial (el job puede estar apareciendo en el nodo).
   if (body === null || body === undefined) return true;
-  const serialized = JSON.stringify(body).toLowerCase();
-  return (
-    serialized.includes("job_no_encontrado") ||
-    serialized.includes("job not found") ||
-    serialized.includes("no encontrado")
-  );
+  // Con body presente el único discriminador estable es `detail.error_codigo`.
+  // Nada de matchear mensajes: "Ruta no encontrada" también es un 404.
+  if (!isRecord(body) || !isRecord(body.detail)) return false;
+  return body.detail.error_codigo === "job_no_encontrado";
 }
 
 /** Estados del job de verificación (contrato congelado del backend). */
@@ -312,7 +327,7 @@ function parseJob(raw: unknown): BankJob {
   return { ...base, estado: estado === "expirado" ? "expirado" : "fallido" };
 }
 
-function throwBankHttpError(status: number, body: unknown): never {
+function bankHttpError(status: number, body: unknown): Error {
   if (status === 503) {
     const detail = isRecord(body) && isRecord(body.detail) ? body.detail : {};
     const codigo =
@@ -323,9 +338,13 @@ function throwBankHttpError(status: number, body: unknown): never {
       typeof detail.message === "string" && detail.message.trim().length > 0
         ? detail.message
         : "El nodo local no puede verificar esta transferencia.";
-    throw new BankNodeError(status, codigo, mensaje);
+    return new BankNodeError(status, codigo, mensaje);
   }
-  throw toErpApiError(status, body);
+  return toErpApiError(status, body);
+}
+
+function throwBankHttpError(status: number, body: unknown): never {
+  throw bankHttpError(status, body);
 }
 
 async function bankRequest<T>(
@@ -359,7 +378,9 @@ async function bankRequestWithNode<T>(
   const data = (await resp.json()) as T;
   return {
     data,
-    node: nodeFromBody(data) ?? nodeFromResponse(resp),
+    // The proxy header is trusted; the upstream body `nodo` is only a
+    // fallback and must name a known label.
+    node: nodeFromResponse(resp) ?? nodeFromBody(data),
   };
 }
 
@@ -424,15 +445,29 @@ export async function createBankVerification(
   return job;
 }
 
+/**
+ * Parses a job and forgets its affinity once it reached a terminal state, so
+ * `bankJobNodes` does not grow forever.
+ */
+function parseJobAndForget(jobId: string, raw: unknown): BankJob {
+  const job = parseJob(raw);
+  if (esEstadoFinal(job.estado)) {
+    bankJobNodes.delete(jobId);
+  }
+  return job;
+}
+
 function pollBankVerification(
   jobId: string,
   node: string | null,
+  skipNode: string | null = null,
 ): Promise<Response> {
   return apiFetch(`${BANK_BASE}/verificaciones/${encodeURIComponent(jobId)}`, {
     method: "GET",
     headers: {
       "X-Request-Id": generateRequestId(),
       ...(node ? { [BANK_NODE_HEADER]: node } : {}),
+      ...(skipNode ? { [BANK_SKIP_NODE_HEADER]: skipNode } : {}),
     },
   });
 }
@@ -441,9 +476,13 @@ function pollBankVerification(
  * `GET /api/erp/bank/verificaciones/{job_id}` — estado del job.
  *
  * Si el POST nos dijo qué nodo aceptó el job, todos los sondeos se fijan a ese
- * nodo. Si el nodo fijado responde `job_no_encontrado`, se reintenta ahí mismo
- * hasta 3 veces (el job puede estar apareciendo) y recién entonces se hace un
- * único intento por el camino normal de failover.
+ * nodo. Un `job_no_encontrado` se reintenta ahí mismo hasta 3 veces (el job
+ * puede estar apareciendo). Un nodo caído (5xx o error de red) no se reintenta:
+ * se trata como miss y se pasa directo al fallback.
+ *
+ * En ambos casos el fallback es **un solo** intento sin pin, pidiéndole al
+ * proxy que elija un nodo distinto al que acaba de fallar. Si ese intento
+ * también falla se propaga el error original.
  */
 export async function getBankVerification(jobId: string): Promise<BankJob> {
   const pinnedNode = bankJobNodes.get(jobId) ?? null;
@@ -454,37 +493,65 @@ export async function getBankVerification(jobId: string): Promise<BankJob> {
       throwBankHttpError(resp.status, await resp.json().catch(() => null));
     }
     captureNode(jobId, resp);
-    return parseJob(await resp.json());
+    return parseJobAndForget(jobId, await resp.json());
   }
 
+  let originalError: Error | null = null;
+
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const resp = await pollBankVerification(jobId, pinnedNode);
+    let resp: Response;
+    try {
+      resp = await pollBankVerification(jobId, pinnedNode);
+    } catch (err) {
+      // Network error before the pinned node answered: behave like a miss and
+      // go straight to the single distinct fallback.
+      originalError = err instanceof Error ? err : new Error(String(err));
+      break;
+    }
+
     if (resp.ok) {
       captureNode(jobId, resp);
-      return parseJob(await resp.json());
+      return parseJobAndForget(jobId, await resp.json());
     }
 
     const body: unknown = await resp.json().catch(() => null);
-    if (!esJobNoEncontrado(resp.status, body)) {
-      throwBankHttpError(resp.status, body);
+
+    if (esJobNoEncontrado(resp.status, body)) {
+      originalError = bankHttpError(resp.status, body);
+      if (attempt < 3) {
+        await delay(BANK_NODE_RETRY_DELAYS_MS[attempt - 1] ?? 300);
+        continue;
+      }
+      break;
     }
 
-    if (attempt < 3) {
-      await delay(BANK_NODE_RETRY_DELAYS_MS[attempt - 1] ?? 300);
+    if (resp.status >= 500) {
+      // Dead/unhealthy pinned node: no retry loop, one fallback attempt.
+      originalError = bankHttpError(resp.status, body);
+      break;
     }
+
+    // Any other client error is terminal: no retry, no failover.
+    throwBankHttpError(resp.status, body);
   }
 
-  // Last chance: one normal failover attempt without the node pin.
-  const fallbackResp = await pollBankVerification(jobId, null);
-  if (fallbackResp.ok) {
-    const nextNode = captureNode(jobId, fallbackResp);
-    if (!nextNode) bankJobNodes.delete(jobId);
-    return parseJob(await fallbackResp.json());
+  // Single unpinned fallback, explicitly excluding the node that just failed.
+  let fallbackResp: Response;
+  try {
+    fallbackResp = await pollBankVerification(jobId, null, pinnedNode);
+  } catch (fallbackError) {
+    throw originalError ?? fallbackError;
   }
-  throwBankHttpError(
-    fallbackResp.status,
-    await fallbackResp.json().catch(() => null),
-  );
+
+  if (!fallbackResp.ok) {
+    // Surface the original pinned failure; the fallback was only a best effort.
+    await fallbackResp.json().catch(() => null);
+    throw originalError ?? bankHttpError(fallbackResp.status, null);
+  }
+
+  const nextNode = captureNode(jobId, fallbackResp);
+  if (!nextNode) bankJobNodes.delete(jobId);
+  return parseJobAndForget(jobId, await fallbackResp.json());
 }
 
 /** Parámetros de `GET /api/erp/bank/candidates`. */
