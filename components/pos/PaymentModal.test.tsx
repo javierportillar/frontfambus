@@ -10,6 +10,7 @@ import {
   type BankCandidato,
   type BankJob,
 } from "@/lib/erp/bank";
+import { ErpApiError } from "@/lib/erp/errors";
 import { PaymentModal } from "./PaymentModal";
 
 vi.mock("@/lib/api/hooks", () => ({ useBankVerification: vi.fn() }));
@@ -108,6 +109,28 @@ function verificar(): void {
   fireEvent.click(screen.getByRole("button", { name: /Verificar/ }));
 }
 
+/** El hook devuelve este error mientras se sondea un job. */
+function simularErrorDePoll(error: unknown): void {
+  vi.mocked(useBankVerification).mockImplementation(
+    (jobId: string | null) =>
+      ({
+        data: jobId ? jobsPorId[jobId] : undefined,
+        error: jobId ? error : undefined,
+        isLoading: false,
+        mutate: vi.fn(),
+      }) as unknown as ReturnType<typeof useBankVerification>,
+  );
+}
+
+function iniciarJobDeVerificacion(jobId: string): void {
+  vi.mocked(createBankVerification).mockResolvedValue({
+    job_id: jobId,
+    estado: "en_cola",
+    expira_en: FUTURO,
+    error: null,
+  });
+}
+
 beforeEach(() => {
   for (const key of Object.keys(jobsPorId)) delete jobsPorId[key];
 
@@ -172,6 +195,7 @@ describe("PaymentModal · verificación bancaria", () => {
     expect(usePOSStore.getState().customer.name).toBe(
       "CRISTOPHER BENAMIDES P",
     );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("test_no_sobrescribe_la_referencia_escrita_por_el_operador", async () => {
@@ -445,5 +469,98 @@ describe("PaymentModal · verificación bancaria", () => {
     expect(input?.nitter).toBeUndefined();
     expect(input?.nombreEsperado).toBe("CONSUMIDOR FINAL");
     expect(input).not.toHaveProperty("facturaId");
+  });
+
+  it("test_un_poll_job_no_encontrado_avisa_y_detiene_el_spinner", async () => {
+    iniciarJobDeVerificacion("job-perdido");
+    simularErrorDePoll(
+      new ErpApiError(404, {
+        message: "El job todavía no está disponible en este nodo.",
+        fields: {},
+        code: "job_no_encontrado",
+      }),
+    );
+
+    abrirModal();
+    render(<PaymentModal />);
+    elegirTransferencia();
+    verificar();
+
+    expect(
+      await screen.findByText(
+        "La verificación se perdió en el nodo. Volvé a verificar.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Consultando el banco…" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Verificar transacción" }),
+    ).toBeEnabled();
+  });
+
+  it("test_un_poll_con_scraper_no_habilitado_muestra_su_mensaje", async () => {
+    iniciarJobDeVerificacion("job-sin-scraper");
+    simularErrorDePoll(
+      new BankNodeError(
+        503,
+        "scraper_no_habilitado",
+        "Este nodo no tiene el scraper del banco habilitado.",
+      ),
+    );
+
+    abrirModal();
+    render(<PaymentModal />);
+    elegirTransferencia();
+    verificar();
+
+    expect(
+      await screen.findByText("Este nodo no verifica transferencias."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Verificar transacción" }),
+    ).toBeEnabled();
+  });
+
+  it("test_un_poll_con_codigo_desconocido_muestra_el_mensaje_generico", async () => {
+    iniciarJobDeVerificacion("job-error-raro");
+    simularErrorDePoll(new Error("fetch failed"));
+
+    abrirModal();
+    render(<PaymentModal />);
+    elegirTransferencia();
+    verificar();
+
+    expect(
+      await screen.findByText("No se pudo verificar la transferencia."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Consultando el banco…" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Verificar transacción" }),
+    ).toBeEnabled();
+  });
+
+  it("test_un_job_expirado_muestra_el_motivo", async () => {
+    jobsPorId["job-expirado"] = {
+      job_id: "job-expirado",
+      estado: "expirado",
+      expira_en: FUTURO,
+      error: "expirado",
+    };
+    iniciarJobDeVerificacion("job-expirado");
+
+    abrirModal();
+    render(<PaymentModal />);
+    elegirTransferencia();
+    verificar();
+
+    expect(
+      await screen.findByText(
+        "La verificación tardó demasiado. Volvé a intentar.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/código:/)).toBeNull();
   });
 });

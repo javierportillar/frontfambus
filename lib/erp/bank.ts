@@ -21,7 +21,7 @@
  */
 
 import { apiFetch } from "@/lib/api/client";
-import { toErpApiError } from "./errors";
+import { ErpApiError, parseErpErrorPayload, toErpApiError } from "./errors";
 import { generateRequestId } from "./idempotency";
 
 const BANK_BASE = "/api/erp/bank";
@@ -224,6 +224,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Mensajes de la verificación, indexados sólo por código estable. */
+const MENSAJES_ERROR_VERIFICACION: Record<string, string> = {
+  scraper_no_habilitado: "Este nodo no verifica transferencias.",
+  tenant_no_servido: "Este nodo no atiende este negocio.",
+  job_no_encontrado: "La verificación se perdió en el nodo. Volvé a verificar.",
+  expirado: "La verificación tardó demasiado. Volvé a intentar.",
+  sin_nodo: "No hay nodo disponible para verificar.",
+  fallido: "La verificación falló. Volvé a intentar.",
+};
+
+const MENSAJE_ERROR_VERIFICACION_GENERICO =
+  "No se pudo verificar la transferencia.";
+
+/**
+ * Extrae el código estable de un error o de un job.
+ *
+ * Nunca lee `message`: el contrato sólo garantiza `error_codigo` / `estado`.
+ */
+function codigoDeErrorDeVerificacion(error: unknown): string | null {
+  if (typeof error === "string") return error;
+  if (!isRecord(error)) return null;
+  if (typeof error.error_codigo === "string") return error.error_codigo;
+  if (typeof error.code === "string") return error.code;
+  if (typeof error.error === "string") return error.error;
+  if (typeof error.estado === "string") return error.estado;
+  return null;
+}
+
+/**
+ * Traduce un error de verificación (o un job terminado) a copy de operador.
+ *
+ * @returns `null` cuando no hay error; mensaje genérico para códigos desconocidos.
+ */
+export function mensajeDeErrorDeVerificacion(error: unknown): string | null {
+  if (error === null || error === undefined) return null;
+  const codigo = codigoDeErrorDeVerificacion(error);
+  if (codigo === null) return MENSAJE_ERROR_VERIFICACION_GENERICO;
+  return (
+    MENSAJES_ERROR_VERIFICACION[codigo] ?? MENSAJE_ERROR_VERIFICACION_GENERICO
+  );
+}
+
 /**
  * Normaliza el importe a texto con dos decimales.
  *
@@ -339,6 +381,19 @@ function bankHttpError(status: number, body: unknown): Error {
         ? detail.message
         : "El nodo local no puede verificar esta transferencia.";
     return new BankNodeError(status, codigo, mensaje);
+  }
+  if (
+    isRecord(body) &&
+    isRecord(body.detail) &&
+    typeof body.detail.error_codigo === "string"
+  ) {
+    // `ErpApiError` sólo mapea `detail.code`; la verificación usa
+    // `detail.error_codigo`. Preservarlo permite que la UI discrimine por
+    // código estable (nunca por el texto del mensaje).
+    return new ErpApiError(status, {
+      ...parseErpErrorPayload(status, body),
+      code: body.detail.error_codigo,
+    });
   }
   return toErpApiError(status, body);
 }

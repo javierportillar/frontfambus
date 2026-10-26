@@ -264,7 +264,7 @@ describe("PaymentModal · estados de la verificación bancaria", () => {
     });
   });
 
-  it("expirado avisa que la PC no está en línea y no muestra código de error", async () => {
+  it("expirado avisa que la verificación tardó demasiado y no muestra código de error", async () => {
     iniciarJob("job-expirado");
     vi.mocked(getBankVerification).mockResolvedValue({
       job_id: "job-expirado",
@@ -277,7 +277,9 @@ describe("PaymentModal · estados de la verificación bancaria", () => {
     renderModal();
     clickVerificar();
 
-    const mensaje = await screen.findByText(/La PC no está en línea/);
+    const mensaje = await screen.findByText(
+      "La verificación tardó demasiado. Volvé a intentar.",
+    );
     expect(mensaje).toBeInTheDocument();
     expect(screen.queryByText(/código:/)).toBeNull();
     expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();

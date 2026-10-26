@@ -8,6 +8,7 @@ import {
   listBankCandidates,
   esEstadoFinal,
   resultadoDelJob,
+  mensajeDeErrorDeVerificacion,
   type BankCandidato,
 } from "@/lib/erp/bank";
 import {
@@ -151,7 +152,7 @@ export function PaymentModal({
   }, [isPaymentModalOpen, totals.total]);
 
   // ── Verificación bancaria ────────────────────────────────────────────
-  const { data: bankJob } = useBankVerification(bankJobId, {
+  const { data: bankJob, error: bankJobError } = useBankVerification(bankJobId, {
     refreshInterval: bankTimedOut ? 0 : BANK_VERIFICATION_POLL_MS,
   });
   const activeBankJob =
@@ -181,6 +182,11 @@ export function PaymentModal({
       : null;
   const ambiguousCandidates =
     activeBankJob?.estado === "ambiguo" ? bankCandidates : [];
+  const bankTerminalError =
+    activeBankJob &&
+    (activeBankJob.estado === "fallido" || activeBankJob.estado === "expirado")
+      ? mensajeDeErrorDeVerificacion(activeBankJob)
+      : null;
   const reviewedNote = reviewedMovementsNote(bankResult?.movimientos, bankResult?.ventana);
 
   function clearBankTimeout(): void {
@@ -210,6 +216,17 @@ export function PaymentModal({
     },
     [],
   );
+
+  // Un poll que falla se corta acá: no se sigue golpeando un job roto.
+  useEffect(() => {
+    if (!bankJobId || !bankJobError) return;
+    const mensaje = mensajeDeErrorDeVerificacion(bankJobError);
+    if (!mensaje) return;
+    setBankStartError(mensaje);
+    setIsVerifyingBank(false);
+    clearBankTimeout();
+    setBankJobId(null);
+  }, [bankJobId, bankJobError]);
 
   // El job avanza en segundo plano: traducimos su estado a la pantalla.
   useEffect(() => {
@@ -1345,19 +1362,12 @@ export function PaymentModal({
                   </div>
                 )}
 
-                {(activeBankJob?.estado === "fallido" ||
-                  activeBankJob?.estado === "expirado") && (
+                {bankTerminalError && (
                   <div
                     role="alert"
                     className="space-y-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
                   >
-                    <p>
-                      {activeBankJob?.estado === "expirado"
-                        ? "La PC no está en línea. Revisá la conexión del nodo local."
-                        : `No se pudo verificar la transferencia (código: ${
-                            activeBankJob.error ?? activeBankJob.estado
-                          }).`}
-                    </p>
+                    <p>{bankTerminalError}</p>
                     <button
                       type="button"
                       onClick={() => void handleVerificarTransferencia()}

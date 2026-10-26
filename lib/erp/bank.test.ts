@@ -440,6 +440,7 @@ describe("cliente de verificación bancaria", () => {
 
     expect(error).toBeInstanceOf(ErpApiError);
     expect((error as ErpApiError).status).toBe(404);
+    expect((error as ErpApiError).code).toBe("job_no_encontrado");
     expect(mockedFetch).toHaveBeenCalledTimes(5);
 
     const polls = mockedFetch.mock.calls.slice(1);
