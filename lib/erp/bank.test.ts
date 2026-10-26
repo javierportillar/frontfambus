@@ -3,6 +3,7 @@ import { apiFetch } from "@/lib/api/client";
 import { ErpApiError } from "./errors";
 import {
   BankNodeError,
+  clearBankNodeAffinity,
   createBankVerification,
   formatBankValor,
   getBankVerification,
@@ -14,16 +15,26 @@ vi.mock("@/lib/api/client", () => ({ apiFetch: vi.fn() }));
 const mockedFetch = vi.mocked(apiFetch);
 
 /** Respuesta mínima con la forma que consume `lib/erp/bank.ts`. */
-function jsonResponse(status: number, body: unknown): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(headers),
     json: async () => body,
   } as unknown as Response;
 }
 
+function requestHeaders(init: RequestInit | undefined): Record<string, string> {
+  return (init?.headers ?? {}) as Record<string, string>;
+}
+
 beforeEach(() => {
   mockedFetch.mockReset();
+  clearBankNodeAffinity();
 });
 
 describe("cliente de verificación bancaria", () => {
@@ -332,5 +343,94 @@ describe("cliente de verificación bancaria", () => {
     const job = await getBankVerification("job-vivo");
 
     expect(job.estado).toBe("ejecutando");
+  });
+
+  it("test_el_post_captura_el_nodo_del_body_y_lo_manda_en_cada_sondeo", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-pin-body",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "motoshop-local",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(
+        200,
+        {
+          job_id: "job-pin-body",
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        },
+        { "X-Bank-Node": "motoshop-local" },
+      ),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    await getBankVerification("job-pin-body");
+
+    const [, pollInit] = mockedFetch.mock.calls[1] ?? [];
+    expect(requestHeaders(pollInit)["X-Bank-Node"]).toBe("motoshop-local");
+  });
+
+  it("test_el_post_captura_el_nodo_desde_el_header_si_el_body_no_lo_trae", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(
+        202,
+        {
+          job_id: "job-pin-header",
+          estado: "en_cola",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        },
+        { "X-Bank-Node": "masvital-local" },
+      ),
+    );
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(200, {
+        job_id: "job-pin-header",
+        estado: "ejecutando",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({ valor: 100_000 });
+    await getBankVerification("job-pin-header");
+
+    const [, pollInit] = mockedFetch.mock.calls[1] ?? [];
+    expect(requestHeaders(pollInit)["X-Bank-Node"]).toBe("masvital-local");
+  });
+
+  it("test_job_no_encontrado_reintenta_tres_veces_el_nodo_fijado_y_despues_falla", async () => {
+    const jobNotFoundBody = {
+      detail: { code: "job_no_encontrado", message: "job_no_encontrado" },
+    };
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-perdido",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+        nodo: "motoshop-local",
+      }),
+    );
+    mockedFetch.mockResolvedValueOnce(jsonResponse(404, jobNotFoundBody));
+    mockedFetch.mockResolvedValueOnce(jsonResponse(404, jobNotFoundBody));
+    mockedFetch.mockResolvedValueOnce(jsonResponse(404, jobNotFoundBody));
+    mockedFetch.mockResolvedValueOnce(jsonResponse(404, jobNotFoundBody));
+
+    await createBankVerification({ valor: 100_000 });
+    const error = await getBankVerification("job-perdido").catch(
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(ErpApiError);
+    expect((error as ErpApiError).status).toBe(404);
+    expect(mockedFetch).toHaveBeenCalledTimes(5);
+
+    const polls = mockedFetch.mock.calls.slice(1);
+    for (const [, init] of polls.slice(0, 3)) {
+      expect(requestHeaders(init)["X-Bank-Node"]).toBe("motoshop-local");
+    }
+    const [, fallbackInit] = polls[3] ?? [];
+    expect(requestHeaders(fallbackInit)["X-Bank-Node"]).toBeUndefined();
   });
 });

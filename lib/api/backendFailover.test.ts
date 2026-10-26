@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   fetchWithFailover,
+  fetchWithFailoverDetailed,
+  bankNodeBaseForLabel,
+  bankNodeLabelForBase,
+  fetchFromBase,
   identifyNode,
   checkClusterStatus,
   clearClusterStatusCache,
   PRIMARY_API_BASE,
   MOTOSHOP_LOCAL_BASE,
   MASVITAL_LOCAL_BASE,
+  FALLBACK_API_BASE,
   resolveFallbackUrls,
 } from "./backendFailover";
 
@@ -164,6 +169,100 @@ describe("fetchWithFailover", () => {
     expect(result.resp.status).toBe(200);
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[1]?.[0]).toBe(`${MASVITAL_LOCAL_BASE}/api/health`);
+  });
+});
+
+describe("fetchWithFailoverDetailed", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("returns the base that answered on the primary", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await fetchWithFailoverDetailed("/api/health", {
+      method: "GET",
+    });
+
+    expect(result.base).toBe(PRIMARY_API_BASE);
+    expect(result.isFallback).toBe(false);
+    expect(result.response.status).toBe(200);
+  });
+
+  it("returns the fallback base that answered", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Service Suspended", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      );
+
+    const result = await fetchWithFailoverDetailed("/api/health", {
+      method: "GET",
+      headers: { "X-Tenant": "motoshop" },
+    });
+
+    expect(result.base).toBe(MOTOSHOP_LOCAL_BASE);
+    expect(result.isFallback).toBe(true);
+  });
+
+  it("keeps fetchWithFailover output compatible by delegating", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const result = await fetchWithFailover("/api/health", { method: "GET" });
+
+    expect(result.resp.status).toBe(200);
+    expect(result.activeNode.id).toBe("render");
+    expect(result.isFallback).toBe(false);
+  });
+});
+
+describe("bank node labels", () => {
+  it("maps known base URLs to stable labels and back", () => {
+    expect(bankNodeLabelForBase(PRIMARY_API_BASE)).toBe("primary");
+    expect(bankNodeLabelForBase(MOTOSHOP_LOCAL_BASE)).toBe("motoshop-local");
+    expect(bankNodeLabelForBase(MASVITAL_LOCAL_BASE)).toBe("masvital-local");
+    expect(bankNodeLabelForBase(FALLBACK_API_BASE)).toBe("fallback");
+    expect(bankNodeLabelForBase("https://unknown.example")).toBeNull();
+
+    expect(bankNodeBaseForLabel("motoshop-local")).toBe(MOTOSHOP_LOCAL_BASE);
+    expect(bankNodeBaseForLabel("PRIMARY")).toBe(PRIMARY_API_BASE);
+    expect(bankNodeBaseForLabel("nope")).toBeNull();
+    expect(bankNodeBaseForLabel(null)).toBeNull();
+  });
+});
+
+describe("fetchFromBase", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("calls only the requested base with the path and query", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    global.fetch = fetchMock;
+
+    const resp = await fetchFromBase(MOTOSHOP_LOCAL_BASE, "/api/x?y=1", {
+      method: "GET",
+    });
+
+    expect(resp.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${MOTOSHOP_LOCAL_BASE}/api/x?y=1`,
+    );
   });
 });
 

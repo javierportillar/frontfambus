@@ -140,18 +140,61 @@ export function resolveFallbackUrls(tenant: string | null): string[] {
   return Array.from(unique);
 }
 
+/** Stable labels used to pin bank verification jobs to the node that owns them. */
+export type BankNodeLabel = "primary" | "motoshop-local" | "masvital-local" | "fallback";
+
+const BANK_NODE_BASES: ReadonlyArray<{ label: BankNodeLabel; base: string }> = [
+  { label: "primary", base: PRIMARY_API_BASE },
+  { label: "motoshop-local", base: MOTOSHOP_LOCAL_BASE },
+  { label: "masvital-local", base: MASVITAL_LOCAL_BASE },
+  { label: "fallback", base: FALLBACK_API_BASE },
+];
+
+function normalizeBaseForMatch(base: string): string {
+  return base.replace(/\/+$/, "").toLowerCase();
+}
+
+/** Maps an answering base URL to its stable node label, when known. */
+export function bankNodeLabelForBase(base: string): BankNodeLabel | null {
+  const normalized = normalizeBaseForMatch(base);
+  const match = BANK_NODE_BASES.find(
+    (entry) => normalizeBaseForMatch(entry.base) === normalized,
+  );
+  return match ? match.label : null;
+}
+
+/** Maps a node label received from the browser back to its base URL, when known. */
+export function bankNodeBaseForLabel(
+  label: string | null | undefined,
+): string | null {
+  if (!label) return null;
+  const normalized = label.trim().toLowerCase();
+  const match = BANK_NODE_BASES.find((entry) => entry.label === normalized);
+  return match ? match.base : null;
+}
+
+export interface DetailedFailoverResult {
+  response: Response;
+  /** Base URL (without path) that answered the request. */
+  base: string;
+  isFallback: boolean;
+}
+
 /**
  * Fetch from primary backend with automatic, low-latency failover across redundant
  * fallback nodes (MotoShop PC & MasVital PC).
  * If the primary is down or suspended (502/503/504), it tries candidate fallbacks in priority
  * order until one succeeds.
+ *
+ * Detailed variant: also reports which base URL answered, so callers can pin
+ * subsequent requests (bank job polls) to that exact node.
  */
-export async function fetchWithFailover(
+export async function fetchWithFailoverDetailed(
   pathAndQuery: string,
   init: RequestInit,
   timeoutMs = 8000,
   fallbackTimeoutMs = 5000,
-): Promise<FailoverResult> {
+): Promise<DetailedFailoverResult> {
   const normalizedPath = pathAndQuery.startsWith("/")
     ? pathAndQuery
     : `/${pathAndQuery}`;
@@ -206,9 +249,9 @@ export async function fetchWithFailover(
     }
 
     return {
-      resp: primaryResp,
+      response: primaryResp,
+      base: PRIMARY_API_BASE,
       isFallback: false,
-      activeNode: identifyNode(primaryUrl),
     };
   } catch (err) {
     primaryError = err;
@@ -230,12 +273,72 @@ export async function fetchWithFailover(
   }
 }
 
+/**
+ * Backwards-compatible failover entrypoint. Delegates to the detailed variant
+ * and keeps the existing `FailoverResult` shape.
+ */
+export async function fetchWithFailover(
+  pathAndQuery: string,
+  init: RequestInit,
+  timeoutMs = 8000,
+  fallbackTimeoutMs = 5000,
+): Promise<FailoverResult> {
+  const detailed = await fetchWithFailoverDetailed(
+    pathAndQuery,
+    init,
+    timeoutMs,
+    fallbackTimeoutMs,
+  );
+  return {
+    resp: detailed.response,
+    isFallback: detailed.isFallback,
+    activeNode: identifyNode(detailed.base),
+  };
+}
+
+/**
+ * Sends a request directly to a known base URL, with no failover.
+ * Used for node-affinity requests (bank job polls) where a different node
+ * would not know the job.
+ */
+export async function fetchFromBase(
+  base: string,
+  pathAndQuery: string,
+  init: RequestInit,
+  timeoutMs = 8000,
+): Promise<Response> {
+  const normalizedPath = pathAndQuery.startsWith("/")
+    ? pathAndQuery
+    : `/${pathAndQuery}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  if (init.signal) {
+    if (init.signal.aborted) {
+      controller.abort();
+    } else {
+      init.signal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
+    }
+  }
+
+  try {
+    return await fetch(`${base}${normalizedPath}`, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function executeFallbackCascade(
   fallbackUrls: string[],
   path: string,
   init: RequestInit,
   perNodeTimeoutMs = 5000,
-): Promise<FailoverResult | null> {
+): Promise<DetailedFailoverResult | null> {
   for (const baseUrl of fallbackUrls) {
     if (init.signal?.aborted) {
       throw init.signal.reason ?? new DOMException("The operation was aborted", "AbortError");
@@ -262,9 +365,9 @@ async function executeFallbackCascade(
       // it is considered alive and answering for the cluster.
       if (resp.status < 500) {
         return {
-          resp,
+          response: resp,
+          base: baseUrl,
           isFallback: true,
-          activeNode: identifyNode(baseUrl),
         };
       }
       // If node returns 502/503/504, it might be starting up or in trouble; try next node

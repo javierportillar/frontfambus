@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchWithFailover } from "@/lib/api/backendFailover";
+import {
+  bankNodeBaseForLabel,
+  bankNodeLabelForBase,
+  fetchFromBase,
+  fetchWithFailoverDetailed,
+} from "@/lib/api/backendFailover";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+const BANK_VERIFICACIONES_PATH = "/api/erp/bank/verificaciones";
+const BANK_JOB_PATH = /^\/api\/erp\/bank\/verificaciones\/[^/]+$/;
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 async function proxyRequest(req: NextRequest, path: string): Promise<NextResponse> {
   const url = new URL(req.url);
@@ -80,11 +92,38 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   }
 
   try {
-    const { resp, isFallback } = await fetchWithFailover(pathAndQuery, init);
+    const pathname = pathAndQuery.split("?")[0] ?? pathAndQuery;
+    const isBankCreate =
+      req.method === "POST" && pathname === BANK_VERIFICACIONES_PATH;
+    const isBankJobPoll = req.method === "GET" && BANK_JOB_PATH.test(pathname);
+    const pinnedBase = isBankJobPoll
+      ? bankNodeBaseForLabel(req.headers.get("x-bank-node"))
+      : null;
+
+    let resp: Response;
+    let isFallback: boolean;
+    let base: string;
+
+    if (pinnedBase) {
+      resp = await fetchFromBase(pinnedBase, pathAndQuery, init);
+      isFallback = false;
+      base = pinnedBase;
+    } else {
+      const detailed = await fetchWithFailoverDetailed(pathAndQuery, init);
+      resp = detailed.response;
+      isFallback = detailed.isFallback;
+      base = detailed.base;
+    }
+
+    const nodeLabel = bankNodeLabelForBase(base);
     const respHeaders: Record<string, string> = {
       "access-control-allow-origin": "*",
       "x-backend-source": isFallback ? "fallback" : "primary",
     };
+
+    if (nodeLabel && (isBankCreate || isBankJobPoll)) {
+      respHeaders["x-bank-node"] = nodeLabel;
+    }
 
     const contentType = resp.headers.get("content-type");
     if (contentType) {
@@ -119,6 +158,23 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
         statusText: resp.statusText,
         headers: respHeaders,
       });
+    }
+
+    // Bank job creation: keep the existing JSON fields and add `nodo` so the
+    // browser can pin every later poll to the node that accepted the job.
+    if (isBankCreate && resp.status === 202 && nodeLabel) {
+      const parsed = await resp
+        .clone()
+        .json()
+        .catch(() => null);
+      if (isJsonObject(parsed)) {
+        respHeaders["content-type"] = "application/json";
+        return new NextResponse(JSON.stringify({ ...parsed, nodo: nodeLabel }), {
+          status: resp.status,
+          statusText: resp.statusText,
+          headers: respHeaders,
+        });
+      }
     }
 
     return new NextResponse(resp.body, {

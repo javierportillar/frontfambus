@@ -26,6 +26,52 @@ import { generateRequestId } from "./idempotency";
 
 const BANK_BASE = "/api/erp/bank";
 
+/** Header used by the proxy to pin bank job polls to the node that owns the job. */
+export const BANK_NODE_HEADER = "X-Bank-Node";
+
+/** Trusted nodes per job: written when the POST response names the node. */
+const bankJobNodes = new Map<string, string>();
+
+/** Clears the node affinity registry (tests or tenant/session changes). */
+export function clearBankNodeAffinity(): void {
+  bankJobNodes.clear();
+}
+
+const BANK_NODE_RETRY_DELAYS_MS = [150, 300] as const;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function nodeFromBody(raw: unknown): string | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.nodo !== "string") return null;
+  const rawNode = raw.nodo.trim();
+  return rawNode.length > 0 ? rawNode : null;
+}
+
+function nodeFromResponse(resp: Response): string | null {
+  const value = resp.headers.get(BANK_NODE_HEADER);
+  return value && value.trim().length > 0 ? value.trim() : null;
+}
+
+function captureNode(jobId: string, resp: Response): string | null {
+  const node = nodeFromResponse(resp);
+  if (node) bankJobNodes.set(jobId, node);
+  return node;
+}
+
+function esJobNoEncontrado(status: number, body: unknown): boolean {
+  if (status !== 404) return false;
+  if (body === null || body === undefined) return true;
+  const serialized = JSON.stringify(body).toLowerCase();
+  return (
+    serialized.includes("job_no_encontrado") ||
+    serialized.includes("job not found") ||
+    serialized.includes("no encontrado")
+  );
+}
+
 /** Estados del job de verificación (contrato congelado del backend). */
 export type BankJobEstado =
   | "en_cola"
@@ -266,6 +312,22 @@ function parseJob(raw: unknown): BankJob {
   return { ...base, estado: estado === "expirado" ? "expirado" : "fallido" };
 }
 
+function throwBankHttpError(status: number, body: unknown): never {
+  if (status === 503) {
+    const detail = isRecord(body) && isRecord(body.detail) ? body.detail : {};
+    const codigo =
+      typeof detail.error_codigo === "string"
+        ? detail.error_codigo
+        : "nodo_no_disponible";
+    const mensaje =
+      typeof detail.message === "string" && detail.message.trim().length > 0
+        ? detail.message
+        : "El nodo local no puede verificar esta transferencia.";
+    throw new BankNodeError(status, codigo, mensaje);
+  }
+  throw toErpApiError(status, body);
+}
+
 async function bankRequest<T>(
   path: string,
   init: RequestInit,
@@ -273,23 +335,32 @@ async function bankRequest<T>(
   const resp = await apiFetch(`${BANK_BASE}${path}`, init);
 
   if (!resp.ok) {
-    const body = await resp.json().catch(() => null);
-    if (resp.status === 503) {
-      const detail = isRecord(body) && isRecord(body.detail) ? body.detail : {};
-      const codigo =
-        typeof detail.error_codigo === "string"
-          ? detail.error_codigo
-          : "nodo_no_disponible";
-      const mensaje =
-        typeof detail.message === "string" && detail.message.trim().length > 0
-          ? detail.message
-          : "El nodo local no puede verificar esta transferencia.";
-      throw new BankNodeError(resp.status, codigo, mensaje);
-    }
-    throw toErpApiError(resp.status, body);
+    throwBankHttpError(resp.status, await resp.json().catch(() => null));
   }
 
   return (await resp.json()) as T;
+}
+
+interface BankRequestWithNode<T> {
+  data: T;
+  node: string | null;
+}
+
+async function bankRequestWithNode<T>(
+  path: string,
+  init: RequestInit,
+): Promise<BankRequestWithNode<T>> {
+  const resp = await apiFetch(`${BANK_BASE}${path}`, init);
+
+  if (!resp.ok) {
+    throwBankHttpError(resp.status, await resp.json().catch(() => null));
+  }
+
+  const data = (await resp.json()) as T;
+  return {
+    data,
+    node: nodeFromBody(data) ?? nodeFromResponse(resp),
+  };
 }
 
 /** Body de `POST /api/erp/bank/verificaciones`. */
@@ -335,27 +406,85 @@ export async function createBankVerification(
           ? { nombre_esperado: input.nombreEsperado }
           : {}),
       });
-  const raw = await bankRequest<unknown>("/verificaciones", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Request-Id": generateRequestId(),
-    },
-    body,
-  });
-  return parseJob(raw);
-}
-
-/** `GET /api/erp/bank/verificaciones/{job_id}` — estado del job. */
-export async function getBankVerification(jobId: string): Promise<BankJob> {
-  const raw = await bankRequest<unknown>(
-    `/verificaciones/${encodeURIComponent(jobId)}`,
+  const { data, node } = await bankRequestWithNode<unknown>(
+    "/verificaciones",
     {
-      method: "GET",
-      headers: { "X-Request-Id": generateRequestId() },
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Request-Id": generateRequestId(),
+      },
+      body,
     },
   );
-  return parseJob(raw);
+  const job = parseJob(data);
+  if (node && job.job_id) {
+    bankJobNodes.set(job.job_id, node);
+  }
+  return job;
+}
+
+function pollBankVerification(
+  jobId: string,
+  node: string | null,
+): Promise<Response> {
+  return apiFetch(`${BANK_BASE}/verificaciones/${encodeURIComponent(jobId)}`, {
+    method: "GET",
+    headers: {
+      "X-Request-Id": generateRequestId(),
+      ...(node ? { [BANK_NODE_HEADER]: node } : {}),
+    },
+  });
+}
+
+/**
+ * `GET /api/erp/bank/verificaciones/{job_id}` — estado del job.
+ *
+ * Si el POST nos dijo qué nodo aceptó el job, todos los sondeos se fijan a ese
+ * nodo. Si el nodo fijado responde `job_no_encontrado`, se reintenta ahí mismo
+ * hasta 3 veces (el job puede estar apareciendo) y recién entonces se hace un
+ * único intento por el camino normal de failover.
+ */
+export async function getBankVerification(jobId: string): Promise<BankJob> {
+  const pinnedNode = bankJobNodes.get(jobId) ?? null;
+
+  if (!pinnedNode) {
+    const resp = await pollBankVerification(jobId, null);
+    if (!resp.ok) {
+      throwBankHttpError(resp.status, await resp.json().catch(() => null));
+    }
+    captureNode(jobId, resp);
+    return parseJob(await resp.json());
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const resp = await pollBankVerification(jobId, pinnedNode);
+    if (resp.ok) {
+      captureNode(jobId, resp);
+      return parseJob(await resp.json());
+    }
+
+    const body: unknown = await resp.json().catch(() => null);
+    if (!esJobNoEncontrado(resp.status, body)) {
+      throwBankHttpError(resp.status, body);
+    }
+
+    if (attempt < 3) {
+      await delay(BANK_NODE_RETRY_DELAYS_MS[attempt - 1] ?? 300);
+    }
+  }
+
+  // Last chance: one normal failover attempt without the node pin.
+  const fallbackResp = await pollBankVerification(jobId, null);
+  if (fallbackResp.ok) {
+    const nextNode = captureNode(jobId, fallbackResp);
+    if (!nextNode) bankJobNodes.delete(jobId);
+    return parseJob(await fallbackResp.json());
+  }
+  throwBankHttpError(
+    fallbackResp.status,
+    await fallbackResp.json().catch(() => null),
+  );
 }
 
 /** Parámetros de `GET /api/erp/bank/candidates`. */

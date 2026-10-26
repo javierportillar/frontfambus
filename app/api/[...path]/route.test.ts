@@ -2,9 +2,13 @@
 
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  MOTOSHOP_LOCAL_BASE,
+  PRIMARY_API_BASE,
+} from "@/lib/api/backendFailover";
 import { GET, POST } from "./route";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.fragloesja.uk";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? PRIMARY_API_BASE;
 
 describe("Proxy route [...path]", () => {
   afterEach(() => {
@@ -136,5 +140,104 @@ describe("Proxy route [...path]", () => {
 
     expect(res.status).toBe(502);
     await expect(res.json()).resolves.toEqual({ detail: "API no disponible" });
+  });
+
+  it("adds nodo and X-Bank-Node to the 202 bank verification response", async () => {
+    const expiraEn = new Date(Date.now() + 300_000).toISOString();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          job_id: "job-1",
+          estado: "en_cola",
+          expira_en: expiraEn,
+        }),
+        {
+          status: 202,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ valor: "100000.00" }),
+      },
+    );
+
+    const res = await POST(req, {
+      params: { path: ["erp", "bank", "verificaciones"] },
+    });
+
+    expect(res.status).toBe(202);
+    expect(res.headers.get("x-bank-node")).toBe("primary");
+    await expect(res.json()).resolves.toEqual({
+      job_id: "job-1",
+      estado: "en_cola",
+      expira_en: expiraEn,
+      nodo: "primary",
+    });
+  });
+
+  it("pins a GET with X-Bank-Node to that base and never uses failover", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          job_id: "job-1",
+          estado: "ejecutando",
+          expira_en: new Date(Date.now() + 300_000).toISOString(),
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones/job-1",
+      { headers: { "x-bank-node": "motoshop-local", "x-tenant": "motoshop" } },
+    );
+
+    const res = await GET(req, {
+      params: { path: ["erp", "bank", "verificaciones", "job-1"] },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-bank-node")).toBe("motoshop-local");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${MOTOSHOP_LOCAL_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).not.toBe(
+      `${PRIMARY_API_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
+  });
+
+  it("keeps normal failover when X-Bank-Node is unknown", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ job_id: "job-1", estado: "ejecutando" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest(
+      "http://localhost/api/erp/bank/verificaciones/job-1",
+      { headers: { "x-bank-node": "nodo-desconocido" } },
+    );
+
+    await GET(req, {
+      params: { path: ["erp", "bank", "verificaciones", "job-1"] },
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${PRIMARY_API_BASE}/api/erp/bank/verificaciones/job-1`,
+    );
   });
 });
