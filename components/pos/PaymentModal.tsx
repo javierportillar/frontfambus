@@ -1,7 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, useId, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useId, useTransition } from "react";
 import { usePOSStore } from "@/lib/pos/store";
+import { useBankVerification } from "@/lib/api/hooks";
+import {
+  createBankVerification,
+  listBankCandidates,
+  esEstadoFinal,
+  resultadoDelJob,
+  type BankCandidato,
+} from "@/lib/erp/bank";
+import {
+  formatSpanishDayMonth,
+  formatSpanishLongDate,
+  reviewedMovementsNote,
+} from "@/lib/erp/bankPresentation";
 import { submitSale, saveCashSession } from "@/lib/api/pos";
 import { formatMoneyFull } from "@/lib/format/currency";
 import {
@@ -21,6 +34,10 @@ interface PaymentModalProps {
   cashierName?: string;
   onSaleComplete?: (sale: SalePayload) => void;
 }
+
+/** TTL del job de verificación: pasado este tiempo no se sondea más. */
+const BANK_VERIFICATION_TIMEOUT_MS = 300_000;
+const BANK_VERIFICATION_POLL_MS = 2_000;
 
 export function PaymentModal({
   tenant = "motoshop",
@@ -82,9 +99,25 @@ export function PaymentModal({
     detectedAmount?: number;
   } | null>(null);
 
-  // Sincronizar efectivo recibido cuando se abre el modal
+  // Verificación bancaria contra el nodo local (el scrape vive fuera del request)
+  const [bankJobId, setBankJobId] = useState<string | null>(null);
+  const [bankCandidateList, setBankCandidateList] = useState<BankCandidato[] | null>(null);
+  const [bankStartError, setBankStartError] = useState<string | null>(null);
+  const [bankTimedOut, setBankTimedOut] = useState(false);
+  const [bankConsultedOn, setBankConsultedOn] = useState<Date | null>(null);
+  const [isVerifyingBank, setIsVerifyingBank] = useState(false);
+  const bankTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // El operador siempre manda: lo que escribió a mano no se pisa con lo del banco.
+  const referenceDirtyRef = useRef(false);
+  const customerDirtyRef = useRef(false);
+  const appliedCandidateRef = useRef<string | null>(null);
+
+  // Sincronizar efectivo recibido cuando se abre el modal.
+  // OJO: no depende del cliente. Si dependiera, prellenar el pagador desde la
+  // verificación bancaria reiniciaría el modal (y volvería a EFECTIVO).
   useEffect(() => {
     if (isPaymentModalOpen) {
+      const clienteActual = usePOSStore.getState().customer;
       setPaymentMode("UNA_FORMA");
       setCashReceived(totals.total);
       setSelectedMethod("EFECTIVO");
@@ -94,16 +127,148 @@ export function PaymentModal({
       setShowManualCustomerInput(false);
       setCustomerSearchQuery("");
       setCustomerSearchResults([]);
-      setCustomerNit(customer.nit);
-      setCustomerName(customer.name);
+      setCustomerNit(clienteActual.nit);
+      setCustomerName(clienteActual.name);
       setQrRawText("");
       setQrFeedback(null);
+      setBankJobId(null);
+      setBankCandidateList(null);
+      setBankStartError(null);
+      setBankTimedOut(false);
+      setBankConsultedOn(null);
+      setIsVerifyingBank(false);
+      referenceDirtyRef.current = false;
+      customerDirtyRef.current = false;
+      appliedCandidateRef.current = null;
       setSplitPayments([]);
       setNewSplitMethod("EFECTIVO");
       setNewSplitAmount(totals.total);
       setNewSplitReference("");
     }
-  }, [customer.name, customer.nit, isPaymentModalOpen, totals.total]);
+  }, [isPaymentModalOpen, totals.total]);
+
+  // ── Verificación bancaria ────────────────────────────────────────────
+  const { data: bankJob } = useBankVerification(bankJobId, {
+    refreshInterval: bankTimedOut ? 0 : BANK_VERIFICATION_POLL_MS,
+  });
+  const activeBankJob =
+    bankJob && bankJobId && bankJob.job_id === bankJobId ? bankJob : undefined;
+
+  const aplicarCandidato = useCallback(
+    (candidato: BankCandidato) => {
+      if (!referenceDirtyRef.current && candidato.referencia) {
+        setReference(sanitizeBancolombiaReference(candidato.referencia));
+      }
+      if (!customerDirtyRef.current && candidato.pagadorNombre) {
+        setCustomer({ ...customer, name: candidato.pagadorNombre });
+        setCustomerName(candidato.pagadorNombre);
+      }
+    },
+    [customer, setCustomer],
+  );
+
+  const bankResult = resultadoDelJob(activeBankJob);
+  const bankCandidates =
+    bankCandidateList ??
+    bankResult?.candidatos ??
+    (bankResult?.candidato ? [bankResult.candidato] : []);
+  const resolvedCandidate =
+    activeBankJob?.estado === "resuelto" && bankCandidates.length === 1
+      ? bankCandidates[0]
+      : null;
+  const ambiguousCandidates =
+    activeBankJob?.estado === "ambiguo" ? bankCandidates : [];
+  const reviewedNote = reviewedMovementsNote(bankResult?.movimientos, bankResult?.ventana);
+
+  function clearBankTimeout(): void {
+    if (bankTimeoutRef.current !== null) {
+      clearTimeout(bankTimeoutRef.current);
+      bankTimeoutRef.current = null;
+    }
+  }
+
+  // Tope duro de 300 s: pasado el TTL del job no se sigue golpeando el nodo.
+  useEffect(() => {
+    if (!bankJobId || bankTimedOut) return;
+    const timeout = setTimeout(() => {
+      setBankTimedOut(true);
+      setIsVerifyingBank(false);
+    }, BANK_VERIFICATION_TIMEOUT_MS);
+    bankTimeoutRef.current = timeout;
+    return () => {
+      clearTimeout(timeout);
+      if (bankTimeoutRef.current === timeout) bankTimeoutRef.current = null;
+    };
+  }, [bankJobId, bankTimedOut]);
+
+  useEffect(
+    () => () => {
+      if (bankTimeoutRef.current !== null) clearTimeout(bankTimeoutRef.current);
+    },
+    [],
+  );
+
+  // El job avanza en segundo plano: traducimos su estado a la pantalla.
+  useEffect(() => {
+    if (!activeBankJob) return;
+
+    if (activeBankJob.estado === "resuelto") {
+      const candidato = activeBankJob.resultado?.candidato ?? null;
+      if (candidato && appliedCandidateRef.current !== activeBankJob.job_id) {
+        appliedCandidateRef.current = activeBankJob.job_id;
+        aplicarCandidato(candidato);
+      }
+    }
+    if (esEstadoFinal(activeBankJob.estado)) {
+      clearBankTimeout();
+      setIsVerifyingBank(false);
+    }
+  }, [activeBankJob, aplicarCandidato]);
+
+  // El candidato elegido por el operador gana; el sistema nunca elige solo.
+  useEffect(() => {
+    if (activeBankJob?.estado !== "ambiguo") return;
+    const fromJob = activeBankJob.resultado?.candidatos ?? [];
+    if (fromJob.length > 0) {
+      setBankCandidateList(fromJob);
+      return;
+    }
+    let cancelado = false;
+    listBankCandidates({ valor: totals.total })
+      .then((resultado) => {
+        if (!cancelado) setBankCandidateList(resultado.candidatos);
+      })
+      .catch(() => {
+        if (!cancelado) setBankCandidateList([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [activeBankJob?.estado, activeBankJob?.job_id, bankResult?.candidatos, totals.total]);
+
+  async function handleVerificarTransferencia(): Promise<void> {
+    clearBankTimeout();
+    setBankJobId(null);
+    setBankCandidateList(null);
+    setBankStartError(null);
+    setBankTimedOut(false);
+    setBankConsultedOn(new Date());
+    setIsVerifyingBank(true);
+    appliedCandidateRef.current = null;
+    try {
+      const job = await createBankVerification({
+        facturaId: `POS-${Date.now()}`,
+        valor: totals.total,
+      });
+      if (!job.job_id) throw new Error("La verificación no devolvió un job");
+      setBankJobId(job.job_id);
+    } catch {
+      // Cualquier fallo del nodo se trata igual: no hay verificación, el
+      // pegado manual sigue disponible y el cobro no se bloquea.
+      setBankStartError("Verificación no disponible");
+      setIsVerifyingBank(false);
+    }
+  }
 
   // Búsqueda en vivo de clientes por NIT o Nombre
   useEffect(() => {
@@ -1048,11 +1213,230 @@ export function PaymentModal({
                   id="refInput"
                   type="text"
                   value={reference}
-                  onChange={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
+                  onChange={(e) => {
+                    // Lo que escribe el operador gana: el prellenado no lo pisa.
+                    referenceDirtyRef.current = true;
+                    setReference(sanitizeBancolombiaReference(e.target.value));
+                  }}
                   onBlur={(e) => setReference(sanitizeBancolombiaReference(e.target.value))}
                   placeholder="Ej. 0092055984 (el sufijo 'null' se remueve automáticamente)"
                   className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm font-semibold focus:border-primary focus:outline-none font-mono"
                 />
+
+                {/* Verificación contra el nodo local del banco */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleVerificarTransferencia()}
+                    disabled={isVerifyingBank}
+                    className="rounded-xl border border-primary bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary/20 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isVerifyingBank ? "Consultando el banco…" : "Verificar transacción"}
+                  </button>
+                  {isVerifyingBank && bankConsultedOn && (
+                    <span role="status" className="text-xs font-medium text-text-muted">
+                      Hoy, {formatSpanishDayMonth(bankConsultedOn)}
+                    </span>
+                  )}
+                </div>
+
+                {bankStartError && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
+                  >
+                    {bankStartError}
+                  </p>
+                )}
+
+                {bankTimedOut && (
+                  <div
+                    role="alert"
+                    className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    <p>
+                      La consulta al banco superó los 5 minutos y se detuvo. No
+                      se confirmó ningún pago.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-amber-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {activeBankJob?.estado === "esperando_otp" && (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    El banco pide un código: ingrésalo en la consola del nodo local
+                  </p>
+                )}
+
+                {activeBankJob?.estado === "sin_coincidencia" && (
+                  <div
+                    role="status"
+                    className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    <p>
+                      No entró un pago de {formatMoneyFull(totals.total)} hoy.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-amber-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {activeBankJob?.estado === "ambiguo" && (
+                  <div
+                    role="status"
+                    className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    <p>El banco encontró varios pagos con este valor. Elegí el correcto:</p>
+                    {ambiguousCandidates.length > 0 ? (
+                      <div className="space-y-2">
+                        {ambiguousCandidates.map((candidato) => (
+                          <button
+                            key={candidato.id}
+                            type="button"
+                            onClick={() => aplicarCandidato(candidato)}
+                            className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-left text-xs font-semibold text-text-secondary transition-colors hover:border-primary hover:text-primary"
+                          >
+                            <span className="block font-bold text-text-primary">
+                              {candidato.pagadorNombre}
+                            </span>
+                            <span className="mt-0.5 block font-mono text-[11px]">
+                              {candidato.referencia}
+                            </span>
+                            <span className="mt-0.5 block">
+                              {formatMoneyFull(Number(candidato.valor))}
+                              {candidato.fecha
+                                ? ` · ${formatSpanishLongDate(candidato.fecha)}`
+                                : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>No se pudieron cargar los candidatos. Reintentá la verificación.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-amber-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {(activeBankJob?.estado === "fallido" ||
+                  activeBankJob?.estado === "expirado") && (
+                  <div
+                    role="alert"
+                    className="space-y-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
+                  >
+                    <p>
+                      {activeBankJob?.estado === "expirado"
+                        ? "La PC no está en línea. Revisá la conexión del nodo local."
+                        : `No se pudo verificar la transferencia (código: ${
+                            activeBankJob.error ?? activeBankJob.estado
+                          }).`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-rose-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-rose-900 hover:bg-rose-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {resolvedCandidate && (
+                  <div
+                    data-testid="bank-verification-confirmation"
+                    className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-sm font-black text-white"
+                      >
+                        ✓
+                      </span>
+                      <p className="text-sm font-bold text-emerald-900">Pago confirmado</p>
+                    </div>
+                    <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                      <div>
+                        <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                          Pagador
+                        </dt>
+                        <dd className="font-semibold text-emerald-950">
+                          {resolvedCandidate.pagadorNombre}
+                        </dd>
+                      </div>
+                      {resolvedCandidate.nitter && (
+                        <div>
+                          <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                            NIT del cliente
+                          </dt>
+                          <dd className="font-mono font-semibold text-emerald-950">
+                            {resolvedCandidate.nitter}
+                          </dd>
+                        </div>
+                      )}
+                      {resolvedCandidate.clienteNombre && (
+                        <div>
+                          <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                            Cliente
+                          </dt>
+                          <dd className="font-semibold text-emerald-950">
+                            {resolvedCandidate.clienteNombre}
+                          </dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                          Valor
+                        </dt>
+                        <dd className="font-semibold text-emerald-950">
+                          {formatMoneyFull(Number(resolvedCandidate.valor))}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                          Fecha del movimiento
+                        </dt>
+                        <dd className="font-semibold text-emerald-950">
+                          {formatSpanishLongDate(resolvedCandidate.fecha) ||
+                            resolvedCandidate.fecha}
+                        </dd>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <dt className="font-bold uppercase tracking-wide text-emerald-800/70">
+                          Referencia bancaria
+                        </dt>
+                        <dd className="font-mono font-semibold text-emerald-950">
+                          {resolvedCandidate.referencia}
+                        </dd>
+                      </div>
+                    </dl>
+                    {reviewedNote && (
+                      <p className="text-[11px] font-medium text-emerald-800/80">
+                        {reviewedNote}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Asistente inteligente QR Bancolombia */}
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2.5">

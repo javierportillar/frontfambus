@@ -5,6 +5,7 @@ import { useAuthStore } from "@/lib/auth/store";
 import { isValidBusinessDate, isValidSupplierNit } from "@/lib/compras/routes";
 import { isValidCustomerId } from "@/lib/clientes/routes";
 import { sendChatMessage, type ChatReply } from "./chat";
+import { esEstadoFinal, getBankVerification, type BankJob } from "@/lib/erp/bank";
 import {
   type ClusterStatus,
   type ClusterNodeStatus,
@@ -2728,4 +2729,59 @@ export function useClienteFacturas(
     ok ? buildClienteFacturasUrl(customerId, fechaInicio, fechaFin, page, pageSize) : null,
     { keepPreviousData: false },
   );
+}
+
+// ── Banco: verificación de transferencias ────────────────────────────────
+
+/** Cadencia del sondeo mientras el nodo local trabaja (2 s, spec S8). */
+export const BANK_VERIFICATION_POLL_MS = 2_000;
+
+export interface UseBankVerificationOptions {
+  refreshInterval?: number;
+}
+
+/**
+ * Estado de un job de verificación bancaria.
+ *
+ * El nodo local scrapea el portal del banco en segundo plano, así que el front
+ * no puede esperar la respuesta en el POST: crea el job, recibe su id y lo
+ * sondea con este hook hasta que llega a un estado final.
+ *
+ * - `jobId === null` → no hay job que sondear: el hook queda inerte.
+ * - En cuanto el job llega a un estado final se deja de sondear (`refreshInterval: 0`).
+ *
+ * La cache key incluye el tenant: al cambiar de negocio no se reusa el job de
+ * otro tenant (mismo criterio que `useMetrics`).
+ */
+export function useBankVerification(
+  jobId: string | null,
+  options?: UseBankVerificationOptions,
+) {
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const swrKey: readonly [string, string] | null = jobId
+    ? [currentTenant ?? "_no_tenant", `bank-verification:${jobId}`]
+    : null;
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR<BankJob>(
+    swrKey,
+    () => getBankVerification(jobId as string),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+      dedupingInterval: 1_000,
+      keepPreviousData: true,
+      shouldRetryOnError: true,
+      errorRetryCount: 3,
+      errorRetryInterval: 4_000,
+      // Mientras el job vive se sondea; al terminar, se apaga solo.
+      refreshInterval: (latest?: BankJob) =>
+        latest && esEstadoFinal(latest.estado)
+          ? 0
+          : (options?.refreshInterval ?? BANK_VERIFICATION_POLL_MS),
+    },
+  );
+
+  return { data, error, isLoading, isValidating, mutate };
 }
