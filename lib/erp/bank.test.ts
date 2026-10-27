@@ -123,6 +123,40 @@ describe("cliente de verificación bancaria", () => {
     });
   });
 
+  it("test_crear_verificacion_envia_la_fecha_cuando_se_pide_un_dia", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-ayer",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({ valor: 30000, fecha: "2026-10-24" });
+
+    const [, init] = mockedFetch.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      modo: "pago",
+      valor: "30000.00",
+      fecha: "2026-10-24",
+    });
+  });
+
+  it("test_crear_verificacion_no_manda_fecha_si_no_se_pide", async () => {
+    mockedFetch.mockResolvedValueOnce(
+      jsonResponse(202, {
+        job_id: "job-hoy",
+        estado: "en_cola",
+        expira_en: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    );
+
+    await createBankVerification({ valor: 30000 });
+
+    const [, init] = mockedFetch.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty("fecha");
+  });
+
   it("test_consultar_estado_del_job_por_job_id", async () => {
     mockedFetch.mockResolvedValueOnce(
       jsonResponse(200, {

@@ -9,6 +9,7 @@ import { Stat } from "@/components/ui/Stat";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Table } from "@/components/ui/Table";
 import { Collapsible } from "@/components/ui/Collapsible";
+import { BankVerifyModal } from "@/components/sales/BankVerifyModal";
 import { AbcChip } from "@/components/productos/Chips";
 import { ProductosVendidosTabla } from "@/components/ventas/ProductosVendidosTabla";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
@@ -130,6 +131,7 @@ function DayContent({
   abcMap,
   onProductClick,
 }: DayContentProps): JSX.Element {
+  const [verificando, setVerificando] = useState<DayInvoice | null>(null);
   const hourPico = detail.hora_pico !== null ? hourLabel(detail.hora_pico) : "—";
   const ventasHoraPico = detail.hora_pico !== null
     ? detail.distribucion_horaria.find((h) => h.hour === detail.hora_pico)?.total_ventas ?? 0
@@ -258,7 +260,14 @@ function DayContent({
 
             <div className="space-y-2">
               {facturasFiltradas.map((inv) => (
-                <InvoiceCard key={`${inv.cod_clase}-${inv.num_documento}`} invoice={inv} abcMap={abcMap} onProductClick={onProductClick} />
+                <InvoiceCard
+                  key={`${inv.cod_clase}-${inv.num_documento}`}
+                  invoice={inv}
+                  abcMap={abcMap}
+                  onProductClick={onProductClick}
+                  fechaDia={invoices.data?.date}
+                  onVerify={setVerificando}
+                />
               ))}
             </div>
           </>
@@ -266,6 +275,19 @@ function DayContent({
           <p className="py-4 text-center text-sm text-text-muted">Sin facturas en este día.</p>
         )}
       </Collapsible>
+
+      <BankVerifyModal
+        open={verificando !== null}
+        onClose={() => setVerificando(null)}
+        valor={verificando?.total ?? 0}
+        fecha={invoices.data?.date ?? ""}
+        referencia={
+          verificando
+            ? `${verificando.prefijo ?? ""}-${verificando.num_documento}`
+            : ""
+        }
+        nombreEsperado={verificando?.cliente ?? undefined}
+      />
 
       {/* Vendedores + Formas de pago + Comparativas */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -353,13 +375,44 @@ function DayContent({
 
 // ── InvoiceCard ─────────────────────────────────────────────────────────
 
+/**
+ * Días de antigüedad de una fecha `AAAA-MM-DD` respecto de hoy (0 = hoy).
+ * `null` si el string no es una fecha válida.
+ */
+function diasAtras(fecha: string): number | null {
+  const partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
+  if (!partes) return null;
+  const dia = new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]));
+  if (Number.isNaN(dia.getTime())) return null;
+  const ahora = new Date();
+  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  return Math.round((hoy.getTime() - dia.getTime()) / 86_400_000);
+}
+
+/**
+ * ¿Tiene sentido ofrecer la verificación bancaria para esta factura?
+ *
+ * Dos filtros, ninguno depende del catálogo de formas de pago:
+ * - el portal del banco sólo publica los últimos días (hoy y los dos previos);
+ * - una venta en efectivo no tiene transferencia que buscar.
+ */
+function puedeVerificarPago(invoice: DayInvoice, fechaDia: string | undefined): boolean {
+  if (!fechaDia) return false;
+  const antiguedad = diasAtras(fechaDia);
+  if (antiguedad === null || antiguedad < 0 || antiguedad > 2) return false;
+  return !/efectivo|contado/i.test(invoice.nombre_formapago ?? "");
+}
+
 export function InvoiceCard({
-  invoice, abcMap, onProductClick,
+  invoice, abcMap, onProductClick, fechaDia, onVerify,
 }: {
   invoice: DayInvoice;
   abcMap?: ProductAbcMap;
   onProductClick?: (sku: string) => void;
+  fechaDia?: string;
+  onVerify?: (invoice: DayInvoice) => void;
 }): JSX.Element {
+  const verificar = onVerify !== undefined && puedeVerificarPago(invoice, fechaDia);
   return (
     <Collapsible
       className="bg-surface-alt/30"
@@ -385,6 +438,20 @@ export function InvoiceCard({
       }
       badge={`${invoice.items.length} item${invoice.items.length === 1 ? "" : "s"}`}
     >
+      {verificar && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+          <span className="text-[11px] text-text-muted">
+            ¿El pago entró a la cuenta? Se consulta el día de la venta.
+          </span>
+          <button
+            type="button"
+            onClick={() => onVerify?.(invoice)}
+            className="shrink-0 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20"
+          >
+            Verificar pago
+          </button>
+        </div>
+      )}
       <div className="mb-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
         <div><span className="text-text-muted">Vendedor:</span> <strong>{invoice.vendedor}</strong></div>
         <div><span className="text-text-muted">Subtotal:</span> <strong>{formatMoneyFull(invoice.subtotal)}</strong></div>

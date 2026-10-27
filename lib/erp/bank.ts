@@ -455,6 +455,11 @@ export interface CreateBankVerificationInput {
   nitter?: string;
   /** Nombre esperado del cliente (señal opcional del modo `pago`). */
   nombreEsperado?: string;
+  /**
+   * Día a consultar (`AAAA-MM-DD`). Sin esto el nodo mira el día en curso.
+   * Sirve para verificar un pago que entró ayer cuando la venta se cierra hoy.
+   */
+  fecha?: string;
 }
 
 /**
@@ -465,6 +470,9 @@ export interface CreateBankVerificationInput {
  * - `facturaId` ausente → `{ modo: "pago", valor, nitter?, nombre_esperado? }`.
  *   En este modo `factura_id` es prohibido (el backend responde 422).
  *
+ * `fecha` (opcional, ambos modos) mueve la ventana de ese job a un día
+ * concreto. Sin ella se consulta el día en curso.
+ *
  * Devuelve el job recién creado (estado `en_cola`): el front lo sondea con
  * `useBankVerification` hasta que llega a un estado final.
  */
@@ -472,8 +480,9 @@ export async function createBankVerification(
   input: CreateBankVerificationInput,
 ): Promise<BankJob> {
   const valor = formatBankValor(input.valor);
+  const fecha = input.fecha ? { fecha: input.fecha } : {};
   const body = input.facturaId
-    ? JSON.stringify({ factura_id: input.facturaId, valor })
+    ? JSON.stringify({ factura_id: input.facturaId, valor, ...fecha })
     : JSON.stringify({
         modo: "pago",
         valor,
@@ -481,6 +490,7 @@ export async function createBankVerification(
         ...(input.nombreEsperado
           ? { nombre_esperado: input.nombreEsperado }
           : {}),
+        ...fecha,
       });
   const { data, node } = await bankRequestWithNode<unknown>(
     "/verificaciones",
