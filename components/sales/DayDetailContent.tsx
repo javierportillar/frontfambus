@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSalesDayDetail, useSalesDayInvoices, useProductAbcMap, type DayInvoice, type InvoiceItem, type SalesDailyItem, type FormaPagoItem, type VendedorDayItem, type ProductAbcMap } from "@/lib/api/hooks";
+import { useSalesDayDetail, useSalesDayInvoices, useProductAbcMap, useVentasVerificadas, type DayInvoice, type InvoiceItem, type SalesDailyItem, type FormaPagoItem, type VendedorDayItem, type ProductAbcMap } from "@/lib/api/hooks";
 import { formatMoneyFull } from "@/lib/format/currency";
 import { Card } from "@/components/ui/Card";
 import { Stat } from "@/components/ui/Stat";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Table } from "@/components/ui/Table";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { BankVerifyModal } from "@/components/sales/BankVerifyModal";
+import { guardarVerificacionVenta, type BankCandidato, type VentaVerificada } from "@/lib/erp/bank";
 import { AbcChip } from "@/components/productos/Chips";
 import { ProductosVendidosTabla } from "@/components/ventas/ProductosVendidosTabla";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
@@ -132,6 +133,48 @@ function DayContent({
   onProductClick,
 }: DayContentProps): JSX.Element {
   const [verificando, setVerificando] = useState<DayInvoice | null>(null);
+  // Una sola consulta por día: el mapa se cruza con las facturas ya cargadas.
+  const verificadas = useVentasVerificadas(invoices.data?.date ?? null);
+  const mapaVerificadas = useMemo(() => {
+    const mapa = new Map<string, VentaVerificada>();
+    for (const item of verificadas.data ?? []) {
+      mapa.set(`${item.cod_clase}-${item.num_documento}`, item);
+    }
+    return mapa;
+  }, [verificadas.data]);
+
+  const estampar = useCallback(
+    (
+      venta: DayInvoice,
+      candidato: BankCandidato | null,
+      estadoJob: string,
+      jobId: string,
+    ) => {
+      const fecha = invoices.data?.date;
+      if (!fecha) return;
+      const estado =
+        estadoJob === "resuelto"
+          ? "verificado"
+          : estadoJob === "ambiguo"
+            ? "ambiguo"
+            : "sin_coincidencia";
+      void guardarVerificacionVenta({
+        codClase: venta.cod_clase,
+        numDocumento: venta.num_documento,
+        fechaVenta: fecha,
+        valor: venta.total,
+        estado,
+        jobId,
+        pagador: candidato?.pagadorNombre,
+        referencia: candidato?.referencia,
+        fechaMovimiento: candidato?.fecha,
+      }).then((guardado) => {
+        if (guardado) void verificadas.mutate();
+      });
+    },
+    [invoices.data?.date, verificadas],
+  );
+
   const hourPico = detail.hora_pico !== null ? hourLabel(detail.hora_pico) : "—";
   const ventasHoraPico = detail.hora_pico !== null
     ? detail.distribucion_horaria.find((h) => h.hour === detail.hora_pico)?.total_ventas ?? 0
@@ -267,6 +310,7 @@ function DayContent({
                   onProductClick={onProductClick}
                   fechaDia={invoices.data?.date}
                   onVerify={setVerificando}
+                  verificada={mapaVerificadas.get(`${inv.cod_clase}-${inv.num_documento}`) ?? null}
                 />
               ))}
             </div>
@@ -287,6 +331,9 @@ function DayContent({
             : ""
         }
         nombreEsperado={verificando?.cliente ?? undefined}
+        onVerificado={(candidato, estadoJob, jobId) => {
+          if (verificando) estampar(verificando, candidato, estadoJob, jobId);
+        }}
       />
 
       {/* Vendedores + Formas de pago + Comparativas */}
@@ -404,15 +451,19 @@ function puedeVerificarPago(invoice: DayInvoice, fechaDia: string | undefined): 
 }
 
 export function InvoiceCard({
-  invoice, abcMap, onProductClick, fechaDia, onVerify,
+  invoice, abcMap, onProductClick, fechaDia, onVerify, verificada,
 }: {
   invoice: DayInvoice;
   abcMap?: ProductAbcMap;
   onProductClick?: (sku: string) => void;
   fechaDia?: string;
   onVerify?: (invoice: DayInvoice) => void;
+  /** Lo que ya está guardado en el servidor para esta factura, si hay algo. */
+  verificada?: VentaVerificada | null;
 }): JSX.Element {
   const verificar = onVerify !== undefined && puedeVerificarPago(invoice, fechaDia);
+  const pagoConfirmado = verificada?.estado === "verificado" ? verificada : null;
+  const yaConsultada = verificada?.estado === "sin_coincidencia" ? verificada : null;
   return (
     <Collapsible
       className="bg-surface-alt/30"
@@ -438,17 +489,38 @@ export function InvoiceCard({
       }
       badge={`${invoice.items.length} item${invoice.items.length === 1 ? "" : "s"}`}
     >
+      {pagoConfirmado && (
+        <div
+          data-testid="venta-verificada"
+          className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-900"
+        >
+          <span className="font-bold">✓ Pago verificado</span>
+          <span className="font-semibold">{pagoConfirmado.pagador}</span>
+          <span className="font-mono">
+            {formatMoneyFull(Number(pagoConfirmado.valor))}
+          </span>
+          {pagoConfirmado.verificado_por && (
+            <span className="text-emerald-800/70">
+              por {pagoConfirmado.verificado_por}
+            </span>
+          )}
+        </div>
+      )}
       {verificar && (
         <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
           <span className="text-[11px] text-text-muted">
-            ¿El pago entró a la cuenta? Se consulta el día de la venta.
+            {pagoConfirmado
+              ? "Ya verificado. Podés volver a consultar el banco."
+              : yaConsultada
+                ? "Se consultó el banco y no había pago ese día."
+                : "¿El pago entró a la cuenta? Se consulta el día de la venta."}
           </span>
           <button
             type="button"
             onClick={() => onVerify?.(invoice)}
             className="shrink-0 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20"
           >
-            Verificar pago
+            {pagoConfirmado ? "Verificar de nuevo" : "Verificar pago"}
           </button>
         </div>
       )}
