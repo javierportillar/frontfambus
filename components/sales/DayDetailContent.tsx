@@ -10,7 +10,17 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Table } from "@/components/ui/Table";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { BankVerifyModal } from "@/components/sales/BankVerifyModal";
-import { guardarVerificacionVenta, type BankCandidato, type VentaVerificada } from "@/lib/erp/bank";
+import {
+  guardarVerificacionVenta,
+  resultadoDelJob,
+  type BankJob,
+  type VentaVerificada,
+} from "@/lib/erp/bank";
+import {
+  useColaVerificacion,
+  type EstadoSesion,
+  type PedidoVerificacion,
+} from "@/components/sales/useColaVerificacion";
 import { AbcChip } from "@/components/productos/Chips";
 import { ProductosVendidosTabla } from "@/components/ventas/ProductosVendidosTabla";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
@@ -144,27 +154,21 @@ function DayContent({
   }, [verificadas.data]);
 
   const estampar = useCallback(
-    (
-      venta: DayInvoice,
-      candidato: BankCandidato | null,
-      estadoJob: string,
-      jobId: string,
-    ) => {
-      const fecha = invoices.data?.date;
-      if (!fecha) return;
+    (pedido: PedidoVerificacion, job: BankJob) => {
+      const candidato = resultadoDelJob(job)?.candidato ?? null;
       const estado =
-        estadoJob === "resuelto"
+        job.estado === "resuelto"
           ? "verificado"
-          : estadoJob === "ambiguo"
+          : job.estado === "ambiguo"
             ? "ambiguo"
             : "sin_coincidencia";
       void guardarVerificacionVenta({
-        codClase: venta.cod_clase,
-        numDocumento: venta.num_documento,
-        fechaVenta: fecha,
-        valor: venta.total,
+        codClase: pedido.codClase,
+        numDocumento: pedido.numDocumento,
+        fechaVenta: pedido.fecha,
+        valor: pedido.valor,
         estado,
-        jobId,
+        jobId: job.job_id,
         pagador: candidato?.pagadorNombre,
         referencia: candidato?.referencia,
         fechaMovimiento: candidato?.fecha,
@@ -172,8 +176,21 @@ function DayContent({
         if (guardado) void verificadas.mutate();
       });
     },
-    [invoices.data?.date, verificadas],
+    [verificadas],
   );
+
+  // El nodo raspa de a una: acá se encola y se respeta el turno.
+  const cola = useColaVerificacion(estampar);
+
+  const pedidoDe = (venta: DayInvoice): PedidoVerificacion => ({
+    clave: claveFactura(venta),
+    codClase: venta.cod_clase,
+    numDocumento: venta.num_documento,
+    fecha: invoices.data?.date ?? "",
+    valor: venta.total,
+    referencia: `${venta.prefijo ?? ""}-${venta.num_documento}`,
+    nombreEsperado: venta.cliente || undefined,
+  });
 
   const hourPico = detail.hora_pico !== null ? hourLabel(detail.hora_pico) : "—";
   const ventasHoraPico = detail.hora_pico !== null
@@ -310,7 +327,9 @@ function DayContent({
                   onProductClick={onProductClick}
                   fechaDia={invoices.data?.date}
                   onVerify={setVerificando}
-                  verificada={mapaVerificadas.get(`${inv.cod_clase}-${inv.num_documento}`) ?? null}
+                  verificada={mapaVerificadas.get(claveFactura(inv)) ?? null}
+                  sesionVerificacion={cola.sesiones[claveFactura(inv)]}
+                  posicionEnCola={cola.posicion(claveFactura(inv))}
                 />
               ))}
             </div>
@@ -330,9 +349,13 @@ function DayContent({
             ? `${verificando.prefijo ?? ""}-${verificando.num_documento}`
             : ""
         }
-        nombreEsperado={verificando?.cliente ?? undefined}
-        onVerificado={(candidato, estadoJob, jobId) => {
-          if (verificando) estampar(verificando, candidato, estadoJob, jobId);
+        sesion={
+          verificando ? cola.sesiones[claveFactura(verificando)] : undefined
+        }
+        posicion={verificando ? cola.posicion(claveFactura(verificando)) : null}
+        total={cola.total}
+        onVerificar={() => {
+          if (verificando) cola.encolar(pedidoDe(verificando));
         }}
       />
 
@@ -422,6 +445,11 @@ function DayContent({
 
 // ── InvoiceCard ─────────────────────────────────────────────────────────
 
+/** Clave con la que la cola y el mapa de verificadas identifican una factura. */
+function claveFactura(invoice: DayInvoice): string {
+  return `${invoice.cod_clase}-${invoice.num_documento}`;
+}
+
 /**
  * Días de antigüedad de una fecha `AAAA-MM-DD` respecto de hoy (0 = hoy).
  * `null` si el string no es una fecha válida.
@@ -452,6 +480,7 @@ function puedeVerificarPago(invoice: DayInvoice, fechaDia: string | undefined): 
 
 export function InvoiceCard({
   invoice, abcMap, onProductClick, fechaDia, onVerify, verificada,
+  sesionVerificacion, posicionEnCola,
 }: {
   invoice: DayInvoice;
   abcMap?: ProductAbcMap;
@@ -460,6 +489,10 @@ export function InvoiceCard({
   onVerify?: (invoice: DayInvoice) => void;
   /** Lo que ya está guardado en el servidor para esta factura, si hay algo. */
   verificada?: VentaVerificada | null;
+  /** Estado de la verificación en curso (cola, progreso o resultado). */
+  sesionVerificacion?: EstadoSesion;
+  /** 1 = corriendo, 2 = primera en espera…, `null` = fuera de la cola. */
+  posicionEnCola?: number | null;
 }): JSX.Element {
   const verificar = onVerify !== undefined && puedeVerificarPago(invoice, fechaDia);
   const pagoConfirmado = verificada?.estado === "verificado" ? verificada : null;
@@ -509,18 +542,27 @@ export function InvoiceCard({
       {verificar && (
         <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
           <span className="text-[11px] text-text-muted">
-            {pagoConfirmado
-              ? "Ya verificado. Podés volver a consultar el banco."
-              : yaConsultada
-                ? "Se consultó el banco y no había pago ese día."
-                : "¿El pago entró a la cuenta? Se consulta el día de la venta."}
+            {sesionVerificacion?.estado === "consultando"
+              ? `Consultando el banco… ${sesionVerificacion.pct ?? 0}%`
+              : sesionVerificacion?.estado === "en_cola" ||
+                  (posicionEnCola ?? 0) > 1
+                ? `En cola (${posicionEnCola ?? 2}) — arranca cuando termine la anterior`
+                : pagoConfirmado
+                  ? "Ya verificado. Podés volver a consultar el banco."
+                  : yaConsultada
+                    ? "Se consultó el banco y no había pago ese día."
+                    : "¿El pago entró a la cuenta? Se consulta el día de la venta."}
           </span>
           <button
             type="button"
             onClick={() => onVerify?.(invoice)}
             className="shrink-0 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20"
           >
-            {pagoConfirmado ? "Verificar de nuevo" : "Verificar pago"}
+            {sesionVerificacion?.estado === "consultando"
+              ? "Consultando…"
+              : pagoConfirmado
+                ? "Verificar de nuevo"
+                : "Verificar pago"}
           </button>
         </div>
       )}

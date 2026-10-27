@@ -1,51 +1,50 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useBankVerification } from "@/lib/api/hooks";
-import {
-  createBankVerification,
-  esEstadoFinal,
-  mensajeDeErrorDeVerificacion,
-  resultadoDelJob,
-  type BankCandidato,
-} from "@/lib/erp/bank";
+import type { BankCandidato } from "@/lib/erp/bank";
 import { formatSpanishLongDate } from "@/lib/erp/bankPresentation";
 import { formatMoneyFull } from "@/lib/format/currency";
+import type { EstadoSesion } from "@/components/sales/useColaVerificacion";
 
-/** TTL del job de verificación: pasado este tiempo no se sondea más. */
-const BANK_VERIFICATION_TIMEOUT_MS = 300_000;
+/**
+ * Etapas que publica el nodo mientras raspa. `pct` es el umbral que marca la
+ * etapa como cumplida; el orden es el del scrape.
+ */
+const ETAPAS: ReadonlyArray<{ paso: string; pct: number; label: string }> = [
+  { paso: "credencial_lista", pct: 10, label: "Preparando la credencial" },
+  { paso: "navegador_abierto", pct: 20, label: "Abriendo el navegador" },
+  { paso: "sesion_iniciada", pct: 35, label: "Sesión del banco iniciada" },
+  { paso: "cuenta_abierta", pct: 55, label: "Cuenta encontrada" },
+  { paso: "movimientos_leidos", pct: 80, label: "Movimientos leídos" },
+  { paso: "buscando_el_pago", pct: 90, label: "Buscando el pago" },
+  { paso: "listo", pct: 100, label: "Listo" },
+];
 
 export interface BankVerifyModalProps {
   open: boolean;
   onClose: () => void;
   /** Importe exacto a buscar en la cuenta del banco. */
   valor: number;
-  /** Día a consultar (`AAAA-MM-DD`). Sin esto el nodo mira el día en curso. */
+  /** Día a consultar (`AAAA-MM-DD`). */
   fecha: string;
   /** Identificación de la venta, sólo para el encabezado. */
   referencia: string;
-  /** Nombre del cliente: señal opcional, nunca decide el match. */
-  nombreEsperado?: string;
-  /**
-   * Se llama UNA vez por job, al llegar a estado final. La pantalla que abrió
-   * el modal decide qué hacer con el resultado (estamparlo en la venta).
-   */
-  onVerificado?: (
-    candidato: BankCandidato | null,
-    estado: string,
-    jobId: string,
-  ) => void;
+  /** Estado de la cola para esta factura. `undefined` = todavía no se pidió. */
+  sesion?: EstadoSesion;
+  /** 1 = se está corriendo; 2 = primera en espera; `null` = no está en la cola. */
+  posicion: number | null;
+  /** Cuántas verificaciones hay en la cola en total. */
+  total: number;
+  /** Encola la verificación de esta factura. */
+  onVerificar: () => void;
 }
 
 /**
  * Verificación de un pago **para una venta que ya existe**.
  *
- * Es el hermano retroactivo del botón del POS: allí se verifica antes de
- * facturar (modo `pago` sin factura), acá se verifica una factura del día o de
- * ayer que quedó a crédito. El importe y la fecha se toman de la venta, así que
- * el nodo consulta el día en que esa plata pudo haber entrado.
- *
- * No aplica nada: sólo informa. La conciliación la sigue haciendo el operador.
+ * Es presentacional a propósito: el estado (job, etapa, cola) lo lleva
+ * `useColaVerificacion` en la página. Así, cerrar esta factura y abrir otra no
+ * pierde el progreso, y el nodo nunca recibe dos scrapes a la vez — el segundo
+ * espera su turno en vez de fallar contra el turno de sesión.
  */
 export function BankVerifyModal({
   open,
@@ -53,97 +52,25 @@ export function BankVerifyModal({
   valor,
   fecha,
   referencia,
-  nombreEsperado,
-  onVerificado,
+  sesion,
+  posicion,
+  total,
+  onVerificar,
 }: BankVerifyModalProps): JSX.Element | null {
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [startError, setStartError] = useState<string | null>(null);
-  const [timedOut, setTimedOut] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const limpiarTimeout = useCallback(() => {
-    if (timeoutRef.current !== null) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
-
-  // Al abrir otra venta (o cerrar) el job anterior no sirve: es de otro importe
-  // y de otro día.
-  useEffect(() => {
-    if (!open) return;
-    setJobId(null);
-    setStartError(null);
-    setTimedOut(false);
-    limpiarTimeout();
-  }, [open, fecha, valor, limpiarTimeout]);
-
-  useEffect(() => () => limpiarTimeout(), [limpiarTimeout]);
-
-  const { data } = useBankVerification(jobId, {
-    refreshInterval: 3_000,
-  });
-
-  // `useBankVerification` conserva el dato anterior entre claves
-  // (`keepPreviousData`): al abrir otra factura su `data` sigue siendo el del
-  // job previo. Sólo vale el job que este modal creó, y sólo si el id coincide.
-  const job = data && jobId !== null && data.job_id === jobId ? data : null;
-
-  const estado = job?.estado ?? null;
-  const terminal = estado !== null && esEstadoFinal(estado);
-  const resultado = resultadoDelJob(job);
-
-  // Estampa una sola vez por job: el sondeo puede revalidar varias veces con
-  // el mismo estado final.
-  const estampadoRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!job || !terminal || jobId === null) return;
-    if (estampadoRef.current === job.job_id) return;
-    estampadoRef.current = job.job_id;
-    onVerificado?.(resultado?.candidato ?? null, job.estado, job.job_id);
-  }, [job, terminal, jobId, resultado, onVerificado]);
-
-  useEffect(() => {
-    if (!open) estampadoRef.current = null;
-  }, [open]);
-
-  useEffect(() => {
-    if (!jobId || !terminal) return;
-    limpiarTimeout();
-  }, [jobId, terminal, limpiarTimeout]);
-
-  const verificar = useCallback(async () => {
-    setStartError(null);
-    setTimedOut(false);
-    limpiarTimeout();
-    try {
-      const nuevo = await createBankVerification({
-        valor,
-        fecha,
-        ...(nombreEsperado ? { nombreEsperado } : {}),
-      });
-      setJobId(nuevo.job_id);
-      timeoutRef.current = setTimeout(() => {
-        setTimedOut(true);
-        setJobId(null);
-      }, BANK_VERIFICATION_TIMEOUT_MS);
-    } catch (error) {
-      setJobId(null);
-      setStartError(
-        mensajeDeErrorDeVerificacion(error) ??
-          "No se pudo iniciar la consulta al banco.",
-      );
-    }
-  }, [valor, fecha, nombreEsperado, limpiarTimeout]);
-
   if (!open) return null;
 
-  const consultando =
-    jobId !== null && (estado === null || !terminal) && !timedOut;
+  const enCola = sesion?.estado === "en_cola" || (sesion === undefined && posicion !== null && posicion > 1);
+  const corriendo =
+    sesion?.estado === "consultando" || sesion?.estado === "esperando_otp";
+  const pct = Math.max(0, Math.min(100, sesion?.pct ?? 0));
+  const etapaActual = ETAPAS.reduce(
+    (indice, etapa, i) => (pct >= etapa.pct ? i : indice),
+    -1,
+  );
   const candidato: BankCandidato | null =
-    estado === "resuelto" ? (resultado?.candidato ?? null) : null;
+    sesion?.estado === "resuelto" ? (sesion.candidato ?? null) : null;
   const ambiguos: BankCandidato[] =
-    estado === "ambiguo" ? (resultado?.candidatos ?? []) : [];
+    sesion?.estado === "ambiguo" ? (sesion.candidatos ?? []) : [];
 
   return (
     <div
@@ -179,52 +106,74 @@ export function BankVerifyModal({
           </button>
         </div>
 
-        {startError !== null && (
+        {sesion?.estado === "fallido" && (
           <p
             role="alert"
             className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
           >
-            {startError}
+            {sesion.error ?? "La consulta al banco falló."}
           </p>
         )}
 
-        {timedOut && (
+        {enCola && (
           <div
-            role="alert"
-            className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+            role="status"
+            data-testid="bank-verify-en-cola"
+            className="space-y-1 rounded-lg border border-sky-500/30 bg-sky-500/10 p-2.5 text-xs font-medium text-sky-900"
           >
             <p>
-              La consulta superó los 5 minutos y se detuvo. No se confirmó
-              ningún pago.
+              Hay otra verificación en curso. Esta va a arrancar sola cuando
+              termine — no hace falta que vuelvas a tocar nada.
+            </p>
+            {posicion !== null && (
+              <p className="font-bold">
+                Posición {posicion} de {Math.max(total, posicion)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {corriendo && (
+          <div className="space-y-2" data-testid="bank-verify-progreso">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-alt">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p role="status" className="text-xs font-semibold">
+              {sesion?.paso === "esperando_otp"
+                ? "El banco pide un código: ingrésalo en la consola del nodo."
+                : (ETAPAS[etapaActual]?.label ?? "Consultando el banco…")}
+              <span className="ml-1 font-normal text-text-muted">{pct}%</span>
+            </p>
+            <ol className="space-y-0.5 text-[11px] text-text-muted">
+              {ETAPAS.map((etapa, i) => (
+                <li
+                  key={etapa.paso}
+                  className={
+                    i <= etapaActual ? "text-emerald-700 font-semibold" : ""
+                  }
+                >
+                  {i <= etapaActual ? "✓" : "·"} {etapa.label}
+                </li>
+              ))}
+            </ol>
+            <p className="text-[11px] text-text-muted">
+              Podés cerrar esta ventana: la consulta sigue y el resultado queda
+              guardado en la factura.
             </p>
           </div>
         )}
 
-        {consultando && (
-          <p role="status" className="text-xs font-medium text-text-secondary">
-            Consultando el banco… puede tardar hasta un minuto.
-          </p>
-        )}
-
-        {estado === "esperando_otp" && (
+        {sesion?.estado === "sin_coincidencia" && (
           <p
             role="status"
             className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
           >
-            El banco pide un código: ingrésalo en la consola del nodo local.
+            No entró un pago de {formatMoneyFull(valor)} el{" "}
+            {formatSpanishLongDate(fecha) || fecha}.
           </p>
-        )}
-
-        {estado === "sin_coincidencia" && (
-          <div
-            role="status"
-            className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
-          >
-            <p>
-              No entró un pago de {formatMoneyFull(valor)} el{" "}
-              {formatSpanishLongDate(fecha) || fecha}.
-            </p>
-          </div>
         )}
 
         {ambiguos.length > 0 && (
@@ -250,16 +199,6 @@ export function BankVerifyModal({
               ))}
             </ul>
           </div>
-        )}
-
-        {estado === "fallido" && (
-          <p
-            role="alert"
-            className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
-          >
-            {mensajeDeErrorDeVerificacion(job?.error) ??
-              "La consulta al banco falló."}
-          </p>
         )}
 
         {candidato !== null && (
@@ -301,15 +240,10 @@ export function BankVerifyModal({
                   {candidato.referencia}
                 </dd>
                 <dd className="text-[10px] text-emerald-800/70">
-                  Es la misma en todos los pagos QR de la tienda: identifica al
-                  comercio, no a este pago.
+                  Es la misma en todos los pagos QR de la tienda.
                 </dd>
               </div>
             </dl>
-            <p className="text-[11px] font-medium text-emerald-800/80">
-              Sólo se informa: la venta no se modifica. Conciliá el pago por el
-              camino de siempre.
-            </p>
           </div>
         )}
 
@@ -323,15 +257,17 @@ export function BankVerifyModal({
           </button>
           <button
             type="button"
-            onClick={() => void verificar()}
-            disabled={consultando}
+            onClick={onVerificar}
+            disabled={corriendo || enCola}
             className="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-fg hover:bg-primary-dark disabled:opacity-50"
           >
-            {consultando
-              ? "Consultando…"
-              : jobId !== null && !terminal
+            {enCola
+              ? "En cola"
+              : corriendo
                 ? "Consultando…"
-                : "Verificar en el banco"}
+                : sesion?.estado === "resuelto"
+                  ? "Verificar de nuevo"
+                  : "Verificar en el banco"}
           </button>
         </div>
       </div>
