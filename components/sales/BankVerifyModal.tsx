@@ -26,15 +26,6 @@ export interface BankVerifyModalProps {
   referencia: string;
   /** Nombre del cliente: señal opcional, nunca decide el match. */
   nombreEsperado?: string;
-  /**
-   * Se llama UNA vez por job, al llegar a estado final. La pantalla que abrió
-   * el modal decide qué hacer con el resultado (estamparlo en la venta).
-   */
-  onVerificado?: (
-    candidato: BankCandidato | null,
-    estado: string,
-    jobId: string,
-  ) => void;
 }
 
 /**
@@ -54,7 +45,6 @@ export function BankVerifyModal({
   fecha,
   referencia,
   nombreEsperado,
-  onVerificado,
 }: BankVerifyModalProps): JSX.Element | null {
   const [jobId, setJobId] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
@@ -92,20 +82,6 @@ export function BankVerifyModal({
   const estado = job?.estado ?? null;
   const terminal = estado !== null && esEstadoFinal(estado);
   const resultado = resultadoDelJob(job);
-
-  // Estampa una sola vez por job: el sondeo puede revalidar varias veces con
-  // el mismo estado final.
-  const estampadoRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!job || !terminal || jobId === null) return;
-    if (estampadoRef.current === job.job_id) return;
-    estampadoRef.current = job.job_id;
-    onVerificado?.(resultado?.candidato ?? null, job.estado, job.job_id);
-  }, [job, terminal, jobId, resultado, onVerificado]);
-
-  useEffect(() => {
-    if (!open) estampadoRef.current = null;
-  }, [open]);
 
   useEffect(() => {
     if (!jobId || !terminal) return;

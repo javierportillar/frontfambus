@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { DayInvoice } from "@/lib/api/hooks";
-import type { VentaVerificada } from "@/lib/erp/bank";
 import { InvoiceCard } from "./DayDetailContent";
 
 function isoDeHace(dias: number): string {
@@ -83,68 +82,5 @@ describe("InvoiceCard · verificar pago", () => {
     expandir();
     fireEvent.click(screen.getByRole("button", { name: /verificar pago/i }));
     expect(onVerify).toHaveBeenCalledWith(unaFactura);
-  });
-});
-
-describe("InvoiceCard · verificación guardada", () => {
-  function guardada(overrides: Partial<VentaVerificada> = {}): VentaVerificada {
-    return {
-      cod_clase: "FVP",
-      num_documento: "3679",
-      fecha_venta: isoDeHace(0),
-      valor: "30000.00",
-      estado: "verificado",
-      pagador: "SANDRA MILENA ARTEAGA",
-      referencia: "0092055984",
-      fecha_movimiento: isoDeHace(0),
-      job_id: "job-1",
-      verificado_por: "gerente",
-      verificado_at: "2026-10-27T16:00:00Z",
-      ...overrides,
-    };
-  }
-
-  it("muestra el pago guardado sin volver a consultar", () => {
-    render(
-      <InvoiceCard
-        invoice={factura()}
-        fechaDia={isoDeHace(0)}
-        onVerify={vi.fn()}
-        verificada={guardada()}
-      />,
-    );
-    expandir();
-    const chip = screen.getByTestId("venta-verificada");
-    expect(chip.textContent).toContain("SANDRA MILENA ARTEAGA");
-    expect(screen.getByRole("button", { name: /verificar de nuevo/i })).toBeDefined();
-  });
-
-  it("avisa cuando ya se consultó y no había pago", () => {
-    render(
-      <InvoiceCard
-        invoice={factura()}
-        fechaDia={isoDeHace(0)}
-        onVerify={vi.fn()}
-        verificada={guardada({ estado: "sin_coincidencia", pagador: "" })}
-      />,
-    );
-    expandir();
-    expect(screen.queryByTestId("venta-verificada")).toBeNull();
-    expect(screen.getByText(/no había pago ese día/i)).toBeDefined();
-  });
-
-  it("no muestra el chip fuera de la ventana aunque esté guardada", () => {
-    render(
-      <InvoiceCard
-        invoice={factura()}
-        fechaDia={isoDeHace(9)}
-        onVerify={vi.fn()}
-        verificada={guardada()}
-      />,
-    );
-    expandir();
-    // El dato guardado sigue siendo visible: se consultó y hay pago.
-    expect(screen.getByTestId("venta-verificada")).toBeDefined();
-    expect(screen.queryByRole("button", { name: /verificar/i })).toBeNull();
   });
 });

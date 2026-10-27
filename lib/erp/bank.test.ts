@@ -8,9 +8,7 @@ import {
   createBankVerification,
   formatBankValor,
   getBankVerification,
-  guardarVerificacionVenta,
   listBankCandidates,
-  listarVentasVerificadas,
 } from "./bank";
 
 vi.mock("@/lib/api/client", () => ({ apiFetch: vi.fn() }));
@@ -756,71 +754,5 @@ describe("cliente de verificación bancaria", () => {
 
     const [, pollInit] = mockedFetch.mock.calls[1] ?? [];
     expect(requestHeaders(pollInit)["X-Bank-Node"]).toBeUndefined();
-  });
-});
-
-describe("verificaciones guardadas de una venta", () => {
-  it("lee el mapa del día en una sola consulta", async () => {
-    mockedFetch.mockResolvedValueOnce(
-      jsonResponse(200, {
-        fecha: "2026-10-27",
-        supabase: true,
-        items: [
-          {
-            cod_clase: "FVP",
-            num_documento: "3714",
-            fecha_venta: "2026-10-27",
-            valor: "6600.00",
-            estado: "verificado",
-            pagador: "SANDRA MILENA ARTEAGA",
-            referencia: "0092055984",
-            fecha_movimiento: "2026-10-27",
-            job_id: "job-1",
-            verificado_por: "gerente",
-            verificado_at: "2026-10-27T16:00:00Z",
-          },
-        ],
-      }),
-    );
-
-    const items = await listarVentasVerificadas("2026-10-27");
-
-    const [url] = mockedFetch.mock.calls[0] ?? [];
-    expect(String(url)).toContain("ventas-verificadas?fecha=2026-10-27");
-    expect(items).toHaveLength(1);
-    expect(items[0]?.pagador).toBe("SANDRA MILENA ARTEAGA");
-  });
-
-  it("sin Supabase devuelve vacío y no rompe", async () => {
-    mockedFetch.mockResolvedValueOnce(
-      jsonResponse(200, { fecha: "2026-10-27", supabase: false, items: [] }),
-    );
-
-    await expect(listarVentasVerificadas("2026-10-27")).resolves.toEqual([]);
-  });
-
-  it("estampa el resultado con el importe como texto", async () => {
-    mockedFetch.mockResolvedValueOnce(jsonResponse(200, { guardado: true }));
-
-    const guardado = await guardarVerificacionVenta({
-      codClase: "FVP",
-      numDocumento: "3714",
-      fechaVenta: "2026-10-27",
-      valor: 6600,
-      estado: "verificado",
-      jobId: "job-1",
-      pagador: "SANDRA MILENA ARTEAGA",
-      referencia: "0092055984",
-      fechaMovimiento: "2026-10-27",
-    });
-
-    const [url, init] = mockedFetch.mock.calls[0] ?? [];
-    expect(String(url)).toContain("/ventas/FVP/3714/verificacion");
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      fecha_venta: "2026-10-27",
-      valor: "6600.00",
-      estado: "verificado",
-    });
-    expect(guardado).toBe(true);
   });
 });
