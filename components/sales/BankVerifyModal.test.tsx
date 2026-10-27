@@ -85,6 +85,7 @@ describe("BankVerifyModal", () => {
       mutate: vi.fn(),
     } as unknown as ReturnType<typeof useBankVerification>);
     montar();
+    fireEvent.click(screen.getByRole("button", { name: /verificar en el banco/i }));
 
     expect(await screen.findByTestId("bank-verify-confirmation")).toBeDefined();
     expect(screen.getByText("LEDER ARMA")).toBeDefined();
@@ -102,6 +103,7 @@ describe("BankVerifyModal", () => {
       mutate: vi.fn(),
     } as unknown as ReturnType<typeof useBankVerification>);
     montar();
+    fireEvent.click(screen.getByRole("button", { name: /verificar en el banco/i }));
 
     const aviso = await screen.findByRole("status");
     expect(aviso.textContent).toContain("42.000");
@@ -118,6 +120,7 @@ describe("BankVerifyModal", () => {
       mutate: vi.fn(),
     } as unknown as ReturnType<typeof useBankVerification>);
     montar();
+    fireEvent.click(screen.getByRole("button", { name: /verificar en el banco/i }));
 
     const alerta = await screen.findByRole("alert");
     expect(alerta.textContent?.length).toBeGreaterThan(0);
@@ -127,5 +130,57 @@ describe("BankVerifyModal", () => {
     montar({ open: false });
     expect(screen.queryByTestId("bank-verify-modal")).toBeNull();
     expect(createBankVerification).not.toHaveBeenCalled();
+  });
+
+  it("no muestra el resultado de un job anterior al abrir otra factura", () => {
+    // El hook conserva el dato previo entre claves (keepPreviousData): el modal
+    // tiene que ignorarlo mientras no haya creado su propio job.
+    vi.mocked(useBankVerification).mockReturnValue({
+      data: job({
+        job_id: "job-de-otra-venta",
+        estado: "resuelto",
+        resultado: { candidato: CANDIDATO },
+      } as Partial<BankJob>),
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useBankVerification>);
+
+    montar();
+
+    expect(screen.queryByTestId("bank-verify-confirmation")).toBeNull();
+    expect(screen.queryByText("LEDER ARMA")).toBeNull();
+  });
+
+  it("tampoco lo muestra si el job del modal cambia de factura", async () => {
+    vi.mocked(createBankVerification).mockResolvedValue(job({ job_id: "job-nuevo" }));
+    vi.mocked(useBankVerification).mockReturnValue({
+      data: job({
+        job_id: "job-viejo",
+        estado: "resuelto",
+        resultado: { candidato: CANDIDATO },
+      } as Partial<BankJob>),
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useBankVerification>);
+    const { rerender } = montar();
+
+    fireEvent.click(screen.getByRole("button", { name: /verificar en el banco/i }));
+    await waitFor(() => expect(createBankVerification).toHaveBeenCalled());
+
+    rerender(
+      <BankVerifyModal
+        open
+        onClose={() => undefined}
+        valor={6600}
+        fecha="2026-10-27"
+        referencia="FVP-3714"
+      />,
+    );
+
+    expect(screen.queryByTestId("bank-verify-confirmation")).toBeNull();
   });
 });

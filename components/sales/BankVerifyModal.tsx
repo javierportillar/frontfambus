@@ -70,9 +70,14 @@ export function BankVerifyModal({
 
   useEffect(() => () => limpiarTimeout(), [limpiarTimeout]);
 
-  const { data: job } = useBankVerification(jobId, {
+  const { data } = useBankVerification(jobId, {
     refreshInterval: 3_000,
   });
+
+  // `useBankVerification` conserva el dato anterior entre claves
+  // (`keepPreviousData`): al abrir otra factura su `data` sigue siendo el del
+  // job previo. Sólo vale el job que este modal creó, y sólo si el id coincide.
+  const job = data && jobId !== null && data.job_id === jobId ? data : null;
 
   const estado = job?.estado ?? null;
   const terminal = estado !== null && esEstadoFinal(estado);
@@ -210,8 +215,8 @@ export function BankVerifyModal({
                   <span className="block font-bold text-text-primary">
                     {item.pagadorNombre}
                   </span>
-                  <span className="block font-mono text-[11px]">
-                    {item.referencia}
+                  <span className="block font-mono text-[11px] text-text-muted">
+                    ref. comercio {item.referencia}
                   </span>
                   <span className="block">
                     {formatMoneyFull(Number(item.valor))} ·{" "}
@@ -266,10 +271,14 @@ export function BankVerifyModal({
               </div>
               <div>
                 <dt className="text-[10px] font-bold uppercase tracking-wide text-emerald-800/70">
-                  Referencia bancaria
+                  Referencia del comercio
                 </dt>
                 <dd className="font-mono font-semibold">
                   {candidato.referencia}
+                </dd>
+                <dd className="text-[10px] text-emerald-800/70">
+                  Es la misma en todos los pagos QR de la tienda: identifica al
+                  comercio, no a este pago.
                 </dd>
               </div>
             </dl>
