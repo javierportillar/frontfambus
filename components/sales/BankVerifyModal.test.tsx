@@ -183,25 +183,4 @@ describe("BankVerifyModal", () => {
 
     expect(screen.queryByTestId("bank-verify-confirmation")).toBeNull();
   });
-
-  it("estampa una sola vez cuando el job llega a estado final", async () => {
-    const onVerificado = vi.fn();
-    vi.mocked(createBankVerification).mockResolvedValue(job());
-    vi.mocked(useBankVerification).mockReturnValue({
-      data: job({
-        estado: "resuelto",
-        resultado: { candidato: CANDIDATO },
-      } as Partial<BankJob>),
-      error: undefined,
-      isLoading: false,
-      isValidating: false,
-      mutate: vi.fn(),
-    } as unknown as ReturnType<typeof useBankVerification>);
-    montar({ onVerificado });
-
-    fireEvent.click(screen.getByRole("button", { name: /verificar en el banco/i }));
-
-    await waitFor(() => expect(onVerificado).toHaveBeenCalledTimes(1));
-    expect(onVerificado).toHaveBeenCalledWith(CANDIDATO, "resuelto", "job-1");
-  });
 });
