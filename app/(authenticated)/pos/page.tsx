@@ -52,6 +52,7 @@ export default function POSPage(): JSX.Element {
   const [quickSearchInput, setQuickSearchInput] = useState<string>("");
   const [pendingSalesCount, setPendingSalesCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [activeTabMobile, setActiveTabMobile] = useState<"CATALOGO" | "CARRITO">("CATALOGO");
 
   // Cargar sesión activa y productos iniciales
@@ -74,10 +75,14 @@ export default function POSPage(): JSX.Element {
   // Sincronizar ventas offline
   async function handleSyncPending(): Promise<void> {
     setIsSyncing(true);
+    setSyncError(null);
     try {
-      await flushPendingSales();
+      const result = await flushPendingSales();
       const pending = await getPendingSales();
       setPendingSalesCount(pending.length);
+      // Si el servidor rechaza la venta hay que decirlo: antes fallaba en
+      // silencio y la venta quedaba cobrada sin llegar al ERP.
+      if (result.failed > 0 && result.error) setSyncError(result.error);
     } finally {
       setIsSyncing(false);
     }
@@ -116,6 +121,22 @@ export default function POSPage(): JSX.Element {
     <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-background pb-20 lg:pb-6">
       {/* Listener global de códigos de barras (HID < 35ms) y atajos F7/F9 */}
       <BarcodeScannerListener tenant={currentTenant} />
+
+      {syncError && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-3 bg-rose-600 px-4 py-2 text-xs font-semibold text-white"
+        >
+          <span>Ventas pendientes rechazadas: {syncError}</span>
+          <button
+            type="button"
+            onClick={() => setSyncError(null)}
+            className="shrink-0 rounded border border-white/40 px-2 py-0.5 text-[11px] font-bold hover:bg-white/15"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
 
       {/* Barra Superior / Header de Estación de Trabajo POS */}
       <header className="sticky top-0 z-30 border-b border-border bg-surface-dark px-4 py-3 text-text-inverse shadow-sm">

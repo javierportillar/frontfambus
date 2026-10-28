@@ -312,9 +312,44 @@ export async function findPOSProductByBarcode(
  * Guarda o actualiza una venta en el POS.
  * Si no hay conexión, se encola en IndexedDB (idb-keyval) con status PENDING_SYNC.
  */
+/**
+ * Mensaje legible del rechazo del backend.
+ *
+ * El backend responde `{detail: {message, fields}}` en los 422 y
+ * `{detail: {message, code, retryable}}` en los 503. Antes esto se descartaba y
+ * el POS encolaba la venta como si fuera un corte de red: la venta se cobraba y
+ * el ERP nunca la veía. (MasVital, 2026-10-27.)
+ */
+async function mensajeDelRechazo(resp: Response): Promise<string> {
+  try {
+    const data: unknown = await resp.json();
+    const cuerpo = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+    const detail = (cuerpo.detail ?? cuerpo) as Record<string, unknown> | string;
+    if (typeof detail === "string") return detail;
+    const mensaje = typeof detail.message === "string" ? detail.message : "";
+    const fields =
+      detail.fields && typeof detail.fields === "object"
+        ? (detail.fields as Record<string, unknown>)
+        : {};
+    const detalle = Object.entries(fields)
+      .slice(0, 3)
+      .map(([campo, valor]) => `${campo}: ${String(valor)}`)
+      .join(" · ");
+    const armado = [mensaje, detalle].filter(Boolean).join(" — ");
+    return armado || `El servidor rechazó la venta (${resp.status})`;
+  } catch {
+    return `El servidor rechazó la venta (${resp.status})`;
+  }
+}
+
+/** ¿Vale la pena reintentar? Red caída o 5xx: sí. 4xx: no, se arregla a mano. */
+function esReintentable(resp: Response): boolean {
+  return resp.status >= 500;
+}
+
 export async function submitSale(
   sale: SalePayload,
-): Promise<{ success: boolean; offline: boolean; sale: SalePayload }> {
+): Promise<{ success: boolean; offline: boolean; sale: SalePayload; error?: string }> {
   // Asegurar numeración de recibo si no viene
   const documentNumber =
     sale.documentNumber ||
@@ -345,6 +380,15 @@ export async function submitSale(
         await saveRecentSale(finalSale);
         return { success: true, offline: false, sale: finalSale };
       }
+      if (!esReintentable(resp.resp)) {
+        // El servidor entendió la venta y la rechazó: encolarla sería mentirle
+        // al cajero (cobra, imprime recibo y el ERP no tiene nada).
+        const error = await mensajeDelRechazo(resp.resp);
+        finalSale.status = "PENDING_SYNC";
+        finalSale.syncError = error;
+        return { success: false, offline: false, sale: finalSale, error };
+      }
+      // 5xx: el ERP no pudo guardar. Se encola como antes.
     } catch {
       // Falla de red: encolar localmente
     }
@@ -392,6 +436,7 @@ export async function getRecentSales(): Promise<SalePayload[]> {
 export async function flushPendingSales(): Promise<{
   synced: number;
   failed: number;
+  error?: string;
 }> {
   const queue = await getPendingSales();
   if (queue.length === 0) return { synced: 0, failed: 0 };
@@ -419,6 +464,7 @@ export async function flushPendingSales(): Promise<{
         await saveRecentSale(sale);
       } else {
         failed++;
+        sale.syncError = await mensajeDelRechazo(resp.resp);
         remaining.push(sale);
       }
     } catch (err) {
@@ -429,7 +475,8 @@ export async function flushPendingSales(): Promise<{
   }
 
   await safeIdbSet(OFFLINE_SALES_STORE, remaining);
-  return { synced, failed };
+  const primero = remaining.find((s) => s.syncError)?.syncError;
+  return { synced, failed, ...(primero ? { error: primero } : {}) };
 }
 
 /**
