@@ -153,7 +153,19 @@ export interface BankCandidatos {
 }
 
 /** `resultado` del job: la foto de lo que encontró el nodo. */
+export interface BankProgreso {
+  /** Etapa estable del scrape (`cuenta_abierta`, `movimientos_leidos`…). */
+  paso: string;
+  /** Avance declarado por el nodo, 0–100. */
+  pct: number;
+}
+
 export interface BankJobResultado {
+  /**
+   * Etapa por la que va el nodo. El job lo escribe **mientras raspa**, no sólo
+   * al final: es lo que alimenta la barra de progreso del operador.
+   */
+  progreso?: BankProgreso;
   ventana?: BankVentana;
   nodo?: string;
   ingesta_at?: string;
@@ -179,6 +191,12 @@ export interface BankJobBase {
   expira_en: string;
   /** Código de error del job (sólo en `fallido`). */
   error: string | null;
+  /**
+   * Resultado parcial o final. Mientras el job corre trae sólo `progreso`; al
+   * terminar, el payload completo. Por eso vive en la base y no en la variante
+   * de éxito.
+   */
+  resultado?: BankJobResultado | null;
 }
 
 /**
@@ -194,7 +212,6 @@ export type BankJob =
     })
   | (BankJobBase & {
       estado: "resuelto" | "sin_coincidencia" | "ambiguo";
-      resultado?: BankJobResultado | null;
     })
   | (BankJobBase & {
       estado: "fallido" | "expirado";
