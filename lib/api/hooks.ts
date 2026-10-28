@@ -5,7 +5,13 @@ import { useAuthStore } from "@/lib/auth/store";
 import { isValidBusinessDate, isValidSupplierNit } from "@/lib/compras/routes";
 import { isValidCustomerId } from "@/lib/clientes/routes";
 import { sendChatMessage, type ChatReply } from "./chat";
-import { esEstadoFinal, getBankVerification, type BankJob } from "@/lib/erp/bank";
+import {
+  esEstadoFinal,
+  getBankVerification,
+  listarVentasVerificadas,
+  type BankJob,
+  type VentaVerificada,
+} from "@/lib/erp/bank";
 import {
   type ClusterStatus,
   type ClusterNodeStatus,
@@ -2753,6 +2759,33 @@ export interface UseBankVerificationOptions {
  * La cache key incluye el tenant: al cambiar de negocio no se reusa el job de
  * otro tenant (mismo criterio que `useMetrics`).
  */
+/**
+ * Verificaciones ya estampadas de un día (Supabase, vía backend).
+ *
+ * Una sola consulta por pantalla: el detalle del día cruza el mapa con las
+ * facturas que ya trajo, sin pedir nada por fila. `null` = día sin cargar, y
+ * el hook queda inerte.
+ */
+export function useVentasVerificadas(fecha: string | null) {
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const swrKey: readonly [string, string] | null = fecha
+    ? [currentTenant ?? "_no_tenant", `bank-ventas-verificadas:${fecha}`]
+    : null;
+
+  return useSWR<VentaVerificada[]>(
+    swrKey,
+    () => listarVentasVerificadas(fecha as string),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+      dedupingInterval: 30_000,
+      shouldRetryOnError: false,
+    },
+  );
+}
+
 export function useBankVerification(
   jobId: string | null,
   options?: UseBankVerificationOptions,
