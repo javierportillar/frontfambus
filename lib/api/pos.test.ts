@@ -106,6 +106,21 @@ describe("submitSale · rechazo del servidor", () => {
     expect(result.sale.status).toBe("COMPLETED");
   });
 
+  it("manda la clave de idempotencia con el nombre que el proxy reenvía", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(201, { success: true, numfven: 1, prefven: "POS" }),
+    );
+
+    await submitSale(VENTA);
+
+    const [, init] = vi.mocked(apiFetch).mock.calls[0] ?? [];
+    const headers = new Headers((init as RequestInit)?.headers as HeadersInit);
+    // `X-Idempotency-Key` NO es lo mismo que `Idempotency-Key`: el proxy sólo
+    // reenvía el segundo, y sin clave un reintento duplica la venta.
+    expect(headers.get("Idempotency-Key")).toBe(VENTA.id);
+    expect(headers.get("X-Idempotency-Key")).toBeNull();
+  });
+
   it("pega al proxy same-origin, no directo al backend", async () => {
     vi.mocked(apiFetch).mockResolvedValue(
       respuesta(201, { success: true, numfven: 1, prefven: "POS" }),

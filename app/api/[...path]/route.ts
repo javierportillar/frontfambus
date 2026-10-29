@@ -5,6 +5,7 @@ import {
   fetchFromBase,
   fetchWithFailoverDetailed,
   resolveDistinctFailoverBase,
+  resolveTenantNodeBase,
 } from "@/lib/api/backendFailover";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +73,10 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
   // como header (Header(alias="Idempotency-Key")); sin él FastAPI devolvía 422
   // "field required" y la recepción/ajuste fallaba desde el navegador (directo
   // al backend sí funcionaba). Fix: reenviar el header tal cual.
-  const idempotencyKey = req.headers.get("idempotency-key");
+  // El POS manda `X-Idempotency-Key` y el resto del front `Idempotency-Key`:
+  // son headers distintos, no cuestión de mayúsculas. Se aceptan los dos.
+  const idempotencyKey =
+    req.headers.get("idempotency-key") ?? req.headers.get("x-idempotency-key");
   if (idempotencyKey) {
     headers.set("Idempotency-Key", idempotencyKey);
   }
@@ -102,6 +106,7 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
     const isBankCreate =
       req.method === "POST" && pathname === BANK_VERIFICACIONES_PATH;
     const isBankJobPoll = req.method === "GET" && BANK_JOB_PATH.test(pathname);
+    const esVentaPos = req.method === "POST" && pathname === "/api/pos/sales";
     const pinnedBase = isBankJobPoll
       ? bankNodeBaseForLabel(req.headers.get("x-bank-node"))
       : null;
@@ -130,6 +135,41 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
       resp = await fetchFromBase(distinctBase, pathAndQuery, init);
       isFallback = true;
       base = distinctBase;
+    } else if (esVentaPos) {
+      // Escritura no idempotente: el cascade por defecto probaba el primario
+      // (otra base) y, si el nodo tardaba, el nodo del OTRO tenant. Una venta
+      // de MasVital podía terminar en el ERP de MotoShop, o duplicada.
+      // Se va derecho al nodo del tenant, con un solo intento.
+      const nodoPropio = resolveTenantNodeBase(tenant);
+      if (!nodoPropio) {
+        return NextResponse.json(
+          {
+            detail: {
+              message: "No hay nodo configurado para este negocio",
+              code: "tenant_sin_nodo",
+              retryable: true,
+            },
+          },
+          { status: 503 },
+        );
+      }
+      try {
+        resp = await fetchFromBase(nodoPropio, pathAndQuery, init);
+      } catch {
+        // JSON con retryable: el POS encola en vez de descartar la venta.
+        return NextResponse.json(
+          {
+            detail: {
+              message: "La PC del negocio no responde",
+              code: "nodo_no_disponible",
+              retryable: true,
+            },
+          },
+          { status: 503 },
+        );
+      }
+      isFallback = true;
+      base = nodoPropio;
     } else {
       const detailed = await fetchWithFailoverDetailed(pathAndQuery, init);
       resp = detailed.response;

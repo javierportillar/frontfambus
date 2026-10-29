@@ -164,15 +164,24 @@ async function safeIdbGet<T>(key: string): Promise<T | null> {
   return (memoryStores[key] as T) ?? null;
 }
 
-async function safeIdbSet<T>(key: string, value: T): Promise<void> {
-  try {
-    if (typeof window !== "undefined" && "indexedDB" in window) {
+/**
+ * Persiste en IndexedDB y **dice si lo logró**.
+ *
+ * Antes devolvía `void` y se tragaba el error: con IndexedDB bloqueado (modo
+ * privado, cuota llena, política del equipo) la venta quedaba sólo en memoria y
+ * el POS imprimía la tirilla igual. Ahora el que llama puede negarse a cobrar.
+ */
+async function safeIdbSet<T>(key: string, value: T): Promise<boolean> {
+  if (typeof window !== "undefined" && "indexedDB" in window) {
+    try {
       await set(key, value);
+      return true;
+    } catch {
+      return false;
     }
-  } catch {
-    // Fallback a memoria
   }
   memoryStores[key] = value;
+  return true;
 }
 
 /**
@@ -375,7 +384,7 @@ export async function submitSale(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Idempotency-Key": finalSale.id,
+          "Idempotency-Key": finalSale.id,
           "X-Tenant": finalSale.tenant,
         },
         body: JSON.stringify(finalSale),
@@ -405,13 +414,42 @@ export async function submitSale(
   finalSale.status = "PENDING_SYNC";
   finalSale.offline = true;
 
-  await enqueueOfflineSale(finalSale);
+  const persistida = await enqueueOfflineSale(finalSale);
+  if (!persistida) {
+    // Sin cola persistida la venta no existe en ningún lado: mejor decirle la
+    // verdad al cajero que imprimir una tirilla de algo que se va a perder.
+    return {
+      success: false,
+      offline: false,
+      sale: finalSale,
+      error:
+        "No se pudo guardar la venta en este equipo (almacenamiento del navegador). No se registró.",
+    };
+  }
   await saveRecentSale(finalSale);
 
   return { success: true, offline: true, sale: finalSale };
 }
 
-async function enqueueOfflineSale(sale: SalePayload): Promise<void> {
+/** Quita una venta de la cola por id, sin tocar las demás. */
+async function quitarPendiente(id: string): Promise<void> {
+  const queue = (await safeIdbGet<SalePayload[]>(OFFLINE_SALES_STORE)) ?? [];
+  await safeIdbSet(
+    OFFLINE_SALES_STORE,
+    queue.filter((sale) => sale.id !== id),
+  );
+}
+
+/** Deja el motivo del último rechazo en esa venta, sin tocar las demás. */
+async function marcarErrorPendiente(id: string, motivo: string): Promise<void> {
+  const queue = (await safeIdbGet<SalePayload[]>(OFFLINE_SALES_STORE)) ?? [];
+  await safeIdbSet(
+    OFFLINE_SALES_STORE,
+    queue.map((sale) => (sale.id === id ? { ...sale, syncError: motivo } : sale)),
+  );
+}
+
+async function enqueueOfflineSale(sale: SalePayload): Promise<boolean> {
   const queue = (await safeIdbGet<SalePayload[]>(OFFLINE_SALES_STORE)) ?? [];
   const existingIdx = queue.findIndex((s) => s.id === sale.id);
   if (existingIdx >= 0) {
@@ -419,7 +457,7 @@ async function enqueueOfflineSale(sale: SalePayload): Promise<void> {
   } else {
     queue.push(sale);
   }
-  await safeIdbSet(OFFLINE_SALES_STORE, queue);
+  return safeIdbSet(OFFLINE_SALES_STORE, queue);
 }
 
 async function saveRecentSale(sale: SalePayload): Promise<void> {
@@ -448,9 +486,9 @@ export async function flushPendingSales(): Promise<{
   const queue = await getPendingSales();
   if (queue.length === 0) return { synced: 0, failed: 0 };
 
-  const remaining: SalePayload[] = [];
   let synced = 0;
   let failed = 0;
+  const errores: string[] = [];
 
   for (const sale of queue) {
     try {
@@ -458,7 +496,7 @@ export async function flushPendingSales(): Promise<{
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Idempotency-Key": sale.id,
+          "Idempotency-Key": sale.id,
           "X-Tenant": sale.tenant,
         },
         body: JSON.stringify(sale),
@@ -469,21 +507,24 @@ export async function flushPendingSales(): Promise<{
         sale.offline = false;
         synced++;
         await saveRecentSale(sale);
+        // Se quita SÓLO esta venta: reescribir el array completo borraba las
+        // que se encolaran mientras el flush corría (pérdida real de ventas).
+        await quitarPendiente(sale.id);
       } else {
         failed++;
-        sale.syncError = await mensajeDelRechazo(resp);
-        remaining.push(sale);
+        const motivo = await mensajeDelRechazo(resp);
+        errores.push(motivo);
+        await marcarErrorPendiente(sale.id, motivo);
       }
     } catch (err) {
       failed++;
-      sale.syncError = err instanceof Error ? err.message : String(err);
-      remaining.push(sale);
+      const motivo = err instanceof Error ? err.message : String(err);
+      errores.push(motivo);
+      await marcarErrorPendiente(sale.id, motivo);
     }
   }
 
-  await safeIdbSet(OFFLINE_SALES_STORE, remaining);
-  const primero = remaining.find((s) => s.syncError)?.syncError;
-  return { synced, failed, ...(primero ? { error: primero } : {}) };
+  return { synced, failed, ...(errores[0] ? { error: errores[0] } : {}) };
 }
 
 /**

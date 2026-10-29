@@ -113,6 +113,20 @@ function extractTenant(headers: HeadersInit | undefined): string | null {
   return null;
 }
 
+/**
+ * Nodo que sirve el ERP de un tenant, y sólo ese.
+ *
+ * Para escrituras no idempotentes (la venta del POS) no se puede cascadear: el
+ * nodo del otro tenant tiene su PROPIA base, así que una venta de MasVital que
+ * se reintenta allá queda escrita en el ERP de MotoShop. Devuelve `null` si no
+ * hay un nodo propio configurado.
+ */
+export function resolveTenantNodeBase(tenant: string | null): string | null {
+  if (tenant === "masvital") return MASVITAL_LOCAL_BASE || null;
+  if (tenant === "motoshop") return MOTOSHOP_LOCAL_BASE || null;
+  return null;
+}
+
 export function resolveFallbackUrls(tenant: string | null): string[] {
   const customList = process.env.FALLBACK_API_URLS
     ? process.env.FALLBACK_API_URLS.split(",").map((s) => s.trim()).filter(Boolean)

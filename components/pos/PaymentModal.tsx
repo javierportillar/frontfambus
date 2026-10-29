@@ -537,7 +537,12 @@ export function PaymentModal({
     setErrorMessage(null);
 
     const salePayload: SalePayload = {
-      id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      // UUID v4: el backend usa `id` como clave de idempotencia y valida el
+      // formato. Un `sale-...` termina en 422 y la venta se descarta.
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       documentType,
       documentNumber: "", // Se asigna automáticamente en submitSale
       customer,
@@ -575,7 +580,9 @@ export function PaymentModal({
         openReceipt();
         onSaleComplete?.(result.sale);
       } else {
-        setErrorMessage("No fue posible registrar la venta. Inténtalo nuevamente.");
+        setErrorMessage(
+          result.error ?? "No fue posible registrar la venta. Inténtalo nuevamente.",
+        );
       }
     } catch (err) {
       setErrorMessage(
