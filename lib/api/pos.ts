@@ -4,8 +4,7 @@
  */
 
 import { get, set } from "idb-keyval";
-import { apiFetchJson } from "./client";
-import { fetchWithFailover } from "./backendFailover";
+import { apiFetch, apiFetchJson } from "./client";
 import type {
   CashMovement,
   CashSession,
@@ -364,7 +363,11 @@ export async function submitSale(
 
   if (isOnline) {
     try {
-      const resp = await fetchWithFailover("/api/pos/sales", {
+      // Same-origin, SIEMPRE: el token vive en una cookie httpOnly y sólo el
+      // proxy de Next la convierte en `Authorization: Bearer`. Yendo directo al
+      // backend (fetchWithFailover) el POST viaja sin token y vuelve 401: eso
+      // dejó dos ventas de MasVital cobradas y sin registrar (2026-10-27).
+      const resp = await apiFetch("/api/pos/sales", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -374,16 +377,16 @@ export async function submitSale(
         body: JSON.stringify(finalSale),
       });
 
-      if (resp.resp.ok) {
+      if (resp.ok) {
         finalSale.status = "COMPLETED";
         finalSale.offline = false;
         await saveRecentSale(finalSale);
         return { success: true, offline: false, sale: finalSale };
       }
-      if (!esReintentable(resp.resp)) {
+      if (!esReintentable(resp)) {
         // El servidor entendió la venta y la rechazó: encolarla sería mentirle
         // al cajero (cobra, imprime recibo y el ERP no tiene nada).
-        const error = await mensajeDelRechazo(resp.resp);
+        const error = await mensajeDelRechazo(resp);
         finalSale.status = "PENDING_SYNC";
         finalSale.syncError = error;
         return { success: false, offline: false, sale: finalSale, error };
@@ -447,7 +450,7 @@ export async function flushPendingSales(): Promise<{
 
   for (const sale of queue) {
     try {
-      const resp = await fetchWithFailover("/api/pos/sales", {
+      const resp = await apiFetch("/api/pos/sales", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -457,14 +460,14 @@ export async function flushPendingSales(): Promise<{
         body: JSON.stringify(sale),
       });
 
-      if (resp.resp.ok) {
+      if (resp.ok) {
         sale.status = "COMPLETED";
         sale.offline = false;
         synced++;
         await saveRecentSale(sale);
       } else {
         failed++;
-        sale.syncError = await mensajeDelRechazo(resp.resp);
+        sale.syncError = await mensajeDelRechazo(resp);
         remaining.push(sale);
       }
     } catch (err) {

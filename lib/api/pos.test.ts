@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { submitSale } from "@/lib/api/pos";
-import { fetchWithFailover } from "@/lib/api/backendFailover";
+import { apiFetch } from "@/lib/api/client";
 import type { SalePayload } from "@/lib/pos/types";
 
-vi.mock("@/lib/api/backendFailover", () => ({ fetchWithFailover: vi.fn() }));
+vi.mock("@/lib/api/client", () => ({ apiFetch: vi.fn(), apiFetchJson: vi.fn() }));
 vi.mock("idb-keyval", () => ({
   get: vi.fn(async () => undefined),
   set: vi.fn(async () => undefined),
@@ -44,7 +44,7 @@ function respuesta(status: number, cuerpo: unknown): Response {
 }
 
 beforeEach(() => {
-  vi.mocked(fetchWithFailover).mockReset();
+  vi.mocked(apiFetch).mockReset();
   Object.defineProperty(globalThis.navigator, "onLine", {
     configurable: true,
     value: true,
@@ -53,15 +53,14 @@ beforeEach(() => {
 
 describe("submitSale · rechazo del servidor", () => {
   it("un 422 se muestra como error y NO se encola", async () => {
-    vi.mocked(fetchWithFailover).mockResolvedValue({
-      resp: respuesta(422, {
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(422, {
         detail: {
           message: "Datos no válidos",
           fields: { nitter: "El tercero no existe" },
         },
       }),
-      node: "masvital",
-    } as never);
+    );
 
     const result = await submitSale(VENTA);
 
@@ -72,12 +71,11 @@ describe("submitSale · rechazo del servidor", () => {
   });
 
   it("un 503 del ERP se encola para reintentar (no es culpa de la venta)", async () => {
-    vi.mocked(fetchWithFailover).mockResolvedValue({
-      resp: respuesta(503, {
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(503, {
         detail: { message: "El ERP no pudo guardar", code: "erp_save_failed" },
       }),
-      node: "masvital",
-    } as never);
+    );
 
     const result = await submitSale(VENTA);
 
@@ -86,7 +84,7 @@ describe("submitSale · rechazo del servidor", () => {
   });
 
   it("una caída de red se encola", async () => {
-    vi.mocked(fetchWithFailover).mockRejectedValue(new Error("sin red"));
+    vi.mocked(apiFetch).mockRejectedValue(new Error("sin red"));
 
     const result = await submitSale(VENTA);
 
@@ -95,15 +93,27 @@ describe("submitSale · rechazo del servidor", () => {
   });
 
   it("un 201 registra la venta como completada", async () => {
-    vi.mocked(fetchWithFailover).mockResolvedValue({
-      resp: respuesta(201, { success: true, numfven: 1, prefven: "POS" }),
-      node: "masvital",
-    } as never);
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(201, { success: true, numfven: 1, prefven: "POS" }),
+    );
 
     const result = await submitSale(VENTA);
 
     expect(result.success).toBe(true);
     expect(result.offline).toBe(false);
     expect(result.sale.status).toBe("COMPLETED");
+  });
+
+  it("pega al proxy same-origin, no directo al backend", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(201, { success: true, numfven: 1, prefven: "POS" }),
+    );
+
+    await submitSale(VENTA);
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/api/pos/sales",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
