@@ -36,10 +36,12 @@ const VENTA = {
 } as unknown as SalePayload;
 
 function respuesta(status: number, cuerpo: unknown): Response {
+  const texto = JSON.stringify(cuerpo);
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: async () => cuerpo,
+    json: async () => JSON.parse(texto),
+    text: async () => texto,
   } as unknown as Response;
 }
 

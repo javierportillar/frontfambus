@@ -320,8 +320,11 @@ export async function findPOSProductByBarcode(
  * el ERP nunca la veía. (MasVital, 2026-10-27.)
  */
 async function mensajeDelRechazo(resp: Response): Promise<string> {
+  const crudo = await resp.text().catch(() => "");
+  const generico = `El servidor rechazó la venta (${resp.status})`;
+  if (!crudo.trim()) return generico;
   try {
-    const data: unknown = await resp.json();
+    const data: unknown = JSON.parse(crudo);
     const cuerpo = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
     const detail = (cuerpo.detail ?? cuerpo) as Record<string, unknown> | string;
     if (typeof detail === "string") return detail;
@@ -335,9 +338,10 @@ async function mensajeDelRechazo(resp: Response): Promise<string> {
       .map(([campo, valor]) => `${campo}: ${String(valor)}`)
       .join(" · ");
     const armado = [mensaje, detalle].filter(Boolean).join(" — ");
-    return armado || `El servidor rechazó la venta (${resp.status})`;
+    return armado || generico;
   } catch {
-    return `El servidor rechazó la venta (${resp.status})`;
+    // Respuesta no-JSON (por ejemplo el 503 en texto del primario caído).
+    return `${generico}: ${crudo.trim().slice(0, 160)}`;
   }
 }
 

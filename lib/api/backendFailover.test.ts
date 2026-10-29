@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   fetchWithFailover,
   fetchWithFailoverDetailed,
+  resolveTimeoutsForPath,
   bankNodeBaseForLabel,
   bankNodeLabelForBase,
   fetchFromBase,
@@ -420,3 +421,24 @@ describe("checkClusterStatus", () => {
   });
 });
 
+describe("resolveTimeoutsForPath", () => {
+  it("la venta del POS espera más que el resto (el insert legacy es lento)", () => {
+    const venta = resolveTimeoutsForPath("/api/pos/sales", 8000, 5000);
+    const comun = resolveTimeoutsForPath("/api/metrics/sales-summary", 8000, 5000);
+    expect(venta.fallbackTimeout).toBe(30000);
+    expect(venta.timeout).toBe(30000);
+    expect(comun.fallbackTimeout).toBe(5000);
+  });
+
+  it("el LLM conserva su ventana larga", () => {
+    const llm = resolveTimeoutsForPath("/api/llm/chat", 8000, 5000);
+    expect(llm.timeout).toBe(60000);
+    expect(llm.fallbackTimeout).toBe(50000);
+  });
+
+  it("un timeout explícito del llamador manda", () => {
+    const propio = resolveTimeoutsForPath("/api/pos/sales", 1000, 2000);
+    expect(propio.timeout).toBe(1000);
+    expect(propio.fallbackTimeout).toBe(2000);
+  });
+});

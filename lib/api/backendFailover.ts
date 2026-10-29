@@ -225,6 +225,31 @@ export interface DetailedFailoverResult {
  * Detailed variant: also reports which base URL answered, so callers can pin
  * subsequent requests (bank job polls) to that exact node.
  */
+/**
+ * Timeouts por tipo de request.
+ *
+ * - LLM: respuestas de segundos a minutos (60 s / 50 s).
+ * - Venta del POS (`POST /api/pos/sales`): el insert legacy bloquea `contadores`
+ *   y escribe varias tablas; con los 5 s por defecto el failover abortaba y el
+ *   proxy devolvía el 503 del primario. El cajero veía "rechazó la venta (503)"
+ *   y la venta quedaba sin registrar (MasVital, 2026-10-27).
+ * - Resto: 8 s / 5 s.
+ */
+export function resolveTimeoutsForPath(
+  normalizedPath: string,
+  timeoutMs: number,
+  fallbackTimeoutMs: number,
+): { timeout: number; fallbackTimeout: number } {
+  const isLlm =
+    normalizedPath.startsWith("/api/llm") || normalizedPath.startsWith("/llm");
+  const isPosSale = normalizedPath === "/api/pos/sales";
+  const porDefecto =
+    timeoutMs !== 8000 ? timeoutMs : isLlm ? 60000 : isPosSale ? 30000 : 8000;
+  const porDefectoFallback =
+    fallbackTimeoutMs !== 5000 ? fallbackTimeoutMs : isLlm ? 50000 : isPosSale ? 30000 : 5000;
+  return { timeout: porDefecto, fallbackTimeout: porDefectoFallback };
+}
+
 export async function fetchWithFailoverDetailed(
   pathAndQuery: string,
   init: RequestInit,
@@ -236,9 +261,8 @@ export async function fetchWithFailoverDetailed(
     : `/${pathAndQuery}`;
   const primaryUrl = `${PRIMARY_API_BASE}${normalizedPath}`;
 
-  const isLlm = normalizedPath.startsWith("/api/llm") || normalizedPath.startsWith("/llm");
-  const effectiveTimeout = timeoutMs !== 8000 ? timeoutMs : (isLlm ? 60000 : 8000);
-  const effectiveFallbackTimeout = fallbackTimeoutMs !== 5000 ? fallbackTimeoutMs : (isLlm ? 50000 : 5000);
+  const { timeout: effectiveTimeout, fallbackTimeout: effectiveFallbackTimeout } =
+    resolveTimeoutsForPath(normalizedPath, timeoutMs, fallbackTimeoutMs);
 
   const tenant = extractTenant(init.headers);
   const fallbackUrls = resolveFallbackUrls(tenant);
