@@ -393,6 +393,29 @@ export async function fetchFromBase(
   }
 }
 
+/**
+ * ¿El 5xx del nodo es un error de la aplicación (JSON con `detail`) y no un
+ * "nodo caído" (HTML del túnel o del primario)?
+ *
+ * Sin esto, el failover descartaba el 503 `erp_save_failed` del nodo —que trae
+ * el motivo real— y devolvía el 503 en HTML del primario parkeado. El operador
+ * veía "Service Unavailable" en vez de "el ERP no pudo guardar".
+ */
+async function pareceErrorDeAplicacion(resp: Response): Promise<boolean> {
+  const tipo = resp.headers.get("content-type") ?? "";
+  if (!tipo.includes("application/json")) return false;
+  try {
+    const data: unknown = await resp.clone().json();
+    const detalle =
+      data && typeof data === "object"
+        ? (data as Record<string, unknown>).detail
+        : undefined;
+    return typeof detalle === "string" || (typeof detalle === "object" && detalle !== null);
+  } catch {
+    return false;
+  }
+}
+
 async function executeFallbackCascade(
   fallbackUrls: string[],
   path: string,
@@ -430,7 +453,12 @@ async function executeFallbackCascade(
           isFallback: true,
         };
       }
-      // If node returns 502/503/504, it might be starting up or in trouble; try next node
+      // 5xx: si trae un `detail` en JSON es un error de la aplicación y hay que
+      // devolverlo tal cual (es la única explicación que va a ver el cajero).
+      if (await pareceErrorDeAplicacion(resp)) {
+        return { response: resp, base: baseUrl, isFallback: true };
+      }
+      // Si el nodo devuelve HTML (túnel caído), se prueba el siguiente.
     } catch (err) {
       if (init.signal?.aborted) {
         throw err;

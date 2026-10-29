@@ -442,3 +442,49 @@ describe("resolveTimeoutsForPath", () => {
     expect(propio.fallbackTimeout).toBe(2000);
   });
 });
+
+describe("failover · 5xx con cuerpo de aplicación", () => {
+  it("devuelve el JSON del nodo en vez del HTML del primario", async () => {
+    const nodo = new Response(
+      JSON.stringify({ detail: { message: "El ERP no pudo guardar", code: "erp_save_failed" } }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
+    const primarioHtml = new Response("<html>Service Unavailable</html>", {
+      status: 503,
+      headers: { "content-type": "text/html" },
+    });
+
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const destino = String(url);
+      if (destino.includes("api.fragloesja.uk")) return primarioHtml.clone();
+      return nodo.clone();
+    }) as unknown as typeof fetch;
+
+    const resultado = await fetchWithFailoverDetailed("/api/pos/sales", {
+      method: "POST",
+      headers: { "X-Tenant": "masvital" },
+      body: "{}",
+    });
+
+    const cuerpo = await resultado.response.json();
+    expect(cuerpo.detail.code).toBe("erp_save_failed");
+    expect(resultado.isFallback).toBe(true);
+  });
+
+  it("si el nodo devuelve HTML, se queda con el primario", async () => {
+    globalThis.fetch = vi.fn(async () => new Response("<html>caído</html>", {
+      status: 503,
+      headers: { "content-type": "text/html" },
+    })) as unknown as typeof fetch;
+
+    const resultado = await fetchWithFailoverDetailed("/api/pos/sales", {
+      method: "POST",
+      headers: { "X-Tenant": "masvital" },
+      body: "{}",
+    });
+
+    expect(resultado.isFallback).toBe(false);
+    expect(resultado.response.status).toBe(503);
+  });
+});
+
