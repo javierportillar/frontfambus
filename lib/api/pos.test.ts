@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { submitSale } from "@/lib/api/pos";
+import {
+  discardPendingSale,
+  getPendingSales,
+  submitSale,
+  syncPendingSale,
+} from "@/lib/api/pos";
 import { apiFetch } from "@/lib/api/client";
 import type { SalePayload } from "@/lib/pos/types";
 
@@ -132,5 +137,52 @@ describe("submitSale · rechazo del servidor", () => {
       "/api/pos/sales",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+});
+
+describe("cola de pendientes · acciones por venta", () => {
+  /** Deja una venta en la cola como lo haría un POST fallido. */
+  async function encolar(): Promise<void> {
+    vi.mocked(apiFetch).mockResolvedValueOnce(
+      respuesta(503, { detail: { message: "nodo caído", retryable: true } }),
+    );
+    await submitSale(VENTA);
+  }
+
+  it("envía una sola y la quita de la cola", async () => {
+    await encolar();
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(201, { success: true, numfven: 1, prefven: "POS" }),
+    );
+
+    const resultado = await syncPendingSale(VENTA.id);
+
+    expect(resultado.ok).toBe(true);
+    expect(await getPendingSales()).toEqual([]);
+  });
+
+  it("si el servidor la rechaza, la deja con el motivo", async () => {
+    await encolar();
+    vi.mocked(apiFetch).mockResolvedValue(
+      respuesta(422, { detail: { message: "El tercero no existe" } }),
+    );
+
+    const resultado = await syncPendingSale(VENTA.id);
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.error).toContain("El tercero no existe");
+    const cola = await getPendingSales();
+    expect(cola).toHaveLength(1);
+    expect(cola[0]?.syncError).toContain("El tercero no existe");
+  });
+
+  it("descartar la quita sin llamar al backend", async () => {
+    await encolar();
+    vi.mocked(apiFetch).mockClear();
+
+    await discardPendingSale(VENTA.id);
+
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(await getPendingSales()).toEqual([]);
   });
 });

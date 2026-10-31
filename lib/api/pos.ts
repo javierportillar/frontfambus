@@ -328,6 +328,51 @@ export async function findPOSProductByBarcode(
  * el POS encolaba la venta como si fuera un corte de red: la venta se cobraba y
  * el ERP nunca la veía. (MasVital, 2026-10-27.)
  */
+/** POST de la venta por el proxy same-origin (única definición de headers). */
+async function postVenta(sale: SalePayload): Promise<Response> {
+  return apiFetch("/api/pos/sales", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": sale.id,
+      "X-Tenant": sale.tenant,
+    },
+    body: JSON.stringify(sale),
+  });
+}
+
+/**
+ * Reintenta UNA venta de la cola. Devuelve `ok` y el motivo si el servidor la
+ * rechaza; la deja o la quita de la cola según el resultado.
+ */
+export async function syncPendingSale(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const queue = (await safeIdbGet<SalePayload[]>(OFFLINE_SALES_STORE)) ?? [];
+  const sale = queue.find((item) => item.id === id);
+  if (!sale) return { ok: false, error: "La venta ya no está en la cola." };
+  try {
+    const resp = await postVenta(sale);
+    if (resp.ok) {
+      await saveRecentSale({ ...sale, status: "COMPLETED", offline: false });
+      await quitarPendiente(id);
+      return { ok: true };
+    }
+    const motivo = await mensajeDelRechazo(resp);
+    await marcarErrorPendiente(id, motivo);
+    return { ok: false, error: motivo };
+  } catch (err) {
+    const motivo = err instanceof Error ? err.message : String(err);
+    await marcarErrorPendiente(id, motivo);
+    return { ok: false, error: motivo };
+  }
+}
+
+/** Descarta una venta de la cola local (decisión explícita del cajero). */
+export async function discardPendingSale(id: string): Promise<void> {
+  await quitarPendiente(id);
+}
+
 async function mensajeDelRechazo(resp: Response): Promise<string> {
   const crudo = await resp.text().catch(() => "");
   const generico = `El servidor rechazó la venta (${resp.status})`;
@@ -380,15 +425,7 @@ export async function submitSale(
       // proxy de Next la convierte en `Authorization: Bearer`. Yendo directo al
       // backend (fetchWithFailover) el POST viaja sin token y vuelve 401: eso
       // dejó dos ventas de MasVital cobradas y sin registrar (2026-10-27).
-      const resp = await apiFetch("/api/pos/sales", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": finalSale.id,
-          "X-Tenant": finalSale.tenant,
-        },
-        body: JSON.stringify(finalSale),
-      });
+      const resp = await postVenta(finalSale);
 
       if (resp.ok) {
         finalSale.status = "COMPLETED";
@@ -492,15 +529,7 @@ export async function flushPendingSales(): Promise<{
 
   for (const sale of queue) {
     try {
-      const resp = await apiFetch("/api/pos/sales", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": sale.id,
-          "X-Tenant": sale.tenant,
-        },
-        body: JSON.stringify(sale),
-      });
+      const resp = await postVenta(sale);
 
       if (resp.ok) {
         sale.status = "COMPLETED";

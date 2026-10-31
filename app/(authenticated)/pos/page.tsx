@@ -16,6 +16,7 @@ import { ProductSearchModal } from "@/components/pos/ProductSearchModal";
 import { CartItemList } from "@/components/pos/CartItemList";
 import { PaymentModal } from "@/components/pos/PaymentModal";
 import { ReceiptPrint } from "@/components/pos/ReceiptPrint";
+import { PendingSalesPanel } from "@/components/pos/PendingSalesPanel";
 import type { POSProduct } from "@/lib/pos/types";
 
 export default function POSPage(): JSX.Element {
@@ -53,6 +54,9 @@ export default function POSPage(): JSX.Element {
   const [pendingSalesCount, setPendingSalesCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [panelAbierto, setPanelAbierto] = useState(false);
+  // Búsqueda en servidor (la lista local viene limitada a 200 productos).
+  const [resultadosBusqueda, setResultadosBusqueda] = useState<POSProduct[] | null>(null);
   const [activeTabMobile, setActiveTabMobile] = useState<"CATALOGO" | "CARRITO">("CATALOGO");
 
   // Cargar sesión activa y productos iniciales
@@ -88,6 +92,22 @@ export default function POSPage(): JSX.Element {
     }
   }
 
+  // El catálogo inicial viene limitado (200). Si el cajero escribe, se consulta
+  // al backend: filtrar en memoria sólo encontraba productos de esas 200.
+  useEffect(() => {
+    const consulta = quickSearchInput.trim();
+    if (consulta.length < 2) {
+      setResultadosBusqueda(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void searchPOSProducts(consulta, currentTenant)
+        .then((productos) => setResultadosBusqueda(productos))
+        .catch(() => setResultadosBusqueda([]));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [quickSearchInput, currentTenant]);
+
   // Lista de categorías únicas para los filtros rápidos
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -99,7 +119,8 @@ export default function POSPage(): JSX.Element {
 
   // Filtrado de productos en catálogo rápido
   const filteredProducts = useMemo(() => {
-    return quickProducts.filter((p) => {
+    const base = resultadosBusqueda ?? quickProducts;
+    return base.filter((p) => {
       const matchesCategory =
         selectedCategory === "TODOS" || p.category === selectedCategory;
       const clean = quickSearchInput.trim().toLowerCase();
@@ -110,7 +131,7 @@ export default function POSPage(): JSX.Element {
         (p.barcode && p.barcode.toLowerCase().includes(clean));
       return matchesCategory && matchesSearch;
     });
-  }, [quickProducts, selectedCategory, quickSearchInput]);
+  }, [quickProducts, resultadosBusqueda, selectedCategory, quickSearchInput]);
 
   function handleProductCardClick(product: POSProduct): void {
     addItem(product, 1);
@@ -189,7 +210,7 @@ export default function POSPage(): JSX.Element {
             {pendingSalesCount > 0 && (
               <button
                 type="button"
-                onClick={handleSyncPending}
+                onClick={() => setPanelAbierto(true)}
                 disabled={isSyncing}
                 className="flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition-all"
                 title="Sincronizar ventas offline encoladas"
@@ -232,6 +253,12 @@ export default function POSPage(): JSX.Element {
           </div>
         </div>
       </header>
+
+      <PendingSalesPanel
+        open={panelAbierto}
+        onClose={() => setPanelAbierto(false)}
+        onCountChange={(count) => setPendingSalesCount(count)}
+      />
 
       {/* Selector móvil de vista (Catálogo vs Carrito) */}
       <div className="flex border-b border-border bg-surface px-4 py-2 lg:hidden">
