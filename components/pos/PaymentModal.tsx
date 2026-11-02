@@ -821,10 +821,15 @@ export function PaymentModal({
                 <select
                   id="docTypeSelect"
                   value={documentType}
+                  title="Facturación electrónica deshabilitada: el negocio emite sólo POS"
                   onChange={(e) => setDocumentType(e.target.value as typeof documentType)}
                   className="rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-bold text-text-secondary focus:border-primary focus:outline-none"
                 >
-                  <option value="FACTURA_VENTA">Factura Electrónica / Venta</option>
+                  {/* Deshabilitada a propósito: sólo POS hasta que Hermes
+                      habilite la DIAN. */}
+                  <option value="FACTURA_VENTA" disabled>
+                    Factura Electrónica / Venta (DIAN: no habilitada)
+                  </option>
                   <option value="POS_TICKET">Ticket Tirilla POS</option>
                   <option value="REMISION">Remisión de Entrega</option>
                   <option value="COTIZACION">Cotización</option>

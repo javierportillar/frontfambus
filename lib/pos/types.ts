@@ -35,6 +35,27 @@ export type DocumentType =
   | "COTIZACION";
 
 /**
+ * Comprobantes que el negocio puede emitir hoy.
+ *
+ * Los dos negocios facturan **sólo POS**: no son responsables de IVA, así que no
+ * hay facturación electrónica. La opción `FACTURA_VENTA` queda definida pero
+ * **inhabilitada** en la UI para que nadie la elija por error; cuando Hermes
+ * habilite la DIAN, se agrega acá y vuelve a estar disponible sin tocar el resto.
+ */
+export const DOCUMENTOS_HABILITADOS: readonly DocumentType[] = [
+  "POS_TICKET",
+  "REMISION",
+  "COTIZACION",
+];
+
+/** El comprobante por defecto: siempre POS. */
+export const DOCUMENTO_POR_DEFECTO: DocumentType = "POS_TICKET";
+
+export function documentoHabilitado(tipo: DocumentType): boolean {
+  return DOCUMENTOS_HABILITADOS.includes(tipo);
+}
+
+/**
  * Línea de detalle del carrito según la fórmula matemática sgHermes:
  * totdet = (valuni - dctpes + ivapes + ipopes) * candet
  * donde:

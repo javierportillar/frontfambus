@@ -231,7 +231,11 @@ export default function POSPage(): JSX.Element {
                 onChange={(e) => setDocumentType(e.target.value as typeof documentType)}
                 className="h-9 rounded-xl border border-surface-dark-alt bg-surface-dark-alt px-2.5 text-xs font-bold text-text-inverse focus:border-primary focus:outline-none"
               >
-                <option value="FACTURA_VENTA">Factura Electrónica</option>
+                {/* Deshabilitada a propósito: los negocios facturan sólo POS.
+                    Cuando Hermes habilite la DIAN, se quita el `disabled`. */}
+                <option value="FACTURA_VENTA" disabled>
+                  Factura Electrónica (DIAN: no habilitada)
+                </option>
                 <option value="POS_TICKET">Ticket POS</option>
                 <option value="REMISION">Remisión</option>
                 <option value="COTIZACION">Cotización</option>

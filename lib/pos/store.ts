@@ -7,7 +7,9 @@ import {
   type CashMovement,
   type CashSession,
   type Customer,
+  DOCUMENTO_POR_DEFECTO,
   type DocumentType,
+  documentoHabilitado,
   type PaymentEntry,
   type PaymentMethod,
   type POSProduct,
@@ -93,7 +95,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
 
   cart: [],
   customer: DEFAULT_CUSTOMER,
-  documentType: "FACTURA_VENTA",
+  documentType: DOCUMENTO_POR_DEFECTO,
   session: null,
 
   isPaymentModalOpen: false,
@@ -284,6 +286,9 @@ export const usePOSStore = create<POSState>((set, get) => ({
   },
 
   setDocumentType: (documentType: DocumentType) => {
+    // Guarda en el store, no sólo en la UI: aunque algo llame al setter con
+    // FACTURA_VENTA, el POS no emite electrónica hasta que esté habilitada.
+    if (!documentoHabilitado(documentType)) return;
     set({ documentType });
   },
 

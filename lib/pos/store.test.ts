@@ -229,3 +229,22 @@ describe("lib/pos/store - POS Zustand Store", () => {
     expect(usePOSStore.getState().cart[0]!.product.sku).toBe("MOT-001");
   });
 });
+
+describe("comprobante del POS · sólo POS habilitado", () => {
+  it("arranca en POS, no en factura electrónica", () => {
+    expect(usePOSStore.getState().documentType).toBe("POS_TICKET");
+  });
+
+  it("no deja seleccionar FACTURA_VENTA aunque se llame al setter", () => {
+    usePOSStore.getState().setDocumentType("POS_TICKET");
+    usePOSStore.getState().setDocumentType("FACTURA_VENTA");
+    expect(usePOSStore.getState().documentType).toBe("POS_TICKET");
+  });
+
+  it("deja elegir los otros comprobantes no electrónicos", () => {
+    usePOSStore.getState().setDocumentType("REMISION");
+    expect(usePOSStore.getState().documentType).toBe("REMISION");
+    usePOSStore.getState().setDocumentType("POS_TICKET");
+  });
+});
+
