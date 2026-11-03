@@ -43,12 +43,18 @@ export async function POST(req: NextRequest) {
 
     const res = NextResponse.json({ message: "Token refrescado" });
 
+    // La cookie del access token vive lo mismo que el refresh (7 días), NO los
+    // 15 minutos del JWT. Antes caducaba a los 15 min y el middleware —que sólo
+    // mira que la cookie exista— redirigía a /login en la siguiente navegación
+    // (o en el prefetch que dispara pasar el mouse por el menú lateral), aunque
+    // el refresh token siguiera válido. La vigencia real la sigue imponiendo el
+    // `exp` del JWT: la API responde 401 y `apiFetch` refresca.
     res.cookies.set("motoshop_token", access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 15 * 60,
+      maxAge: 7 * 24 * 60 * 60,
     });
 
     if (newRefresh) {
