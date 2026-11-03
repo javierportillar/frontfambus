@@ -107,6 +107,10 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
       req.method === "POST" && pathname === BANK_VERIFICACIONES_PATH;
     const isBankJobPoll = req.method === "GET" && BANK_JOB_PATH.test(pathname);
     const esVentaPos = req.method === "POST" && pathname === "/api/pos/sales";
+    // Nodo del negocio para lecturas (métricas, catálogo, listas). Sin tenant
+    // no hay nodo propio: se usa el cascade de siempre.
+    const nodoLectura =
+      req.method === "GET" && !isBankJobPoll ? resolveTenantNodeBase(tenant) : null;
     const pinnedBase = isBankJobPoll
       ? bankNodeBaseForLabel(req.headers.get("x-bank-node"))
       : null;
@@ -135,6 +139,28 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
       resp = await fetchFromBase(distinctBase, pathAndQuery, init);
       isFallback = true;
       base = distinctBase;
+    } else if (nodoLectura) {
+      // Lecturas: primero el nodo del negocio. El primario (Render) queda como
+      // ÚLTIMO recurso, no como primero: estaba caído y cada request pagaba su
+      // 503 antes de llegar al nodo.
+      try {
+        const respuestaNodo = await fetchFromBase(nodoLectura, pathAndQuery, init);
+        if (respuestaNodo.status < 500) {
+          resp = respuestaNodo;
+          isFallback = true;
+          base = nodoLectura;
+        } else {
+          const detailed = await fetchWithFailoverDetailed(pathAndQuery, init);
+          resp = detailed.response;
+          isFallback = detailed.isFallback;
+          base = detailed.base;
+        }
+      } catch {
+        const detailed = await fetchWithFailoverDetailed(pathAndQuery, init);
+        resp = detailed.response;
+        isFallback = detailed.isFallback;
+        base = detailed.base;
+      }
     } else if (esVentaPos) {
       // Escritura no idempotente: el cascade por defecto probaba el primario
       // (otra base) y, si el nodo tardaba, el nodo del OTRO tenant. Una venta

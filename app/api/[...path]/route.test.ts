@@ -38,7 +38,9 @@ describe("Proxy route [...path]", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const [calledUrl, init] = fetchMock.mock.calls[0] ?? [];
-    expect(calledUrl).toBe(`${API_BASE}/api/metrics/sales-summary`);
+    // Las lecturas con tenant van primero al nodo del negocio; el primario
+    // (Render) queda como último recurso.
+    expect(calledUrl).toBe(`${MOTOSHOP_LOCAL_BASE}/api/metrics/sales-summary`);
     const headers = init?.headers as Headers;
     expect(headers.get("If-None-Match")).toBe('"v123"');
     expect(headers.get("If-Modified-Since")).toBe("Wed, 21 Oct 2026 07:28:00 GMT");
@@ -341,3 +343,58 @@ describe("Proxy route [...path]", () => {
     expect(res.headers.get("x-backend-source")).toBe("motoshop-local");
   });
 });
+
+describe("Proxy route · orden con Render caído", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("una lectura con tenant NO toca el primario si el nodo responde", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest("http://localhost/api/metrics/sales-summary", {
+      headers: { "x-tenant": "masvital" },
+    });
+
+    await GET(req, { params: { path: ["metrics", "sales-summary"] } });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [calledUrl] = fetchMock.mock.calls[0] ?? [];
+    expect(String(calledUrl)).toContain("masvital-local");
+    expect(String(calledUrl)).not.toContain("api.fragloesja.uk");
+  });
+
+  it("si el nodo devuelve 5xx, recién ahí cae al cascade (Render incluido)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "cargando" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest("http://localhost/api/metrics/sales-summary", {
+      headers: { "x-tenant": "masvital" },
+    });
+
+    const res = await GET(req, { params: { path: ["metrics", "sales-summary"] } });
+
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
