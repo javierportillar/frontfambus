@@ -581,7 +581,10 @@ export function PaymentModal({
         onSaleComplete?.(result.sale);
       } else {
         setErrorMessage(
-          result.error ?? "No fue posible registrar la venta. Inténtalo nuevamente.",
+          result.error?.includes("Token") || result.error?.includes("sesión")
+            ? "Tu sesión venció y la venta NO se registró. Volvé a iniciar sesión y cobrá de nuevo."
+            : (result.error ??
+              "No fue posible registrar la venta. Inténtalo nuevamente."),
         );
       }
     } catch (err) {

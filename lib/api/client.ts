@@ -58,6 +58,9 @@ export async function apiFetch(
         // Zustand might not be available in SSR context, ignore
       }
       if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        // Se avisa antes de salir: la UI puede decir "sesión vencida" en vez de
+        // mostrar el 401 crudo, y el operador sabe que tiene que volver a entrar.
+        window.dispatchEvent(new CustomEvent("motoshop:sesion-vencida"));
         window.location.href = "/login";
       }
       return resp;
