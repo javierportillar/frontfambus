@@ -145,7 +145,9 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
       // 503 antes de llegar al nodo.
       try {
         const respuestaNodo = await fetchFromBase(nodoLectura, pathAndQuery, init);
-        if (respuestaNodo.status < 500) {
+        // 401 NO es definitivo: si los backends no comparten JWT_SECRET, el
+        // token puede ser válido en otro y acá ser rechazado. Se cae al cascade.
+        if (respuestaNodo.status < 500 && respuestaNodo.status !== 401) {
           resp = respuestaNodo;
           isFallback = true;
           base = nodoLectura;

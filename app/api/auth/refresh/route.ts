@@ -29,6 +29,11 @@ export async function POST(req: NextRequest) {
       resp = nodoPropio
         ? await fetchFromBase(nodoPropio, "/api/auth/refresh", init)
         : (await fetchWithFailover("/api/auth/refresh", init)).resp;
+      // El refresh token lo firmó UN backend: si el nodo propio lo rechaza,
+      // puede ser el otro. Un 401 acá no cierra la sesión por sí solo.
+      if (resp.status === 401) {
+        resp = (await fetchWithFailover("/api/auth/refresh", init)).resp;
+      }
     } catch {
       // Si el nodo propio no responde, recién ahí se intenta el cascade.
       resp = (await fetchWithFailover("/api/auth/refresh", init)).resp;
