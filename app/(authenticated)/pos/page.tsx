@@ -100,6 +100,10 @@ export default function POSPage(): JSX.Element {
       setResultadosBusqueda(null);
       return;
     }
+    // Mientras el servidor responde se filtra en memoria: el cajero ve
+    // resultados al instante y la lista se completa cuando llegan los del
+    // backend. Sin esto, cada tecla dejaba la lista con el resultado anterior.
+    setResultadosBusqueda(null);
     const timer = setTimeout(() => {
       void searchPOSProducts(consulta, currentTenant)
         .then((productos) => setResultadosBusqueda(productos))
