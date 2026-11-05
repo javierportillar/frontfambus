@@ -51,30 +51,43 @@ describe("ReceiptPrint DIAN integration", () => {
     status: "COMPLETED",
   };
 
-  it("renders DIAN resolution and range in receipt header", () => {
+  it("diseña el tiquete como SgHermes: logo 40x15, nombre a 13 y sin DIAN", () => {
     render(<ReceiptPrint sale={baseSale} />);
 
-    expect(
-      screen.getByText("Resolución DIAN No. 18760000001 de 2026-01-15"),
-    ).toBeDefined();
-    expect(
-      screen.getByText("Rango autoriz: POS-000001 a POS-999999"),
-    ).toBeDefined();
+    const logo = screen.getByAltText(/MOTOSHOP/i) as HTMLImageElement;
+    expect(logo.style.width).toBe("40mm");
+    expect(logo.style.height).toBe("15mm");
+
+    const nombre = screen.getByText(/MOTOSHOP REPUESTOS/i);
+    expect(nombre.style.fontSize).toBe("13px");
+
+    // El negocio no es responsable de IVA: no se imprime resolución ni CUFE.
+    expect(screen.queryByText(/Resolución DIAN/i)).toBeNull();
+    expect(screen.queryByText(/CUFE/i)).toBeNull();
+    expect(screen.queryByText(/Documento Equivalente Electrónico/i)).toBeNull();
   });
 
-  it("renders CUFE and verification link when CUFE is provided via prop", () => {
-    const testCufe = "abc123cufe96characterslongsha384digestexamplecontent";
-    render(<ReceiptPrint sale={baseSale} cufe={testCufe} />);
-
-    expect(screen.getByText(`CUFE: ${testCufe}`)).toBeDefined();
-    expect(
-      screen.getByText("Consulte su documento en: catalogo-vpfe.dian.gov.co"),
-    ).toBeDefined();
-  });
-
-  it("renders placeholder when CUFE is not yet emitted", () => {
+  it("imprime las columnas adicionales con cero decimales", () => {
     render(<ReceiptPrint sale={baseSale} />);
 
-    expect(screen.getByText("CUFE: En trámite de transmisión DIAN")).toBeDefined();
+    expect(screen.getByText("Código")).toBeInTheDocument();
+    expect(screen.getByText("V/Unit")).toBeInTheDocument();
+    expect(screen.getByText("Imp")).toBeInTheDocument();
+    expect(screen.getByText("OIL-1")).toBeInTheDocument();
+    // 33320 con la configuración de SgHermes (0 decimales) es "33.320".
+    expect(screen.getAllByText("33.320").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/33\.320,00/)).toBeNull();
+  });
+
+  it("numera el documento con las 4 cifras configuradas", () => {
+    render(<ReceiptPrint sale={{ ...baseSale, documentNumber: "FVP7" }} />);
+    expect(screen.getByText("FVP0007")).toBeInTheDocument();
+  });
+
+  it("cierra el pie con 'Impreso por' a 6", () => {
+    render(<ReceiptPrint sale={baseSale} />);
+    const pie = screen.getByText(/Impreso por/);
+    expect(pie.style.fontSize).toBe("6px");
+    expect(pie.textContent).toContain("Cajero Test");
   });
 });

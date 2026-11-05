@@ -1,8 +1,46 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatMoneyFull } from "@/lib/format/currency";
 import type { SalePayload } from "@/lib/pos/types";
+
+/**
+ * Diseño del tiquete tomado de SgHermes (Preparación de Comprobantes → S15 →
+ * Impresión → Diseño de impresión en tiquete):
+ *
+ *   Tipo de letra ................. Arial CE
+ *   Nombre de la empresa .......... 13
+ *   Otros títulos ................. 9
+ *   Total del tiquete ............. 14
+ *   Detalles ...................... 8
+ *   Impreso por ................... 6
+ *   Decimales en la impresión ..... 0
+ *   Cifras del número de documento. 4
+ *   Logo .......................... 40 x 15 mm
+ *   QR ............................ 50 x 50
+ *   Columnas adicionales .......... Código, V/Unitario, Impuesto
+ *   Orden del detalle ............. Original
+ *   Total en letras / Aceptado por  desactivados
+ */
+const TL = {
+  empresa: 13,
+  titulo: 9,
+  detalle: 8,
+  total: 14,
+  impresoPor: 6,
+} as const;
+
+/** Importe sin decimales, como imprime SgHermes en el tiquete. */
+function money0(valor: number): string {
+  const n = Number.isFinite(valor) ? valor : 0;
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(n);
+}
+
+/** Número de documento con las 4 cifras configuradas. */
+function numeroDocumento(documento: string): string {
+  const partes = /^(.*?)(\d+)$/.exec(documento ?? "");
+  if (partes === null) return documento ?? "";
+  return `${partes[1] ?? ""}${(partes[2] ?? "").padStart(4, "0")}`;
+}
 
 interface ReceiptPrintProps {
   sale: SalePayload | null;
@@ -35,11 +73,9 @@ export function ReceiptPrint({
 
   const isMotoShop = tenant !== "masvital";
   const businessName = isMotoShop ? "MOTOSHOP REPUESTOS & TALLER" : "MASVITAL MARKET S.A.S";
-  const businessNit = isMotoShop ? "NIT 900.876.543-1" : "NIT 901.234.567-8";
-  const businessAddress = isMotoShop
-    ? "Calle 15 # 23-45, Barrio Alameda, Cali"
-    : "Carrera 1 # 42-10, Cali, Valle";
-  const businessPhone = "Tel / WhatsApp: (602) 555-0199 - 315 555 0199";
+  // Los datos fiscales (NIT, dirección, resolución) NO se imprimen desde acá:
+  // estaban inventados en el código. Cuando el negocio los tenga configurados,
+  // tienen que venir del backend, no de una constante.
 
   const formattedDate = new Date(sale.createdAt).toLocaleString("es-CO", {
     dateStyle: "short",
@@ -85,11 +121,11 @@ export function ReceiptPrint({
             max-width: ${paperWidth === "80mm" ? "76mm" : "54mm"} !important;
             margin: 0 !important;
             padding: 2mm 3mm !important;
-            font-family: "Courier New", Courier, monospace !important;
+            font-family: Arial, "Arial CE", Helvetica, sans-serif !important;
             color: #000000 !important;
             background: #ffffff !important;
             line-height: 1.2 !important;
-            font-size: ${paperWidth === "80mm" ? "12px" : "10px"} !important;
+            font-size: ${paperWidth === "80mm" ? `${TL.detalle + 1}px` : `${TL.detalle}px`} !important;
           }
 
           @page {
@@ -159,28 +195,28 @@ export function ReceiptPrint({
               style={{ width: paperWidth === "80mm" ? "320px" : "240px" }}
               className="bg-white p-4 font-mono text-black shadow-lg border border-neutral-300 rounded-sm text-xs leading-relaxed"
             >
-              {/* Encabezado del negocio */}
+              {/* Encabezado del negocio — logo 40x15 mm, nombre a 13 */}
               <div className="text-center pb-2 border-b border-dashed border-neutral-400">
-                <h3 className="font-extrabold text-sm uppercase">{businessName}</h3>
-                <p className="font-semibold text-[11px]">{businessNit}</p>
-                <p className="text-[10px] text-neutral-700">{businessAddress}</p>
-                <p className="text-[10px] text-neutral-700">{businessPhone}</p>
-                <p className="mt-1 text-[9px] text-neutral-550 leading-tight">
-                  IVA Régimen Común • Actividad ICA 4530
-                </p>
-                <p className="text-[9px] text-neutral-550 leading-tight">
-                  Resolución DIAN No. 18760000001 de 2026-01-15
-                </p>
-                <p className="text-[9px] text-neutral-550 leading-tight">
-                  Rango autoriz: POS-000001 a POS-999999
-                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo.png"
+                  alt={businessName}
+                  style={{ width: "40mm", height: "15mm", objectFit: "contain" }}
+                  className="mx-auto mb-1"
+                />
+                <h3 className="font-extrabold uppercase" style={{ fontSize: TL.empresa }}>
+                  {businessName}
+                </h3>
               </div>
 
               {/* Datos del documento */}
-              <div className="py-2 border-b border-dashed border-neutral-400 text-[11px] space-y-0.5">
+              <div
+                className="py-2 border-b border-dashed border-neutral-400 space-y-0.5"
+                style={{ fontSize: TL.titulo }}
+              >
                 <div className="flex justify-between font-bold">
                   <span>DOCUMENTO:</span>
-                  <span>{sale.documentNumber}</span>
+                  <span>{numeroDocumento(sale.documentNumber)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>FECHA:</span>
@@ -200,60 +236,69 @@ export function ReceiptPrint({
                 </div>
               </div>
 
-              {/* Detalle de ítems */}
-              <div className="py-2 border-b border-dashed border-neutral-400 text-[11px]">
-                <div className="flex justify-between font-bold pb-1 text-[10px] border-b border-neutral-300">
-                  <span>DESCRIPCIÓN</span>
-                  <span>CANT x VALOR</span>
-                  <span>TOTAL</span>
-                </div>
-
-                <div className="space-y-1.5 pt-1.5">
-                  {sale.items.map((it) => (
-                    <div key={it.id}>
-                      <div className="font-semibold leading-tight text-[11px]">
-                        {it.product.name}
-                      </div>
-                      <div className="flex justify-between text-[10px] text-neutral-700">
-                        <span>
-                          {it.candet} x {formatMoneyFull(it.valuni)}
-                          {it.discountPct > 0 && ` (-${it.discountPct}%)`}
-                        </span>
-                        <span className="font-bold text-black">
-                          {formatMoneyFull(it.totdet)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {/* Detalle de ítems — columnas Código · V/Unitario · Impuesto
+                  (config de SgHermes), orden original de la venta */}
+              <div className="py-2 border-b border-dashed border-neutral-400">
+                <table className="w-full border-collapse" style={{ fontSize: TL.detalle }}>
+                  <thead>
+                    <tr className="border-b border-neutral-400 text-left font-bold">
+                      <th className="py-0.5">Código</th>
+                      <th className="py-0.5">Descripción</th>
+                      <th className="py-0.5 text-right">Cant</th>
+                      <th className="py-0.5 text-right">V/Unit</th>
+                      <th className="py-0.5 text-right">Imp</th>
+                      <th className="py-0.5 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sale.items.map((it) => (
+                      <tr key={it.id} className="align-top">
+                        <td className="py-0.5 break-all">{it.product.sku}</td>
+                        <td className="py-0.5">{it.product.name}</td>
+                        <td className="py-0.5 text-right">{it.candet}</td>
+                        <td className="py-0.5 text-right">{money0(it.valuni)}</td>
+                        <td className="py-0.5 text-right">
+                          {money0((it.ivapes + it.ipopes) * it.candet)}
+                        </td>
+                        <td className="py-0.5 text-right font-bold">{money0(it.totdet)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               {/* Totales consolidados */}
               <div className="py-2 border-b border-dashed border-neutral-400 space-y-0.5 text-[11px]">
                 <div className="flex justify-between">
                   <span>SUBTOTAL:</span>
-                  <span>{formatMoneyFull(sale.totals.subtotal)}</span>
+                  <span>{money0(sale.totals.subtotal)}</span>
                 </div>
                 {sale.totals.totalDiscount > 0 && (
                   <div className="flex justify-between text-neutral-700">
                     <span>DESCUENTO:</span>
-                    <span>-{formatMoneyFull(sale.totals.totalDiscount)}</span>
+                    <span>-{money0(sale.totals.totalDiscount)}</span>
                   </div>
                 )}
                 {sale.totals.totalVat > 0 && (
                   <div className="flex justify-between text-neutral-700">
                     <span>IVA DISCRIMINADO:</span>
-                    <span>+{formatMoneyFull(sale.totals.totalVat)}</span>
+                    <span>+{money0(sale.totals.totalVat)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-black text-sm pt-1 border-t border-neutral-300">
-                  <span>TOTAL A PAGAR:</span>
-                  <span>{formatMoneyFull(sale.totals.total)}</span>
+                <div
+                  className="flex justify-between font-black pt-1 border-t border-neutral-300"
+                  style={{ fontSize: TL.total }}
+                >
+                  <span>TOTAL:</span>
+                  <span>{money0(sale.totals.total)}</span>
                 </div>
               </div>
 
               {/* Resumen de Pago */}
-              <div className="py-2 border-b border-dashed border-neutral-400 text-[11px] space-y-0.5">
+              <div
+                className="py-2 border-b border-dashed border-neutral-400 space-y-0.5"
+                style={{ fontSize: TL.titulo }}
+              >
                 {sale.payments.length > 1 ? (
                   <>
                     <div className="flex justify-between font-bold">
@@ -265,7 +310,7 @@ export function ReceiptPrint({
                           • {p.method}
                           {p.reference ? ` (${p.reference})` : ""}:
                         </span>
-                        <span className="font-semibold">{formatMoneyFull(p.amount)}</span>
+                        <span className="font-semibold">{money0(p.amount)}</span>
                       </div>
                     ))}
                   </>
@@ -281,44 +326,37 @@ export function ReceiptPrint({
                 {sale.cashReceived > 0 && (
                   <div className="flex justify-between">
                     <span>VALOR RECIBIDO:</span>
-                    <span>{formatMoneyFull(sale.cashReceived)}</span>
+                    <span>{money0(sale.cashReceived)}</span>
                   </div>
                 )}
                 {sale.changeGiven > 0 && (
                   <div className="flex justify-between font-bold">
                     <span>CAMBIO:</span>
-                    <span>{formatMoneyFull(sale.changeGiven)}</span>
+                    <span>{money0(sale.changeGiven)}</span>
                   </div>
                 )}
               </div>
 
-              {/* Información DIAN: CUFE y Verificación */}
-              <div className="py-2 border-b border-dashed border-neutral-400 text-center text-[9px] text-neutral-700 leading-tight space-y-1">
-                <p className="font-bold text-black uppercase text-[10px]">
-                  Documento Equivalente Electrónico POS
-                </p>
-                {effectiveCufe ? (
-                  <>
-                    <p className="font-mono text-[8px] break-all bg-neutral-100 p-1 rounded border border-neutral-300 text-neutral-800">
-                      CUFE: {effectiveCufe}
-                    </p>
-                    <p className="text-[8px] text-neutral-600">
-                      Consulte su documento en: catalogo-vpfe.dian.gov.co
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-[8px] text-neutral-500 italic">
-                    CUFE: En trámite de transmisión DIAN
-                  </p>
-                )}
-              </div>
+              {/* QR del comprobante (50 x 50) cuando existe; el negocio no
+                  emite electrónica, así que sin CUFE no se imprime nada. */}
+              {effectiveQrUrl && (
+                <div className="py-2 border-b border-dashed border-neutral-400 text-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={effectiveQrUrl}
+                    alt="QR del comprobante"
+                    style={{ width: "50px", height: "50px" }}
+                    className="mx-auto"
+                  />
+                </div>
+              )}
 
               {/* Mensaje de pie */}
               <div className="pt-3 text-center text-[10px] text-neutral-600 leading-tight space-y-1">
                 <p className="font-bold text-black">¡GRACIAS POR SU COMPRA!</p>
                 <p>Conserve este ticket para garantías o cambios.</p>
-                <p className="text-[9px] text-neutral-400">
-                  Impreso vía MotoShop POS Suite
+                <p style={{ fontSize: TL.impresoPor }} className="text-neutral-500">
+                  Impreso por {sale.cashier} · {formattedDate}
                 </p>
               </div>
             </div>
