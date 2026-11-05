@@ -144,10 +144,29 @@ async function proxyRequest(req: NextRequest, path: string): Promise<NextRespons
       // ÚLTIMO recurso, no como primero: estaba caído y cada request pagaba su
       // 503 antes de llegar al nodo.
       try {
-        const respuestaNodo = await fetchFromBase(nodoLectura, pathAndQuery, init);
+        // Dos intentos contra el nodo antes de despertar a Render. Los cortes
+        // del túnel duran ~30 s y Cloudflare responde 530 mientras reconecta:
+        // un reintento a los 700 ms evita que la nube arranque (y descargue
+        // 21 MB) por un parpadeo.
+        let respuestaNodo: Response | null = null;
+        for (let intento = 0; intento < 2; intento++) {
+          try {
+            respuestaNodo = await fetchFromBase(nodoLectura, pathAndQuery, init);
+            if (respuestaNodo.status < 500 || respuestaNodo.status === 401) break;
+          } catch {
+            respuestaNodo = null;
+          }
+          if (intento === 0) {
+            await new Promise((listo) => setTimeout(listo, 700));
+          }
+        }
         // 401 NO es definitivo: si los backends no comparten JWT_SECRET, el
         // token puede ser válido en otro y acá ser rechazado. Se cae al cascade.
-        if (respuestaNodo.status < 500 && respuestaNodo.status !== 401) {
+        if (
+          respuestaNodo !== null &&
+          respuestaNodo.status < 500 &&
+          respuestaNodo.status !== 401
+        ) {
           resp = respuestaNodo;
           isFallback = true;
           base = nodoLectura;

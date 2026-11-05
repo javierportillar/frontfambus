@@ -398,3 +398,33 @@ describe("Proxy route · orden con Render caído", () => {
   });
 });
 
+describe("Proxy route · reintento antes de despertar a Render", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("si el primer intento al nodo da 530, reintenta y no toca el primario", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("<html>530</html>", { status: 530 }))
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new NextRequest("http://localhost/api/metrics/sales-summary", {
+      headers: { "x-tenant": "masvital" },
+    });
+
+    const res = await GET(req, { params: { path: ["metrics", "sales-summary"] } });
+
+    expect(res.status).toBe(200);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.every((u) => !u.includes("api.fragloesja.uk"))).toBe(true);
+    expect(urls.length).toBe(2);
+  });
+});
+
