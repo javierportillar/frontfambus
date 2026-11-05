@@ -505,6 +505,10 @@ async function probeNode(
     const res = await fetch(targetUrl, {
       method: "GET",
       signal: controller.signal,
+      // Sin esto, Next cachea la respuesta del sondeo y el panel muestra para
+      // siempre el estado/frescura de la primera vez que se consultó (se veían
+      // datos del 3 de noviembre mientras los nodos tenían 13 minutos).
+      cache: "no-store",
     });
     const latencyMs = Math.max(1, Date.now() - startTime);
     clearTimeout(timer);
@@ -519,6 +523,7 @@ async function probeNode(
         const freshRes = await fetch(freshUrl, {
           method: "GET",
           signal: freshCtrl.signal,
+          cache: "no-store",
         });
         clearTimeout(freshTimer);
         if (freshRes.ok) {

@@ -19,7 +19,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     req.cookies.get("motoshop_tenant")?.value ??
     null;
 
-  const status = await checkClusterStatus(tenant);
+  // `?skipCache=1` (botón "Actualizar") fuerza un sondeo real, sin la cache
+  // corta en memoria de la función.
+  const skipCache = ["1", "true", "yes"].includes(
+    (searchParams.get("skipCache") ?? searchParams.get("refresh") ?? "").toLowerCase(),
+  );
+  const status = await checkClusterStatus(tenant, 3000, skipCache);
 
   return NextResponse.json(status, {
     status: 200,

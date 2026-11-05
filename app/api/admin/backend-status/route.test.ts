@@ -56,7 +56,7 @@ describe("GET /api/admin/backend-status", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toContain("no-store");
-    expect(spy).toHaveBeenCalledWith("motoshop");
+    expect(spy).toHaveBeenCalledWith("motoshop", 3000, false);
     const json = await res.json();
     expect(json.activeNode.id).toBe("render");
   });
@@ -80,6 +80,6 @@ describe("GET /api/admin/backend-status", () => {
     const res = await GET(req);
 
     expect(res.status).toBe(200);
-    expect(spy).toHaveBeenCalledWith("masvital");
+    expect(spy).toHaveBeenCalledWith("masvital", 3000, false);
   });
 });
