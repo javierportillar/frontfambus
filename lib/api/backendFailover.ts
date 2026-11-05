@@ -610,23 +610,19 @@ export async function checkClusterStatus(
   const motoshopProbe = probeResults.find((p) => p.info.id === "motoshop");
   const masvitalProbe = probeResults.find((p) => p.info.id === "masvital");
 
-  // Determine active node according to failover cascade:
-  // 1. Render primary if online
-  // 2. Fallbacks in tenant priority order (MasVital PC first if masvital, else MotoShop PC first)
+  // Orden REAL del tráfico (desde f913215): el nodo del negocio primero; el
+  // otro nodo después; Render queda como último recurso. Antes este panel
+  // declaraba "activo" a Render sólo porque estaba online, aunque la app
+  // estuviera pegándole al nodo.
+  const orden =
+    tenant?.toLowerCase() === "masvital"
+      ? [masvitalProbe, motoshopProbe, renderProbe]
+      : [motoshopProbe, masvitalProbe, renderProbe];
   let activeNode: BackendNodeInfo | null = null;
-  if (renderProbe && renderProbe.status === "online") {
-    activeNode = renderProbe.info;
-  } else {
-    const fallbackPriority =
-      tenant?.toLowerCase() === "masvital"
-        ? [masvitalProbe, motoshopProbe]
-        : [motoshopProbe, masvitalProbe];
-
-    for (const fb of fallbackPriority) {
-      if (fb && fb.status === "online") {
-        activeNode = fb.info;
-        break;
-      }
+  for (const candidato of orden) {
+    if (candidato && candidato.status === "online") {
+      activeNode = candidato.info;
+      break;
     }
   }
 

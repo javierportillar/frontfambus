@@ -54,7 +54,9 @@ function getNodeDisplayStatus(node: ClusterNodeStatus): {
 } {
   if (node.status === "online") {
     if (node.isActive) {
-      const label = node.id === "render" ? "Online (Principal)" : "Atendiendo tráfico [DuckDB]";
+      // Render es respaldo desde f913215, no principal.
+      const label =
+        node.id === "render" ? "Online (respaldo)" : "Atendiendo tráfico [DuckDB]";
       return {
         label,
         badgeVariant: "success",

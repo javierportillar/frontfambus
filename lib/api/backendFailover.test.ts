@@ -311,23 +311,33 @@ describe("checkClusterStatus", () => {
     global.fetch = originalFetch;
   });
 
-  it("detects primary as active when Render is online", async () => {
+  it("con todo online, el activo es el nodo del negocio (no Render)", async () => {
+    global.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 })),
+    );
+
+    const status = await checkClusterStatus("motoshop");
+
+    // Orden real del tráfico: nodo propio -> otro nodo -> Render.
+    expect(status.activeNode?.id).toBe("motoshop");
+    expect(status.nodes).toHaveLength(3);
+    const renderNode = status.nodes.find((n) => n.id === "render");
+    expect(renderNode?.status).toBe("online");
+    expect(renderNode?.isActive).toBe(false);
+  });
+
+  it("si los nodos están caídos, Render sí queda como activo", async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes(PRIMARY_API_BASE)) {
         return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
       }
-      return Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+      return Promise.reject(new Error("offline"));
     });
 
     const status = await checkClusterStatus("motoshop");
 
     expect(status.activeNode?.id).toBe("render");
-    expect(status.nodes).toHaveLength(3);
-    const renderNode = status.nodes.find((n) => n.id === "render");
-    expect(renderNode?.status).toBe("online");
-    expect(renderNode?.isActive).toBe(true);
-    const motoshopNode = status.nodes.find((n) => n.id === "motoshop");
-    expect(motoshopNode?.isActive).toBe(false);
+    expect(status.nodes.find((n) => n.id === "render")?.isActive).toBe(true);
   });
 
   it("falls back to MotoShop PC when Render is suspended and tenant is motoshop", async () => {
