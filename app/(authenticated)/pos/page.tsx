@@ -210,6 +210,12 @@ export default function POSPage(): JSX.Element {
 
           {/* Acciones y Badges de la derecha */}
           <div className="flex items-center gap-2">
+            <Link
+              href="/pos/facturas"
+              className="rounded-xl border border-surface-dark-alt bg-surface-dark-alt px-3 py-1.5 text-xs font-bold text-text-inverse hover:border-primary hover:text-primary"
+            >
+              Facturas
+            </Link>
             {/* Indicador de ventas offline pendientes */}
             {pendingSalesCount > 0 && (
               <button

@@ -5,6 +5,7 @@
 
 import { get, set } from "idb-keyval";
 import { apiFetch, apiFetchJson } from "./client";
+import { generateRequestId } from "@/lib/erp/idempotency";
 import type {
   CashMovement,
   CashSession,
@@ -502,6 +503,62 @@ async function saveRecentSale(sale: SalePayload): Promise<void> {
   const filtered = recents.filter((s) => s.id !== sale.id);
   filtered.unshift(sale);
   await safeIdbSet(RECENT_SALES_STORE, filtered.slice(0, 50));
+}
+
+export interface VentaPOSDetalle {
+  numite: number;
+  codprod: string;
+  nomdet: string;
+  candet: string;
+  valuni: string;
+  totdet: string;
+  codbod: string;
+  codmed: string;
+}
+
+export interface VentaPOSPago {
+  codpag: string;
+  valpag: string;
+  estado: string;
+}
+
+export interface VentaPOS {
+  numfven: string;
+  codclase: string;
+  prefijo: string;
+  documento: string;
+  fecha: string;
+  hora: string;
+  cliente: string;
+  nitter: string;
+  vendedor: string;
+  caja: string;
+  formapago: string;
+  total: string;
+  estado: string;
+  cajero: string;
+  anulada: boolean;
+  lineas: VentaPOSDetalle[];
+  pagos: VentaPOSPago[];
+}
+
+/** Ventas creadas por el POS web en ese día (con líneas y pagos). */
+export async function listarVentasPOS(fecha: string): Promise<VentaPOS[]> {
+  const resp = await apiFetch(
+    `/api/pos/sales?fecha=${encodeURIComponent(fecha)}`,
+    { method: "GET", headers: { "X-Request-Id": generateRequestId() } },
+  );
+  if (!resp.ok) {
+    const cuerpo = await resp.text().catch(() => "");
+    throw new Error(
+      cuerpo.trim() ? `No se pudieron leer las ventas: ${cuerpo.slice(0, 160)}` : "No se pudieron leer las ventas.",
+    );
+  }
+  const data: unknown = await resp.json();
+  const ventas = data && typeof data === "object" && Array.isArray((data as { ventas?: unknown }).ventas)
+    ? (data as { ventas: VentaPOS[] }).ventas
+    : [];
+  return ventas;
 }
 
 export async function getPendingSales(): Promise<SalePayload[]> {
