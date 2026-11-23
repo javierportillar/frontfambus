@@ -111,6 +111,7 @@ export function PaymentModal({
   const [bankTimedOut, setBankTimedOut] = useState(false);
   const [bankConsultedOn, setBankConsultedOn] = useState<Date | null>(null);
   const [isVerifyingBank, setIsVerifyingBank] = useState(false);
+  const [verifyingAmount, setVerifyingAmount] = useState<number>(0);
   const bankTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // El operador siempre manda: lo que escribió a mano no se pisa con lo del banco.
   const referenceDirtyRef = useRef(false);
@@ -142,6 +143,7 @@ export function PaymentModal({
       setBankTimedOut(false);
       setBankConsultedOn(null);
       setIsVerifyingBank(false);
+      setVerifyingAmount(0);
       referenceDirtyRef.current = false;
       customerDirtyRef.current = false;
       appliedCandidateRef.current = null;
@@ -169,7 +171,7 @@ export function PaymentModal({
         setNewSplitReference(refSanitizada);
         setSplitPayments((prev) =>
           prev.map((p) =>
-            (p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR") && !p.reference
+            p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
               ? { ...p, reference: refSanitizada }
               : p
           )
@@ -266,7 +268,8 @@ export function PaymentModal({
       return;
     }
     let cancelado = false;
-    listBankCandidates({ valor: totals.total })
+    const valorParaCandidatos = verifyingAmount > 0 ? verifyingAmount : totals.total;
+    listBankCandidates({ valor: valorParaCandidatos })
       .then((resultado) => {
         if (!cancelado) setBankCandidateList(resultado.candidatos);
       })
@@ -276,9 +279,9 @@ export function PaymentModal({
     return () => {
       cancelado = true;
     };
-  }, [activeBankJob?.estado, activeBankJob?.job_id, bankResult?.candidatos, totals.total]);
+  }, [activeBankJob?.estado, activeBankJob?.job_id, bankResult?.candidatos, totals.total, verifyingAmount]);
 
-  async function handleVerificarTransferencia(): Promise<void> {
+  async function handleVerificarTransferencia(montoManual?: number): Promise<void> {
     clearBankTimeout();
     setBankJobId(null);
     setBankCandidateList(null);
@@ -293,7 +296,9 @@ export function PaymentModal({
 
       // En pagos múltiples (sgHermes), verificar la porción de transferencia, no el total completo de la factura
       let valorAVerificar = totals.total;
-      if (paymentMode === "VARIAS_FORMAS") {
+      if (typeof montoManual === "number" && montoManual > 0) {
+        valorAVerificar = montoManual;
+      } else if (paymentMode === "VARIAS_FORMAS") {
         const pagoTransferencia = splitPayments.find(
           (p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
         );
@@ -306,6 +311,8 @@ export function PaymentModal({
           valorAVerificar = newSplitAmount;
         }
       }
+
+      setVerifyingAmount(valorAVerificar);
 
       const job = await createBankVerification({
         valor: valorAVerificar,
@@ -321,6 +328,7 @@ export function PaymentModal({
       setBankStartError("Verificación no disponible");
       setIsVerifyingBank(false);
     }
+  }
   }
 
   // Búsqueda en vivo de clientes por NIT o Nombre
@@ -1073,7 +1081,24 @@ export function PaymentModal({
                             {formatMoneyFull(p.amount)}
                           </td>
                           <td className="py-2 px-3 font-mono text-[11px] text-text-secondary">
-                            {p.reference || "—"}
+                            {p.reference ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 font-bold text-emerald-800 border border-emerald-500/20">
+                                ✓ {p.reference}
+                              </span>
+                            ) : (p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR") ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleVerificarTransferencia(p.amount)}
+                                disabled={isVerifyingBank}
+                                className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-bold text-primary hover:bg-primary hover:text-primary-fg transition-colors disabled:opacity-50"
+                                title="Verificar esta transferencia en Bancolombia"
+                              >
+                                <span>📱</span>
+                                <span>{isVerifyingBank ? "Consultando…" : `Verificar (${formatMoneyFull(p.amount)})`}</span>
+                              </button>
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="py-2 px-3 text-center">
                             <button
@@ -1131,16 +1156,18 @@ export function PaymentModal({
             {/* Verificación bancaria para la porción de transferencia en pagos divididos */}
             {(splitPayments.some((p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR") ||
               newSplitMethod === "TRANSFERENCIA") && (
-              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3 space-y-2.5">
+              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3.5 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-bold text-primary flex items-center gap-1.5">
                     <span>📱</span>
                     <span>
                       Verificar transferencia bancaria (
                       {formatMoneyFull(
-                        splitPayments.find(
-                          (p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
-                        )?.amount || newSplitAmount
+                        verifyingAmount > 0
+                          ? verifyingAmount
+                          : (splitPayments.find(
+                              (p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
+                            )?.amount || newSplitAmount)
                       )}
                       )
                     </span>
@@ -1183,10 +1210,153 @@ export function PaymentModal({
                   </div>
                 )}
 
-                {activeBankJob?.estado === "resuelto" && resolvedCandidate && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs font-medium text-emerald-900 flex items-center justify-between">
-                    <span>✓ Transferencia confirmada: {resolvedCandidate.pagadorNombre}</span>
-                    <span className="font-mono font-bold">{resolvedCandidate.referencia}</span>
+                {bankStartError && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
+                  >
+                    {bankStartError}
+                  </p>
+                )}
+
+                {bankTimedOut && (
+                  <div
+                    role="alert"
+                    className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    <p>
+                      La consulta al banco superó los 5 minutos y se detuvo. No se confirmó ningún pago.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-amber-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {activeBankJob?.estado === "esperando_otp" && (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    El banco pide un código: ingrésalo en la consola del nodo local
+                  </p>
+                )}
+
+                {activeBankJob?.estado === "sin_coincidencia" && (
+                  <div
+                    role="status"
+                    className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    <p>
+                      No entró un pago de{" "}
+                      {formatMoneyFull(
+                        verifyingAmount ||
+                          (splitPayments.find(
+                            (p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
+                          )?.amount || totals.total)
+                      )}{" "}
+                      hoy.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-amber-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {activeBankJob?.estado === "ambiguo" && (
+                  <div
+                    role="status"
+                    className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
+                  >
+                    <p>El banco encontró varios pagos con este valor. Elige el correcto para aplicarlo:</p>
+                    {ambiguousCandidates.length > 0 ? (
+                      <div className="space-y-2">
+                        {ambiguousCandidates.map((candidato) => (
+                          <button
+                            key={candidato.id}
+                            type="button"
+                            onClick={() => aplicarCandidato(candidato)}
+                            className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-left text-xs font-semibold text-text-secondary transition-colors hover:border-primary hover:text-primary"
+                          >
+                            <span className="block font-bold text-text-primary">
+                              {candidato.pagadorNombre}
+                            </span>
+                            <span className="mt-0.5 block font-mono text-[11px]">
+                              {candidato.referencia}
+                            </span>
+                            <span className="mt-0.5 block">
+                              {formatMoneyFull(Number(candidato.valor))}
+                              {candidato.fecha
+                                ? ` · ${formatSpanishLongDate(candidato.fecha)}`
+                                : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>No se pudieron cargar los candidatos. Reintenta la verificación.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-amber-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-amber-900 hover:bg-amber-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {bankTerminalError && (
+                  <div
+                    role="alert"
+                    className="space-y-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
+                  >
+                    <p>{bankTerminalError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void handleVerificarTransferencia()}
+                      className="rounded-lg border border-rose-500/40 bg-surface px-2.5 py-1 text-xs font-bold text-rose-900 hover:bg-rose-500/10"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                )}
+
+                {resolvedCandidate && (
+                  <div
+                    data-testid="bank-verification-confirmation-split"
+                    className="space-y-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-xs font-black text-white"
+                        >
+                          ✓
+                        </span>
+                        <span className="text-xs font-bold text-emerald-950">
+                          Transferencia confirmada y aplicada
+                        </span>
+                      </div>
+                      <span className="font-mono text-xs font-bold text-emerald-900">
+                        {resolvedCandidate.referencia}
+                      </span>
+                    </div>
+                    <div className="text-xs text-emerald-900">
+                      <span>Pagador: <strong>{resolvedCandidate.pagadorNombre}</strong></span>
+                      {resolvedCandidate.fecha && (
+                        <span> · {formatSpanishLongDate(resolvedCandidate.fecha)}</span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1297,25 +1467,58 @@ export function PaymentModal({
 
                 {/* Banner de Cambio / Vueltas */}
                 <div
-                  className={`flex items-center justify-between rounded-xl p-3 border ${
+                  className={`flex flex-col gap-2 rounded-xl p-3 border ${
                     cashReceived >= totals.total
                       ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-800"
                       : "bg-amber-500/10 border-amber-500/30 text-amber-800"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">
-                      {cashReceived >= totals.total ? "💵" : "⚠️"}
-                    </span>
-                    <span className="text-xs font-bold uppercase tracking-wider">
-                      {cashReceived >= totals.total ? "Cambio a devolver:" : "Faltante:"}
-                    </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">
+                        {cashReceived >= totals.total ? "💵" : "⚠️"}
+                      </span>
+                      <span className="text-xs font-bold uppercase tracking-wider">
+                        {cashReceived >= totals.total ? "Cambio a devolver:" : "Faltante:"}
+                      </span>
+                    </div>
+                    <div className="text-xl font-black">
+                      {cashReceived >= totals.total
+                        ? formatMoneyFull(change)
+                        : formatMoneyFull(totals.total - cashReceived)}
+                    </div>
                   </div>
-                  <div className="text-xl font-black">
-                    {cashReceived >= totals.total
-                      ? formatMoneyFull(change)
-                      : formatMoneyFull(totals.total - cashReceived)}
-                  </div>
+
+                  {cashReceived > 0 && cashReceived < totals.total && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const efectivo = cashReceived;
+                        const faltante = totals.total - cashReceived;
+                        setSplitPayments([
+                          {
+                            id: `split-cash-${Date.now()}`,
+                            method: "EFECTIVO",
+                            amount: efectivo,
+                          },
+                          {
+                            id: `split-transfer-${Date.now() + 1}`,
+                            method: "TRANSFERENCIA",
+                            amount: faltante,
+                          },
+                        ]);
+                        setNewSplitAmount(0);
+                        setPaymentMode("VARIAS_FORMAS");
+                        void handleVerificarTransferencia(faltante);
+                      }}
+                      className="mt-1 w-full rounded-xl border border-primary bg-primary px-3 py-2 text-xs font-black text-primary-fg hover:bg-primary-dark transition-all flex items-center justify-center gap-2 shadow-xs"
+                    >
+                      <span>📱</span>
+                      <span>
+                        Pagar faltante con Transferencia ({formatMoneyFull(totals.total - cashReceived)}) y verificar
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1445,7 +1648,7 @@ export function PaymentModal({
                     className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-medium text-amber-900"
                   >
                     <p>
-                      No entró un pago de {formatMoneyFull(totals.total)} hoy.
+                      No entró un pago de {formatMoneyFull(verifyingAmount || totals.total)} hoy.
                     </p>
                     <button
                       type="button"

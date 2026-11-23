@@ -234,5 +234,26 @@ describe("lib/pos/calculations - sgHermes Mathematical Parity", () => {
       expect(result.isBalanced).toBe(false);
       expect(result.status).toBe("OVERPAID");
     });
+
+    it("calcula ajuste manual de precio unitario y multiplica por cantidades (ej. 116.120 ajustado a 116.000 x 9)", () => {
+      // Precio original del catálogo: 116.120
+      // Precio ajustado manualmente por cajero: 116.000
+      // Cantidad vendida: 9
+      const adjustedLine = calculateLineValues(116000, 9, 0, 0, 0);
+      expect(adjustedLine.valuni).toBe(116000);
+      expect(adjustedLine.candet).toBe(9);
+      expect(adjustedLine.totdet).toBe(1044000); // 116.000 * 9 = 1.044.000
+
+      // Pago mixto: $44.000 en efectivo y $1.000.000 en transferencia
+      const mixedPayments = [
+        { amount: 44000 },
+        { amount: 1000000 },
+      ];
+      const splitResult = calculateSplitPayments(adjustedLine.totdet, mixedPayments);
+      expect(splitResult.totalPaid).toBe(1044000);
+      expect(splitResult.remainingDifference).toBe(0);
+      expect(splitResult.isBalanced).toBe(true);
+      expect(splitResult.status).toBe("EXACT");
+    });
   });
 });
