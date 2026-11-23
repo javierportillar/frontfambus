@@ -363,6 +363,9 @@ function DayContent({
         onVerificar={() => {
           if (verificando) cola.encolar(pedidoDe(verificando));
         }}
+        onForzar={() => {
+          if (verificando) cola.forzarPrioridad(pedidoDe(verificando));
+        }}
       />
 
       {/* Vendedores + Formas de pago + Comparativas */}

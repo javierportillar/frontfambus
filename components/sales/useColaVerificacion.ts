@@ -57,6 +57,10 @@ export type EstadoSesion = {
 export interface ColaVerificacion {
   /** Encola la verificación de una factura (idempotente por clave). */
   encolar: (pedido: PedidoVerificacion) => void;
+  /** Coloca la verificación al inicio de la cola liberando cualquier proceso previo trabado. */
+  forzarPrioridad: (pedido: PedidoVerificacion) => void;
+  /** Cancela o quita de la cola una factura. */
+  cancelar: (clave: string) => void;
   /** Estado de cada factura, por clave. */
   sesiones: Record<string, EstadoSesion>;
   /** Posición en la cola (1 = la que se está corriendo), `null` si no está. */
@@ -99,7 +103,7 @@ export function useColaVerificacion(
   const activa = cola[0] ?? null;
   const sesionActiva = activa ? sesiones[activa.clave] : undefined;
 
-  const { data } = useBankVerification(sesionActiva?.jobId ?? null, {
+  const { data, error: pollError } = useBankVerification(sesionActiva?.jobId ?? null, {
     refreshInterval: 1_000,
   });
 
@@ -109,6 +113,41 @@ export function useColaVerificacion(
     data && sesionActiva?.jobId && data.job_id === sesionActiva.jobId
       ? data
       : null;
+
+  // Timeout de seguridad: si un job activo pasa más de 75 s sin terminar, se
+  // aborta y se avanza la cola para no bloquear al resto de facturas.
+  useEffect(() => {
+    if (!activa) return;
+    const timer = setTimeout(() => {
+      setSesiones((prev) => ({
+        ...prev,
+        [activa.clave]: {
+          estado: "fallido",
+          jobId: prev[activa.clave]?.jobId ?? null,
+          error: "La consulta tardó demasiado sin respuesta. Se liberó el turno para las siguientes facturas.",
+        },
+      }));
+      setCola((prev) => prev.filter((p) => p.clave !== activa.clave));
+    }, 75_000);
+    return () => clearTimeout(timer);
+  }, [activa?.clave, sesionActiva?.jobId]);
+
+  // Si el sondeo del job arroja un error definitivo (nodo caído, 500, etc.),
+  // no se deja trancada la cola: se marca fallido y se avanza al siguiente.
+  useEffect(() => {
+    if (!activa || !pollError) return;
+    setSesiones((prev) => ({
+      ...prev,
+      [activa.clave]: {
+        estado: "fallido",
+        jobId: prev[activa.clave]?.jobId ?? null,
+        error:
+          mensajeDeErrorDeVerificacion(pollError) ??
+          "Se perdió la conexión con el nodo verificador.",
+      },
+    }));
+    setCola((prev) => prev.filter((p) => p.clave !== activa.clave));
+  }, [activa, pollError]);
 
   // Arranca el job de la primera de la cola.
   useEffect(() => {
@@ -182,6 +221,26 @@ export function useColaVerificacion(
     );
   }, []);
 
+  const forzarPrioridad = useCallback((pedido: PedidoVerificacion) => {
+    setSesiones((prev) => ({
+      ...prev,
+      [pedido.clave]: { estado: "en_cola", jobId: null },
+    }));
+    setCola((prev) => [
+      pedido,
+      ...prev.filter((p) => p.clave !== pedido.clave),
+    ]);
+  }, []);
+
+  const cancelar = useCallback((clave: string) => {
+    setCola((prev) => prev.filter((p) => p.clave !== clave));
+    setSesiones((prev) => {
+      const next = { ...prev };
+      delete next[clave];
+      return next;
+    });
+  }, []);
+
   const posicion = useCallback(
     (clave: string) => {
       const indice = cola.findIndex((p) => p.clave === clave);
@@ -190,5 +249,5 @@ export function useColaVerificacion(
     [cola],
   );
 
-  return { encolar, sesiones, posicion, total: cola.length, activa };
+  return { encolar, forzarPrioridad, cancelar, sesiones, posicion, total: cola.length, activa };
 }

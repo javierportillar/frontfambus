@@ -40,6 +40,8 @@ export interface BankVerifyModalProps {
   total: number;
   /** Encola la verificación de esta factura. */
   onVerificar: () => void;
+  /** Inicia inmediatamente esta verificación, desplazando procesos previos colgados. */
+  onForzar?: () => void;
 }
 
 /**
@@ -61,6 +63,7 @@ export function BankVerifyModal({
   posicion,
   total,
   onVerificar,
+  onForzar,
 }: BankVerifyModalProps): JSX.Element | null {
   if (!open) return null;
 
@@ -127,7 +130,7 @@ export function BankVerifyModal({
           <div
             role="status"
             data-testid="bank-verify-en-cola"
-            className="space-y-1 rounded-lg border border-sky-500/30 bg-sky-500/10 p-2.5 text-xs font-medium text-sky-900"
+            className="space-y-2 rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs font-medium text-sky-950"
           >
             <p>
               Hay otra verificación en curso. Esta va a arrancar sola cuando
@@ -137,6 +140,17 @@ export function BankVerifyModal({
               <p className="font-bold">
                 Posición {posicion} de {Math.max(total, posicion)}
               </p>
+            )}
+            {onForzar && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={onForzar}
+                  className="rounded-lg bg-sky-700 px-3 py-1.5 text-xs font-black text-white hover:bg-sky-800 transition-colors shadow-xs"
+                >
+                  ⚡ Iniciar esta verificación ahora
+                </button>
+              </div>
             )}
           </div>
         )}
