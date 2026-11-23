@@ -100,7 +100,7 @@ export function useColaVerificacion(
   const sesionActiva = activa ? sesiones[activa.clave] : undefined;
 
   const { data } = useBankVerification(sesionActiva?.jobId ?? null, {
-    refreshInterval: 2_000,
+    refreshInterval: 1_000,
   });
 
   // Sólo vale el job de ESTA sesión: el hook conserva el dato anterior entre

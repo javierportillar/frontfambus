@@ -53,3 +53,25 @@ export function reviewedMovementsNote(
   if (!window) return `${movimientos} movimientos revisados`;
   return `${movimientos} movimientos revisados del ${window}`;
 }
+
+/** Etiquetas humanas para cada paso publicado por el scraper. */
+export const LABELS_POR_PASO: Record<string, string> = {
+  credencial_lista: "Preparando credencial…",
+  navegador_abierto: "Abriendo navegador…",
+  escribiendo_credenciales: "Ingresando credenciales…",
+  validando_acceso: "Validando acceso en el banco…",
+  sesion_iniciada: "Sesión del banco iniciada",
+  buscando_cuenta: "Localizando cuenta…",
+  cuenta_abierta: "Cuenta seleccionada",
+  cargando_movimientos: "Cargando movimientos…",
+  movimientos_leidos: "Movimientos bancarios leídos",
+  movimientos_recientes: "Verificando en movimientos recientes…",
+  buscando_el_pago: "Buscando coincidencia del pago…",
+  esperando_turno: "Esperando turno seguro del banco…",
+  listo: "Listo",
+};
+
+export function etiquetaPasoProgreso(paso?: string | null): string {
+  if (!paso) return "Consultando el banco…";
+  return LABELS_POR_PASO[paso] ?? "Consultando el banco…";
+}

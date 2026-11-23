@@ -15,6 +15,7 @@ import {
   formatSpanishDayMonth,
   formatSpanishLongDate,
   reviewedMovementsNote,
+  etiquetaPasoProgreso,
 } from "@/lib/erp/bankPresentation";
 import { submitSale, saveCashSession } from "@/lib/api/pos";
 import { formatMoneyFull } from "@/lib/format/currency";
@@ -38,7 +39,7 @@ interface PaymentModalProps {
 
 /** TTL del job de verificación: pasado este tiempo no se sondea más. */
 const BANK_VERIFICATION_TIMEOUT_MS = 300_000;
-const BANK_VERIFICATION_POLL_MS = 2_000;
+const BANK_VERIFICATION_POLL_MS = 1_000;
 
 /** NITs de consumidor final: el backend los oculta y no son señal de match. */
 const NITS_CONSUMIDOR_FINAL = new Set(["222222222", "222222222222"]);
@@ -1278,6 +1279,36 @@ export function PaymentModal({
                     </span>
                   )}
                 </div>
+
+                {/* Progreso granular del banco en tiempo real */}
+                {isVerifyingBank && (
+                  <div
+                    role="status"
+                    data-testid="pos-bank-progreso"
+                    className="space-y-1.5 rounded-xl border border-primary/20 bg-primary/5 p-2.5"
+                  >
+                    <div className="flex items-center justify-between text-xs font-semibold text-primary">
+                      <span className="flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                        </span>
+                        {etiquetaPasoProgreso(activeBankJob?.resultado?.progreso?.paso)}
+                      </span>
+                      <span className="font-mono text-xs font-bold text-text-muted">
+                        {activeBankJob?.resultado?.progreso?.pct ?? 15}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-alt">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-300"
+                        style={{
+                          width: `${activeBankJob?.resultado?.progreso?.pct ?? 15}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {bankStartError && (
                   <p

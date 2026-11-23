@@ -1,7 +1,7 @@
 "use client";
 
 import type { BankCandidato } from "@/lib/erp/bank";
-import { formatSpanishLongDate } from "@/lib/erp/bankPresentation";
+import { formatSpanishLongDate, LABELS_POR_PASO } from "@/lib/erp/bankPresentation";
 import { formatMoneyFull } from "@/lib/format/currency";
 import type { EstadoSesion } from "@/components/sales/useColaVerificacion";
 
@@ -10,12 +10,14 @@ import type { EstadoSesion } from "@/components/sales/useColaVerificacion";
  * etapa como cumplida; el orden es el del scrape.
  */
 const ETAPAS: ReadonlyArray<{ paso: string; pct: number; label: string }> = [
-  { paso: "credencial_lista", pct: 10, label: "Preparando la credencial" },
-  { paso: "navegador_abierto", pct: 20, label: "Abriendo el navegador" },
-  { paso: "sesion_iniciada", pct: 35, label: "Sesión del banco iniciada" },
-  { paso: "cuenta_abierta", pct: 55, label: "Cuenta encontrada" },
-  { paso: "movimientos_leidos", pct: 80, label: "Movimientos leídos" },
-  { paso: "buscando_el_pago", pct: 90, label: "Buscando el pago" },
+  { paso: "credencial_lista", pct: 10, label: "Preparando credencial" },
+  { paso: "navegador_abierto", pct: 20, label: "Abriendo navegador" },
+  { paso: "escribiendo_credenciales", pct: 25, label: "Ingresando credenciales" },
+  { paso: "validando_acceso", pct: 35, label: "Validando acceso en el banco" },
+  { paso: "sesion_iniciada", pct: 45, label: "Sesión del banco iniciada" },
+  { paso: "cuenta_abierta", pct: 65, label: "Cuenta encontrada" },
+  { paso: "movimientos_leidos", pct: 85, label: "Movimientos leídos" },
+  { paso: "buscando_el_pago", pct: 95, label: "Buscando el pago" },
   { paso: "listo", pct: 100, label: "Listo" },
 ];
 
@@ -144,7 +146,9 @@ export function BankVerifyModal({
             <p role="status" className="text-xs font-semibold">
               {sesion?.paso === "esperando_otp"
                 ? "El banco pide un código: ingrésalo en la consola del nodo."
-                : (ETAPAS[etapaActual]?.label ?? "Consultando el banco…")}
+                : (sesion?.paso && LABELS_POR_PASO[sesion.paso]) ||
+                  ETAPAS[etapaActual]?.label ||
+                  "Consultando el banco…"}
               <span className="ml-1 font-normal text-text-muted">{pct}%</span>
             </p>
             <ol className="space-y-0.5 text-[11px] text-text-muted">
