@@ -794,6 +794,14 @@ export interface InvoiceItem {
   cod_bodega: string | null;
 }
 
+export interface DayInvoicePayment {
+  cod_formapago: string;
+  nombre_formapago: string;
+  valor: number;
+  referencia?: string | null;
+  es_transferencia?: boolean;
+}
+
 export interface DayInvoice {
   num_documento: string;
   cod_clase: string;
@@ -811,6 +819,8 @@ export interface DayInvoice {
   ganancia: number | null;
   margen_pct: number | null;
   items: InvoiceItem[];
+  pagos?: DayInvoicePayment[];
+  valor_transferencia?: number | null;
 }
 
 export interface SalesDayInvoicesResponse {

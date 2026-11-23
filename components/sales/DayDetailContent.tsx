@@ -17,6 +17,11 @@ import {
   type VentaVerificada,
 } from "@/lib/erp/bank";
 import {
+  diasAtras,
+  puedeVerificarPago,
+  valorVerificacionFactura,
+} from "@/lib/erp/bankPresentation";
+import {
   useColaVerificacion,
   type EstadoSesion,
   type PedidoVerificacion,
@@ -187,7 +192,7 @@ function DayContent({
     codClase: venta.cod_clase,
     numDocumento: venta.num_documento,
     fecha: invoices.data?.date ?? "",
-    valor: venta.total,
+    valor: valorVerificacionFactura(venta),
     referencia: `${venta.prefijo ?? ""}-${venta.num_documento}`,
     nombreEsperado: venta.cliente || undefined,
   });
@@ -342,7 +347,8 @@ function DayContent({
       <BankVerifyModal
         open={verificando !== null}
         onClose={() => setVerificando(null)}
-        valor={verificando?.total ?? 0}
+        valor={verificando ? valorVerificacionFactura(verificando) : 0}
+        totalFactura={verificando?.total}
         fecha={invoices.data?.date ?? ""}
         referencia={
           verificando
@@ -450,34 +456,6 @@ function claveFactura(invoice: DayInvoice): string {
   return `${invoice.cod_clase}-${invoice.num_documento}`;
 }
 
-/**
- * Días de antigüedad de una fecha `AAAA-MM-DD` respecto de hoy (0 = hoy).
- * `null` si el string no es una fecha válida.
- */
-function diasAtras(fecha: string): number | null {
-  const partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha);
-  if (!partes) return null;
-  const dia = new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]));
-  if (Number.isNaN(dia.getTime())) return null;
-  const ahora = new Date();
-  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-  return Math.round((hoy.getTime() - dia.getTime()) / 86_400_000);
-}
-
-/**
- * ¿Tiene sentido ofrecer la verificación bancaria para esta factura?
- *
- * Dos filtros, ninguno depende del catálogo de formas de pago:
- * - el portal del banco sólo publica los últimos días (hoy y los dos previos);
- * - una venta en efectivo no tiene transferencia que buscar.
- */
-function puedeVerificarPago(invoice: DayInvoice, fechaDia: string | undefined): boolean {
-  if (!fechaDia) return false;
-  const antiguedad = diasAtras(fechaDia);
-  if (antiguedad === null || antiguedad < 0 || antiguedad > 2) return false;
-  return !/efectivo|contado/i.test(invoice.nombre_formapago ?? "");
-}
-
 export function InvoiceCard({
   invoice, abcMap, onProductClick, fechaDia, onVerify, verificada,
   sesionVerificacion, posicionEnCola,
@@ -495,6 +473,8 @@ export function InvoiceCard({
   posicionEnCola?: number | null;
 }): JSX.Element {
   const verificar = onVerify !== undefined && puedeVerificarPago(invoice, fechaDia);
+  const valorVerificar = valorVerificacionFactura(invoice);
+  const tienePagoMixto = Boolean(invoice.pagos && invoice.pagos.length > 1);
   const pagoConfirmado = verificada?.estado === "verificado" ? verificada : null;
   const yaConsultada = verificada?.estado === "sin_coincidencia" ? verificada : null;
   return (
@@ -507,9 +487,26 @@ export function InvoiceCard({
           </span>
           <span className="text-xs text-text-muted">{invoice.hora}</span>
           <span className="text-xs text-text-secondary truncate max-w-[160px]">{invoice.cliente}</span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[10px] text-text-secondary">
-            {invoice.nombre_formapago}
-          </span>
+          {tienePagoMixto ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {invoice.pagos!.map((p, idx) => (
+                <span
+                  key={idx}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${
+                    p.es_transferencia
+                      ? "bg-primary/10 text-primary font-bold border border-primary/20"
+                      : "bg-surface text-text-secondary border border-border"
+                  }`}
+                >
+                  {p.nombre_formapago}: {formatMoneyFull(p.valor)}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[10px] text-text-secondary border border-border">
+              {invoice.nombre_formapago}
+            </span>
+          )}
           <span className="ml-auto flex items-center gap-2">
             {invoice.ganancia !== null && (
               <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
@@ -540,19 +537,26 @@ export function InvoiceCard({
         </div>
       )}
       {verificar && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
-          <span className="text-[11px] text-text-muted">
-            {sesionVerificacion?.estado === "consultando"
-              ? `Consultando el banco… ${sesionVerificacion.pct ?? 0}%`
-              : sesionVerificacion?.estado === "en_cola" ||
-                  (posicionEnCola ?? 0) > 1
-                ? `En cola (${posicionEnCola ?? 2}) — arranca cuando termine la anterior`
-                : pagoConfirmado
-                  ? "Ya verificado. Podés volver a consultar el banco."
-                  : yaConsultada
-                    ? "Se consultó el banco y no había pago ese día."
-                    : "¿El pago entró a la cuenta? Se consulta el día de la venta."}
-          </span>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+          <div className="space-y-0.5">
+            <span className="text-[11px] text-text-muted">
+              {sesionVerificacion?.estado === "consultando"
+                ? `Consultando el banco… ${sesionVerificacion.pct ?? 0}%`
+                : sesionVerificacion?.estado === "en_cola" ||
+                    (posicionEnCola ?? 0) > 1
+                  ? `En cola (${posicionEnCola ?? 2}) — arranca cuando termine la anterior`
+                  : pagoConfirmado
+                    ? "Ya verificado. Podés volver a consultar el banco."
+                    : yaConsultada
+                      ? "Se consultó el banco y no había pago ese día."
+                      : "¿El pago entró a la cuenta? Se consulta el día de la venta."}
+            </span>
+            {tienePagoMixto && valorVerificar !== invoice.total && (
+              <p className="text-[10px] font-semibold text-primary">
+                Se verificará el pago en transferencia de {formatMoneyFull(valorVerificar)} (total factura: {formatMoneyFull(invoice.total)})
+              </p>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => onVerify?.(invoice)}
@@ -562,7 +566,9 @@ export function InvoiceCard({
               ? "Consultando…"
               : pagoConfirmado
                 ? "Verificar de nuevo"
-                : "Verificar pago"}
+                : tienePagoMixto && valorVerificar !== invoice.total
+                  ? `Verificar transferencia (${formatMoneyFull(valorVerificar)})`
+                  : "Verificar pago"}
           </button>
         </div>
       )}

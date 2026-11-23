@@ -26,6 +26,8 @@ export interface BankVerifyModalProps {
   onClose: () => void;
   /** Importe exacto a buscar en la cuenta del banco. */
   valor: number;
+  /** Total de la factura si difiere del valor a verificar (pago mixto). */
+  totalFactura?: number;
   /** Día a consultar (`AAAA-MM-DD`). */
   fecha: string;
   /** Identificación de la venta, sólo para el encabezado. */
@@ -52,6 +54,7 @@ export function BankVerifyModal({
   open,
   onClose,
   valor,
+  totalFactura,
   fecha,
   referencia,
   sesion,
@@ -94,8 +97,11 @@ export function BankVerifyModal({
               Verificar pago
             </h2>
             <p className="text-xs text-text-muted">
-              {referencia} · {formatMoneyFull(valor)} ·{" "}
-              {formatSpanishLongDate(fecha) || fecha}
+              {referencia} ·{" "}
+              {totalFactura && totalFactura !== valor
+                ? `Transferencia: ${formatMoneyFull(valor)} (Factura: ${formatMoneyFull(totalFactura)})`
+                : formatMoneyFull(valor)}{" "}
+              · {formatSpanishLongDate(fecha) || fecha}
             </p>
           </div>
           <button

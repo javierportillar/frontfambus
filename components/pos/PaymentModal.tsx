@@ -161,8 +161,19 @@ export function PaymentModal({
 
   const aplicarCandidato = useCallback(
     (candidato: BankCandidato) => {
-      if (!referenceDirtyRef.current && candidato.referencia) {
-        setReference(sanitizeBancolombiaReference(candidato.referencia));
+      if (candidato.referencia) {
+        const refSanitizada = sanitizeBancolombiaReference(candidato.referencia);
+        if (!referenceDirtyRef.current) {
+          setReference(refSanitizada);
+        }
+        setNewSplitReference(refSanitizada);
+        setSplitPayments((prev) =>
+          prev.map((p) =>
+            (p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR") && !p.reference
+              ? { ...p, reference: refSanitizada }
+              : p
+          )
+        );
       }
       if (!customerDirtyRef.current && candidato.pagadorNombre) {
         setCustomer({ ...customer, name: candidato.pagadorNombre });
@@ -279,8 +290,25 @@ export function PaymentModal({
     try {
       const nitter = customerNit.trim();
       const nombreEsperado = customerName.trim();
+
+      // En pagos múltiples (sgHermes), verificar la porción de transferencia, no el total completo de la factura
+      let valorAVerificar = totals.total;
+      if (paymentMode === "VARIAS_FORMAS") {
+        const pagoTransferencia = splitPayments.find(
+          (p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
+        );
+        if (pagoTransferencia && pagoTransferencia.amount > 0) {
+          valorAVerificar = pagoTransferencia.amount;
+        } else if (
+          (newSplitMethod === "TRANSFERENCIA" || newSplitMethod === "BANCOLOMBIA_QR") &&
+          newSplitAmount > 0
+        ) {
+          valorAVerificar = newSplitAmount;
+        }
+      }
+
       const job = await createBankVerification({
-        valor: totals.total,
+        valor: valorAVerificar,
         nitter:
           nitter && !NITS_CONSUMIDOR_FINAL.has(nitter) ? nitter : undefined,
         nombreEsperado: nombreEsperado || undefined,
@@ -1099,6 +1127,70 @@ export function PaymentModal({
                 </div>
               </div>
             </div>
+
+            {/* Verificación bancaria para la porción de transferencia en pagos divididos */}
+            {(splitPayments.some((p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR") ||
+              newSplitMethod === "TRANSFERENCIA") && (
+              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-primary flex items-center gap-1.5">
+                    <span>📱</span>
+                    <span>
+                      Verificar transferencia bancaria (
+                      {formatMoneyFull(
+                        splitPayments.find(
+                          (p) => p.method === "TRANSFERENCIA" || p.method === "BANCOLOMBIA_QR"
+                        )?.amount || newSplitAmount
+                      )}
+                      )
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleVerificarTransferencia()}
+                    disabled={isVerifyingBank}
+                    className="rounded-xl border border-primary bg-primary px-3 py-1.5 text-xs font-black text-primary-fg hover:bg-primary-dark transition-colors disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isVerifyingBank ? "Consultando el banco…" : "Verificar en Bancolombia"}
+                  </button>
+                </div>
+
+                {isVerifyingBank && (
+                  <div
+                    role="status"
+                    className="space-y-1.5 rounded-xl border border-primary/20 bg-surface p-2.5"
+                  >
+                    <div className="flex items-center justify-between text-xs font-semibold text-primary">
+                      <span className="flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                        </span>
+                        {etiquetaPasoProgreso(activeBankJob?.resultado?.progreso?.paso)}
+                      </span>
+                      <span className="font-mono text-xs font-bold text-text-muted">
+                        {activeBankJob?.resultado?.progreso?.pct ?? 15}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-alt">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-300"
+                        style={{
+                          width: `${activeBankJob?.resultado?.progreso?.pct ?? 15}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeBankJob?.estado === "resuelto" && resolvedCandidate && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-xs font-medium text-emerald-900 flex items-center justify-between">
+                    <span>✓ Transferencia confirmada: {resolvedCandidate.pagadorNombre}</span>
+                    <span className="font-mono font-bold">{resolvedCandidate.referencia}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           /* ======================================================== */
