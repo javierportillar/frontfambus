@@ -11,6 +11,7 @@ import {
   guardarVerificacionVenta,
   listBankCandidates,
   listarVentasVerificadas,
+  mensajeDeErrorDeVerificacion,
 } from "./bank";
 
 vi.mock("@/lib/api/client", () => ({ apiFetch: vi.fn() }));
@@ -822,5 +823,23 @@ describe("verificaciones guardadas de una venta", () => {
       estado: "verificado",
     });
     expect(guardado).toBe(true);
+  });
+
+  it("mensajeDeErrorDeVerificacion traduce códigos bancarios a mensajes claros", () => {
+    expect(mensajeDeErrorDeVerificacion({ error_codigo: "ejecucion_concurrente" })).toContain(
+      "otra consulta bancaria activa",
+    );
+    expect(mensajeDeErrorDeVerificacion({ error_codigo: "intervalo_minimo" })).toContain(
+      "intervalo de seguridad",
+    );
+    expect(
+      mensajeDeErrorDeVerificacion({ error_codigo: "sesion_cerrada_por_otro_dispositivo" }),
+    ).toContain("otro dispositivo");
+    expect(mensajeDeErrorDeVerificacion({ error_codigo: "portal_no_disponible" })).toContain(
+      "portal de Bancolombia no respondió",
+    );
+    expect(mensajeDeErrorDeVerificacion({ error_codigo: "codigo_desconocido" })).toBe(
+      "No se pudo verificar la transferencia.",
+    );
   });
 });

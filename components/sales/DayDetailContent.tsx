@@ -366,6 +366,9 @@ function DayContent({
         onForzar={() => {
           if (verificando) cola.forzarPrioridad(pedidoDe(verificando));
         }}
+        onCancelar={() => {
+          if (verificando) cola.cancelar(claveFactura(verificando));
+        }}
       />
 
       {/* Vendedores + Formas de pago + Comparativas */}

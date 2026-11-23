@@ -245,10 +245,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const MENSAJES_ERROR_VERIFICACION: Record<string, string> = {
   scraper_no_habilitado: "Este nodo no verifica transferencias.",
   tenant_no_servido: "Este nodo no atiende este negocio.",
-  job_no_encontrado: "La verificación se perdió en el nodo. Volvé a verificar.",
-  expirado: "La verificación tardó demasiado. Volvé a intentar.",
-  sin_nodo: "No hay nodo disponible para verificar.",
-  fallido: "La verificación falló. Volvé a intentar.",
+  job_no_encontrado: "La verificación se perdió en el nodo. Vuelve a verificar.",
+  expirado: "La verificación tardó demasiado tiempo. Vuelve a intentar.",
+  sin_nodo: "No hay nodo disponible para verificar transferencias.",
+  fallido: "La verificación falló. Vuelve a intentar.",
+  ejecucion_concurrente: "Hay otra consulta bancaria activa en este momento. Espera unos segundos y vuelve a intentar.",
+  intervalo_minimo: "Bancolombia requiere un breve intervalo de seguridad entre consultas. Espera un momento y pulsa Reintentar.",
+  sesion_cerrada_por_otro_dispositivo: "La cuenta de Bancolombia se abrió desde otro dispositivo o navegador. Cierra esa sesión y pulsa Reintentar.",
+  portal_no_disponible: "El portal de Bancolombia no respondió a tiempo. Puedes volver a intentar ahora.",
+  credencial_invalida: "Las credenciales del banco no son válidas en este nodo.",
+  sesion_expirada: "La sesión del banco expiró. El nodo iniciará una nueva al reintentar.",
 };
 
 const MENSAJE_ERROR_VERIFICACION_GENERICO =

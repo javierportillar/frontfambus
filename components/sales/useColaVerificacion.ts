@@ -196,6 +196,12 @@ export function useColaVerificacion(
         jobId: prev[activa.clave]?.jobId ?? jobActual.job_id,
         paso: progreso?.paso,
         pct: progreso?.pct,
+        error:
+          jobActual.estado === "fallido"
+            ? (mensajeDeErrorDeVerificacion(jobActual) ??
+               prev[activa.clave]?.error ??
+               "La verificación falló. Vuelve a intentar.")
+            : prev[activa.clave]?.error,
         candidato: resultadoDelJob(jobActual)?.candidato ?? null,
         candidatos: resultadoDelJob(jobActual)?.candidatos ?? [],
       },
@@ -211,11 +217,21 @@ export function useColaVerificacion(
   }, [activa, jobActual]);
 
   const encolar = useCallback((pedido: PedidoVerificacion) => {
-    setSesiones((prev) =>
-      prev[pedido.clave]
-        ? prev
-        : { ...prev, [pedido.clave]: { estado: "en_cola", jobId: null } },
-    );
+    setSesiones((prev) => {
+      const existente = prev[pedido.clave];
+      if (
+        existente &&
+        existente.estado !== "fallido" &&
+        existente.estado !== "expirado" &&
+        existente.estado !== "sin_coincidencia"
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [pedido.clave]: { estado: "en_cola", jobId: null, error: undefined },
+      };
+    });
     setCola((prev) =>
       prev.some((p) => p.clave === pedido.clave) ? prev : [...prev, pedido],
     );
@@ -224,7 +240,7 @@ export function useColaVerificacion(
   const forzarPrioridad = useCallback((pedido: PedidoVerificacion) => {
     setSesiones((prev) => ({
       ...prev,
-      [pedido.clave]: { estado: "en_cola", jobId: null },
+      [pedido.clave]: { estado: "en_cola", jobId: null, error: undefined },
     }));
     setCola((prev) => [
       pedido,

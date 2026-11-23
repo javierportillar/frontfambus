@@ -42,6 +42,8 @@ export interface BankVerifyModalProps {
   onVerificar: () => void;
   /** Inicia inmediatamente esta verificación, desplazando procesos previos colgados. */
   onForzar?: () => void;
+  /** Cancela la verificación o la quita de la cola. */
+  onCancelar?: () => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export function BankVerifyModal({
   total,
   onVerificar,
   onForzar,
+  onCancelar,
 }: BankVerifyModalProps): JSX.Element | null {
   if (!open) return null;
 
@@ -118,12 +121,32 @@ export function BankVerifyModal({
         </div>
 
         {sesion?.estado === "fallido" && (
-          <p
+          <div
             role="alert"
-            className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs font-medium text-rose-900"
+            className="space-y-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-medium text-rose-950"
           >
-            {sesion.error ?? "La consulta al banco falló."}
-          </p>
+            <p className="font-semibold text-rose-900">
+              {sesion.error ?? "La consulta al banco falló."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onVerificar}
+                className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-800 transition-colors shadow-xs"
+              >
+                🔄 Reintentar verificación
+              </button>
+              {onCancelar && (
+                <button
+                  type="button"
+                  onClick={onCancelar}
+                  className="rounded-lg border border-rose-300 bg-white/70 px-2.5 py-1 text-xs font-bold text-rose-900 hover:bg-white transition-colors"
+                >
+                  ✕ Limpiar estado
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
         {enCola && (
@@ -141,8 +164,8 @@ export function BankVerifyModal({
                 Posición {posicion} de {Math.max(total, posicion)}
               </p>
             )}
-            {onForzar && (
-              <div className="pt-1">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {onForzar && (
                 <button
                   type="button"
                   onClick={onForzar}
@@ -150,8 +173,17 @@ export function BankVerifyModal({
                 >
                   ⚡ Iniciar esta verificación ahora
                 </button>
-              </div>
-            )}
+              )}
+              {onCancelar && (
+                <button
+                  type="button"
+                  onClick={onCancelar}
+                  className="rounded-lg border border-sky-300 bg-white/70 px-2.5 py-1 text-xs font-bold text-sky-900 hover:bg-white transition-colors"
+                >
+                  ✕ Quitar de la cola
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -291,7 +323,9 @@ export function BankVerifyModal({
                 ? "Consultando…"
                 : sesion?.estado === "resuelto"
                   ? "Verificar de nuevo"
-                  : "Verificar en el banco"}
+                  : sesion?.estado === "fallido"
+                    ? "Reintentar verificación"
+                    : "Verificar en el banco"}
           </button>
         </div>
       </div>
